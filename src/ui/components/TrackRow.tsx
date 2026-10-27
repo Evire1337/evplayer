@@ -21,9 +21,15 @@ export interface TrackRowProps {
   onDragOverRow?: (before: boolean) => void;
   onDrop?: () => void;
   dropHint?: "before" | "after" | null;
+  /** a small SC / YT / file badge next to the artist */
+  showSource?: boolean;
+  /** text for the right column instead of the service play count ("12 прослушиваний", "FLAC") */
+  note?: string;
 }
 
-export default function TrackRow({ track, queue, index, addedAt, menu, number, draggable, onDragStart, onDragOverRow, onDrop, dropHint }: TrackRowProps) {
+const SOURCE_LABEL = { soundcloud: "SC", youtube: "YT", local: "Файл" } as const;
+
+export default function TrackRow({ track, queue, index, addedAt, menu, number, draggable, onDragStart, onDragOverRow, onDrop, dropHint, showSource, note }: TrackRowProps) {
   const isCurrent = usePlayer((s) => currentTrack(s)?.id === track.id);
   const playing = usePlayer((s) => s.status === "playing");
   const liked = useIsLiked(track.id);
@@ -67,10 +73,17 @@ export default function TrackRow({ track, queue, index, addedAt, menu, number, d
       </span>
       <span className="track-text">
         <span className="track-title">{track.title}</span>
-        <span className="track-artist">{artistLine(track.artists)}</span>
+        <span className="track-artist">
+          {showSource && <span className={`source-badge is-${track.source}`}>{SOURCE_LABEL[track.source]}</span>}
+          {artistLine(track.artists)}
+        </span>
       </span>
       {addedAt !== undefined && <span className="track-date">{formatAddedAt(addedAt)}</span>}
-      {track.plays !== undefined && addedAt === undefined && <span className="track-plays">{formatCount(track.plays)}</span>}
+      {note !== undefined && addedAt === undefined ? (
+        <span className="track-plays">{note}</span>
+      ) : (
+        track.plays !== undefined && addedAt === undefined && <span className="track-plays" title="Прослушивания на сервисе">{formatCount(track.plays)}</span>
+      )}
       <button
         type="button"
         className={`row-icon${liked ? " is-liked" : ""}`}
@@ -82,7 +95,7 @@ export default function TrackRow({ track, queue, index, addedAt, menu, number, d
       >
         {liked ? <IconHeartFill size={17} /> : <IconHeart size={17} />}
       </button>
-      <span className="track-time">{formatTime(track.durationMs)}</span>
+      <span className="track-time">{track.durationMs > 0 ? formatTime(track.durationMs) : ""}</span>
       <button
         type="button"
         className="row-icon"

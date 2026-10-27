@@ -5,6 +5,7 @@ import { useLibrary } from "./store";
 import { useLibraryDialogs } from "./dialogs";
 import { decodePlaylistCode } from "./playlistCode";
 import { goToPlaylist } from "./trackMenu";
+import { importFromLink, linkKind } from "./importLink";
 
 function CreateDialog() {
   const state = useLibraryDialogs((s) => s.create);
@@ -61,11 +62,17 @@ function ImportDialog() {
   }, [open]);
   const close = () => useLibraryDialogs.setState({ importCode: false });
   return (
-    <Dialog title="Импорт плейлиста по коду" open={open} onClose={close}>
+    <Dialog title="Импорт плейлиста" open={open} onClose={close}>
       <form
         className="dialog-form"
         onSubmit={async (e) => {
           e.preventDefault();
+          const kind = linkKind(code);
+          if (kind && kind !== "code") {
+            close();
+            void importFromLink(code.trim());
+            return;
+          }
           setBusy(true);
           try {
             const shared = await decodePlaylistCode(code);
@@ -83,10 +90,10 @@ function ImportDialog() {
           }
         }}
       >
-        <p className="muted small">Друг нажимает «Поделиться кодом» у своего плейлиста и присылает вам строку, которая начинается с EVP.</p>
+        <p className="muted small">Вставьте ссылку на плейлист, альбом или трек из Spotify, YouTube / YouTube Music, SoundCloud или Deezer — или код EvPlayer (строка с EVP), который прислал друг.</p>
         <label className="field">
-          <span>Код</span>
-          <textarea id="pl-code" autoFocus rows={4} value={code} onChange={(e) => { setCode(e.target.value); setError(""); }} placeholder="EVP2.…" spellCheck={false} />
+          <span>Ссылка или код</span>
+          <textarea id="pl-code" autoFocus rows={4} value={code} onChange={(e) => { setCode(e.target.value); setError(""); }} placeholder="https://open.spotify.com/playlist/… или EVP2.…" spellCheck={false} />
         </label>
         {error && <p className="field-error">{error}</p>}
         <div className="dialog-actions">

@@ -5,7 +5,7 @@ import { IconPlay } from "./Icons";
 import { openMenu } from "../menu";
 import { trackMenuItems } from "@/library/trackMenu";
 
-export default function TrackCard({ track, queue, index, rank }: { track: Track; queue: Track[]; index: number; rank?: number }) {
+export default function TrackCard({ track, queue, index, rank, sub }: { track: Track; queue: Track[]; index: number; rank?: number; sub?: string }) {
   return (
     <button type="button" className="track-card" onClick={() => void player.playQueue(queue, index)} onContextMenu={(e) => openMenu(e, trackMenuItems(track))}>
       <span className="track-card-art">
@@ -14,7 +14,7 @@ export default function TrackCard({ track, queue, index, rank }: { track: Track;
         <span className="track-card-play"><IconPlay size={18} /></span>
       </span>
       <span className="track-card-title">{track.title}</span>
-      <span className="track-card-artist">{artistLine(track.artists)}</span>
+      <span className="track-card-artist">{sub ?? artistLine(track.artists)}</span>
     </button>
   );
 }

@@ -1,3 +1,4 @@
+import { useShallow } from "zustand/react/shallow";
 import { player } from "@/player/engine";
 import { currentTrack, usePlayer } from "@/player/store";
 import { useEffects } from "@/player/effects";
@@ -8,7 +9,7 @@ import SoundPanel from "./SoundPanel";
 import VolumePanel from "./VolumePanel";
 
 export function Progress({ big = false }: { big?: boolean }) {
-  const { positionMs, durationMs } = usePlayer();
+  const { positionMs, durationMs } = usePlayer(useShallow((s) => ({ positionMs: s.positionMs, durationMs: s.durationMs })));
   const track = usePlayer((s) => currentTrack(s));
   const progress = durationMs > 0 ? Math.min(1, positionMs / durationMs) : 0;
   return (
@@ -34,7 +35,7 @@ export function Progress({ big = false }: { big?: boolean }) {
 }
 
 export function Transport({ big = false }: { big?: boolean }) {
-  const { status, shuffle, repeat } = usePlayer();
+  const { status, shuffle, repeat } = usePlayer(useShallow((s) => ({ status: s.status, shuffle: s.shuffle, repeat: s.repeat })));
   const track = usePlayer((s) => currentTrack(s));
   const playing = status === "playing";
   return (
@@ -62,7 +63,7 @@ export function Transport({ big = false }: { big?: boolean }) {
 export function Tools() {
   const fx = useEffects();
   const tuned = fx.speed !== 1 || (!fx.linked && fx.pitch !== 0) || fx.reverb;
-  const { volume, muted } = usePlayer();
+  const { volume, muted } = usePlayer(useShallow((s) => ({ volume: s.volume, muted: s.muted })));
   return (
     <div className="tools">
       <Popover label="Звук: скорость, тон, реверберация" icon={<IconSliders size={19} />} width={330} active={tuned}>

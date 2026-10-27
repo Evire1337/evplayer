@@ -166,6 +166,16 @@ export class BackdropRenderer {
     cancelAnimationFrame(this.raf);
   }
 
+  /** draw one frame and stay still (animations off, or the cover changed while off) */
+  still(): void {
+    if (this.running) this.stop();
+    this.running = true;
+    this.raf = requestAnimationFrame((t) => {
+      this.frame(t);
+      this.stop();
+    });
+  }
+
   private onVisibility = () => {
     if (document.hidden) this.stop();
     else this.start();

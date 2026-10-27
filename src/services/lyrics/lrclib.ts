@@ -63,6 +63,12 @@ export async function findLyrics(track: Pick<Track, "title" | "artists" | "durat
     if (res?.ok) candidates.push(...((await res.json()) as Record[]));
     if (candidates.some((c) => c.syncedLyrics)) break;
   }
+  if (!candidates.some((c) => c.syncedLyrics)) {
+    // looser: one free-text query catches different spellings of the artist
+    const r = readings(track)[readings(track).length - 1];
+    const res = await fetch(`${API}/search?${new URLSearchParams({ q: `${r.artist} ${normalizeTitle(r.title)}` })}`, { signal }).catch(() => null);
+    if (res?.ok) candidates.push(...((await res.json()) as Record[]));
+  }
   let best: { record: Record; title: string } | null = null;
   let bestScore = 0;
   for (const r of readings(track)) {

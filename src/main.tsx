@@ -6,6 +6,12 @@ import "@fontsource/onest/600.css";
 import "@fontsource/onest/800.css";
 import "./styles/app.css";
 import App from "./App";
+import { startBridge } from "./app/bridge";
+import { startShortcuts } from "./app/shortcuts";
+import "./app/visibility";
+
+startBridge();
+startShortcuts();
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

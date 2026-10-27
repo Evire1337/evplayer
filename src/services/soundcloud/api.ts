@@ -1,4 +1,5 @@
 import type { ArtistSummary, Track } from "@/types";
+import { useSettings } from "@/settings/store";
 import { mapScTrack, mapScUser, rankTranscodings, trackAuthorization, transcodingsOf } from "./mappers";
 
 const API = "https://api-v2.soundcloud.com";
@@ -6,6 +7,9 @@ const API = "https://api-v2.soundcloud.com";
 let clientId: string | null = null;
 
 async function getClientId(force = false): Promise<string> {
+  // a client id of your own registered SoundCloud app, if one is set in the settings
+  const own = useSettings.getState().soundcloudClientId.trim();
+  if (own) return own;
   if (clientId && !force) return clientId;
   const bridge = window.evplayer;
   if (!bridge) throw new Error("SoundCloud works in the desktop app only");
@@ -75,4 +79,62 @@ export async function resolveSoundCloudStream(trackId: string, signal?: AbortSig
     }
   }
   throw lastError instanceof Error ? lastError : new Error("SoundCloud не отдал поток");
+}
+
+/** songs SoundCloud considers similar: used for autoplay when the queue runs out */
+export async function soundCloudRelated(trackId: string, signal?: AbortSignal): Promise<Track[]> {
+  const id = trackId.replace(/^sc:/, "");
+  const body = await scGet<Collection>(`/tracks/${id}/related`, { limit: "25" }, signal);
+  return (body.collection ?? []).flatMap((t) => mapScTrack(t) ?? []);
+}
+
+export async function soundCloudUser(userId: string, signal?: AbortSignal): Promise<{ artist: ArtistSummary | null; tracks: Track[]; popular: Track[] }> {
+  const id = userId.replace(/^scu?:/, "");
+  const [user, tracks, popular] = await Promise.all([
+    scGet<unknown>(`/users/${id}`, {}, signal),
+    scGet<Collection>(`/users/${id}/tracks`, { limit: "50" }, signal),
+    scGet<Collection>(`/users/${id}/toptracks`, { limit: "10" }, signal).catch(() => ({ collection: [] })),
+  ]);
+  return {
+    artist: mapScUser(user),
+    tracks: (tracks.collection ?? []).flatMap((t) => mapScTrack(t) ?? []),
+    popular: (popular.collection ?? []).flatMap((t) => mapScTrack(t) ?? []),
+  };
+}
+
+/** full track objects for ids (playlists only carry ids for most of their tracks) */
+async function tracksByIds(ids: number[], signal?: AbortSignal): Promise<Track[]> {
+  const out: Track[] = [];
+  for (let i = 0; i < ids.length; i += 50) {
+    const chunk = ids.slice(i, i + 50);
+    const body = await scGet<unknown[]>("/tracks", { ids: chunk.join(",") }, signal);
+    const byId = new Map((Array.isArray(body) ? body : []).flatMap((t) => {
+      const track = mapScTrack(t);
+      return track ? [[track.id, track] as const] : [];
+    }));
+    for (const id of chunk) {
+      const track = byId.get(`sc:${id}`);
+      if (track) out.push(track);
+    }
+  }
+  return out;
+}
+
+/** a soundcloud.com link: a track, a playlist/album or a profile */
+export async function resolveSoundCloudUrl(url: string, signal?: AbortSignal): Promise<{ title: string; tracks: Track[] }> {
+  const body = await scGet<Record<string, unknown>>("/resolve", { url }, signal);
+  if (body.kind === "track") {
+    const track = mapScTrack(body);
+    return { title: track?.title ?? "SoundCloud", tracks: track ? [track] : [] };
+  }
+  if (body.kind === "playlist" || body.kind === "system-playlist") {
+    const raw = Array.isArray(body.tracks) ? (body.tracks as Array<Record<string, unknown>>) : [];
+    const ids = raw.map((t) => Number(t.id)).filter(Number.isFinite);
+    return { title: String(body.title ?? "SoundCloud"), tracks: await tracksByIds(ids, signal) };
+  }
+  if (body.kind === "user") {
+    const user = await soundCloudUser(String(body.id), signal);
+    return { title: user.artist?.name ?? "SoundCloud", tracks: user.tracks };
+  }
+  throw new Error("Ссылка SoundCloud не похожа на трек или плейлист");
 }

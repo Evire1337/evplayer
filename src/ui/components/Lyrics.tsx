@@ -8,11 +8,12 @@ import { useLyrics } from "../useLyrics";
 // lines light up as they are sung; the current one is kept in the middle; a click jumps there
 export default function Lyrics({ track }: { track: Track | undefined }) {
   const lyrics = useLyrics(track);
-  const position = usePlayer((s) => s.positionMs);
   const boxRef = useRef<HTMLDivElement>(null);
   const synced = lyrics.status === "ready" && lyrics.synced;
+  const lines = lyrics.status === "ready" ? lyrics.lines : null;
+  // only the line number is watched, so the text re-renders once per line, not on every tick;
   // a quarter second early feels right: you see the line as the singer starts it
-  const active = synced ? activeLineIndex(lyrics.lines, position + 250) : -1;
+  const active = usePlayer((s) => (synced && lines ? activeLineIndex(lines, s.positionMs + 250) : -1));
 
   useEffect(() => {
     const box = boxRef.current;

@@ -1,9 +1,10 @@
+import { useShallow } from "zustand/react/shallow";
 import { player } from "@/player/engine";
 import { usePlayer } from "@/player/store";
 import { IconMute, IconVolume } from "./Icons";
 
 export default function VolumePanel() {
-  const { volume, muted } = usePlayer();
+  const { volume, muted } = usePlayer(useShallow((s) => ({ volume: s.volume, muted: s.muted })));
   const value = muted ? 0 : Math.round(volume * 100);
   return (
     <div className="volume-panel">

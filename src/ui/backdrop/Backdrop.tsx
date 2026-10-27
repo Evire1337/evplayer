@@ -1,15 +1,18 @@
 import { useEffect, useRef } from "react";
 import { BackdropRenderer } from "./BackdropRenderer";
+import { useVisible } from "@/app/visibility";
+import { useSettings } from "@/settings/store";
 
 export default function Backdrop({ image, playing }: { image?: string; playing: boolean }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rendererRef = useRef<BackdropRenderer | null>(null);
+  const visible = useVisible((s) => s.visible);
+  const animated = useSettings((s) => s.animatedBackdrop);
 
   useEffect(() => {
     if (!canvasRef.current) return;
     try {
       rendererRef.current = new BackdropRenderer(canvasRef.current);
-      rendererRef.current.start();
     } catch {
       rendererRef.current = null; // no WebGL: the CSS gradient behind stays visible
     }
@@ -20,8 +23,24 @@ export default function Backdrop({ image, playing }: { image?: string; playing: 
   }, []);
 
   useEffect(() => {
-    rendererRef.current?.setImage(image ?? null);
-  }, [image]);
+    const r = rendererRef.current;
+    if (!r) return;
+    if (!visible) r.stop();
+    else if (animated) r.start();
+    else r.still();
+  }, [visible, animated]);
+
+  useEffect(() => {
+    const r = rendererRef.current;
+    if (!r) return;
+    r.setImage(image ?? null);
+    if (!animated && visible) {
+      // let the new cover fade in, then hold still again
+      r.start();
+      const timer = setTimeout(() => r.still(), 1600);
+      return () => clearTimeout(timer);
+    }
+  }, [image, animated, visible]);
 
   useEffect(() => {
     const r = rendererRef.current;
