@@ -2,6 +2,7 @@ import Hls from "hls.js";
 import type { Track } from "@/types";
 import { currentTrack, nextIndex, prevIndex, shuffledQueue, usePlayer } from "./store";
 import { NoCopyError, resolveStream } from "./streams";
+import { mediaStream } from "@/platform/net";
 import { createAudioGraph, type AudioGraph } from "@/audio/graph";
 import { setLevelingTrack } from "@/equalizer/eqAudio";
 import { effectsForNextTrack, useEffects, type EffectsState } from "./effects";
@@ -394,7 +395,8 @@ class PlayerEngine {
       hls.attachMedia(deck.audio);
       hls.on(Hls.Events.ERROR, (_event, data) => data.fatal && onFatal());
     } else {
-      deck.audio.src = stream.url;
+      // service addresses go through the app's proxy so the sound can pass the equalizer
+      deck.audio.src = mediaStream(stream.url);
       deck.audio.load();
     }
   }
@@ -530,7 +532,7 @@ class PlayerEngine {
     navigator.mediaSession.metadata = new MediaMetadata({
       title: track.title,
       artist: track.artists.map((a) => a.name).join(", "),
-      artwork: track.artwork && !track.artwork.startsWith("evplayer-media:") ? [{ src: track.artwork, sizes: "500x500" }] : [],
+      artwork: track.artwork && /^https:/.test(track.artwork) ? [{ src: track.artwork, sizes: "500x500" }] : [],
     });
   }
 

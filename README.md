@@ -17,7 +17,7 @@
 [![Check](https://img.shields.io/github/actions/workflow/status/Evire1337/evplayer/check.yml?branch=desktop&style=for-the-badge&label=сборка&labelColor=06201d)](https://github.com/Evire1337/evplayer/actions)
 
 ![Windows](https://img.shields.io/badge/Windows_10_%7C_11-0078D4?style=flat-square&logo=windows&logoColor=white)
-![Electron](https://img.shields.io/badge/Electron-47848F?style=flat-square&logo=electron&logoColor=white)
+![Tauri](https://img.shields.io/badge/Tauri_2-24C8DB?style=flat-square&logo=tauri&logoColor=white) ![Rust](https://img.shields.io/badge/Rust-000000?style=flat-square&logo=rust&logoColor=white)
 ![React](https://img.shields.io/badge/React_19-149ECA?style=flat-square&logo=react&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white)
 ![Vite](https://img.shields.io/badge/Vite-646CFF?style=flat-square&logo=vite&logoColor=white)
@@ -159,47 +159,51 @@ EvPlayer сам проверяет новые версии при запуске
 
 ## Сборка из исходников
 
-Нужны [Node.js 22+](https://nodejs.org) и [pnpm](https://pnpm.io) (`npm i -g pnpm`).
+Нужны [Node.js 22+](https://nodejs.org), [pnpm](https://pnpm.io) (`npm i -g pnpm`) и [Rust](https://rustup.rs). На Windows ещё «Средства сборки C++» из [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) (галочка «Разработка классических приложений на C++»).
 
 ```powershell
-git clone -b desktop https://github.com/Evire1337/evplayer.git
+git clone -b tauri https://github.com/Evire1337/evplayer.git
 cd evplayer
 pnpm install
-pnpm dev          # запуск с горячей перезагрузкой
+pnpm dev          # запуск с горячей перезагрузкой (первый раз Rust собирается несколько минут)
 ```
 
 | Команда | Что делает |
 |---|---|
 | `pnpm dev` | приложение в режиме разработки: правки в `src/` применяются сразу |
-| `pnpm test` | тесты (Vitest) |
+| `pnpm test` | тесты интерфейса (Vitest) |
+| `cargo test` в `src-tauri` | тесты части на Rust |
 | `pnpm typecheck` | проверка типов |
-| `pnpm build` | сборка без установщика |
-| `pnpm dist:win` | установщик в папке `release/` |
+| `pnpm tauri build` | установщик в `src-tauri/target/release/bundle/nsis/` |
 
-**Отладка.** В любом режиме `F12` или `Ctrl+Shift+I` открывает инструменты разработчика (консоль, сеть, производительность). Сообщения главного процесса (трей, файлы, Discord, обновления) печатаются в терминал, где запущен `pnpm dev`.
+**Отладка.** В режиме `pnpm dev` правый клик → «Inspect» (или `Ctrl+Shift+I`) открывает инструменты разработчика. Сообщения Rust-части печатаются в терминал, где запущен `pnpm dev`.
 
 ### Как выпустить новую версию
 
 1. Поменяйте `version` в `package.json` и закоммитьте.
-2. `git tag v0.3.0` → `git push origin v0.3.0`
-3. GitHub Actions соберёт установщик и опубликует релиз — у всех пользователей обновление придёт само.
+2. `git tag v0.4.0` → `git push origin v0.4.0`
+3. GitHub Actions соберёт установщик, подпишет обновление и опубликует релиз с `latest.json` — у всех пользователей обновление придёт само.
+
+Для подписи обновлений в настройках репозитория (Settings → Secrets and variables → Actions) должен быть секрет `TAURI_SIGNING_PRIVATE_KEY` — закрытый ключ, пара к `pubkey` в `src-tauri/tauri.conf.json`.
 
 ## Стек
 
 | Часть | Технологии |
 |---|---|
-| Оболочка | Electron, electron-builder, electron-updater |
+| Оболочка | Tauri 2 (системный WebView2), Rust: трей, клавиши, мини-плеер, Discord, файлы, обновления |
 | Интерфейс | React 19, TypeScript, Vite |
 | Состояние | Zustand |
 | Звук | Web Audio API: свой AudioWorklet для тона, свёрточная реверберация, BiquadFilter-эквалайзер, лимитер |
 | Потоки | hls.js; песни с YouTube играют из копии на SoundCloud |
-| Файлы | music-metadata, свой протокол `evplayer-media://` с поддержкой перемотки |
+| Сеть | свой прокси на Rust для запросов к сервисам и маленький медиасервер на 127.0.0.1 для звука |
+| Файлы | lofty (теги), notify (слежение за папками), отдача с поддержкой перемотки |
 | Фон | свой WebGL-шейдер из цветов обложки |
 | Тесты и CI | Vitest, GitHub Actions |
 
 ## Ветки
 
-- `desktop` — приложение для Windows (этот код)
+- `tauri` — приложение для Windows на Tauri (этот код)
+- `desktop` — прежняя версия на Electron
 - `mobile` — будущая версия для телефонов
 
 ## Звёзды

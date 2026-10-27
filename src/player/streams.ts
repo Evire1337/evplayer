@@ -1,6 +1,7 @@
 import type { Track } from "@/types";
 import { resolveSoundCloudStream, searchSoundCloud } from "@/services/soundcloud/api";
 import { bestMatch, searchQueryFor } from "./match";
+import { mediaUrl } from "@/files/localFiles";
 
 export interface PlayableStream {
   url: string;
@@ -33,7 +34,7 @@ export async function resolveStream(track: Track, signal?: AbortSignal): Promise
     case "soundcloud":
       return resolveSoundCloudStream(track.id, signal);
     case "local":
-      return { url: `evplayer-media://track/${encodeURIComponent(track.id)}`, hls: false };
+      return { url: mediaUrl("track", track.id), hls: false };
     case "youtube": {
       // YouTube songs play from their copy on SoundCloud; there is no other way to get the sound
       const match = await soundCloudMatch(track, signal);

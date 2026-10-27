@@ -1,0 +1,31 @@
+/* shared by the main window and the mini player */
+:root {
+  --ink: #eef7f4;
+  --ink-2: rgba(238, 247, 244, 0.68);
+  --ink-3: rgba(238, 247, 244, 0.44);
+  --glass: rgba(5, 16, 18, 0.36);
+  --glass-strong: rgba(5, 16, 18, 0.62);
+  --edge: rgba(238, 247, 244, 0.12);
+  --hover: rgba(238, 247, 244, 0.08);
+  --active: rgba(238, 247, 244, 0.16);
+  --accent: #6ff0c4;
+  --ground: #06201d;
+  --danger: #ff9b9b;
+  --font: "Onest", "Segoe UI", system-ui, sans-serif;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; margin: 0; }
+body {
+  background: var(--ground);
+  color: var(--ink);
+  font-family: var(--font);
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  overflow: hidden;
+}
+button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; padding: 0; }
+button:disabled { cursor: default; opacity: 0.4; }
+button:focus-visible, input:focus-visible, a:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; border-radius: 12px; }

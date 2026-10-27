@@ -4,7 +4,7 @@ import { currentTrack, usePlayer } from "@/player/store";
 import { artistLine, formatTime } from "@/ui/format";
 import { Segmented } from "@/ui/components/Controls";
 import { IconChat, IconMusic, IconUser } from "@/ui/components/Icons";
-import type { DiscordUser } from "../../../electron/discord";
+import type { DiscordUser } from "@/platform/api";
 import { Card, Pill, Row, SwitchRow, TabHeader } from "./parts";
 
 type Status = "off" | "connecting" | "connected" | "no-discord" | "error";

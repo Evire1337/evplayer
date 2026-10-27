@@ -8,7 +8,7 @@ import { openMenu } from "@/ui/menu";
 import { trackMenuItems } from "@/library/trackMenu";
 
 export default function FilesPage() {
-  const { records, folders, loaded, refresh, pick, drop, unwatch, remove } = useLocalFiles();
+  const { records, folders, loaded, refresh, pick, unwatch, remove } = useLocalFiles();
   const [filter, setFilter] = useState("");
   const [dragging, setDragging] = useState(false);
   const available = Boolean(window.evplayer?.localFiles);
@@ -16,6 +16,7 @@ export default function FilesPage() {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+  useEffect(() => window.evplayer?.localFiles.onDragging(setDragging), []);
 
   const tracks = useMemo(() => records.map(recordToTrack), [records]);
   const visible = useMemo(() => {
@@ -27,21 +28,7 @@ export default function FilesPage() {
   const unsupported = records.filter((r) => r.unsupported).length;
 
   return (
-    <div
-      className={`page files-page${dragging ? " is-dragging" : ""}`}
-      onDragOver={(e) => {
-        if (!e.dataTransfer.types.includes("Files")) return;
-        e.preventDefault();
-        setDragging(true);
-      }}
-      onDragLeave={(e) => e.currentTarget === e.target && setDragging(false)}
-      onDrop={(e) => {
-        if (!e.dataTransfer.files.length) return;
-        e.preventDefault();
-        setDragging(false);
-        void drop([...e.dataTransfer.files]);
-      }}
-    >
+    <div className={`page files-page${dragging ? " is-dragging" : ""}`}>
       <header className="pl-hero">
         <span className="pl-cover files-cover"><IconMusic size={64} /></span>
         <div className="pl-hero-text">

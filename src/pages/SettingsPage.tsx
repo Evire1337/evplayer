@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import type { UpdateState } from "../../electron/updates";
+import type { UpdateState } from "@/platform/api";
 import { useSettings } from "@/settings/store";
 import { saveBackupFile, readBackup, restoreBackup, makeBackup } from "@/settings/backup";
 import { Segmented } from "@/ui/components/Controls";

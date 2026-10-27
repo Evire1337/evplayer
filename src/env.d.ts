@@ -1,4 +1,4 @@
-import type { EvPlayerApi } from "../electron/preload";
+import type { EvPlayerApi } from "./platform/api";
 
 declare global {
   interface Window {

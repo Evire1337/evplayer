@@ -1,36 +1,6 @@
 /* layout (direction C): a live cover backdrop fills the window; a floating icon rail sits on
    the left; pages scroll in the middle; "Now playing" is its own stage with the cover and
    controls on the left, the lyrics in the middle and the queue on the right */
-:root {
-  --ink: #eef7f4;
-  --ink-2: rgba(238, 247, 244, 0.68);
-  --ink-3: rgba(238, 247, 244, 0.44);
-  --glass: rgba(5, 16, 18, 0.36);
-  --glass-strong: rgba(5, 16, 18, 0.62);
-  --edge: rgba(238, 247, 244, 0.12);
-  --hover: rgba(238, 247, 244, 0.08);
-  --active: rgba(238, 247, 244, 0.16);
-  --accent: #6ff0c4;
-  --ground: #06201d;
-  --danger: #ff9b9b;
-  --font: "Onest", "Segoe UI", system-ui, sans-serif;
-  color-scheme: dark;
-}
-
-* { box-sizing: border-box; }
-html, body, #root { height: 100%; margin: 0; }
-body {
-  background: var(--ground);
-  color: var(--ink);
-  font-family: var(--font);
-  font-size: 14px;
-  -webkit-font-smoothing: antialiased;
-  user-select: none;
-  overflow: hidden;
-}
-button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; padding: 0; }
-button:disabled { cursor: default; opacity: 0.4; }
-button:focus-visible, input:focus-visible, a:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; border-radius: 12px; }
 img { display: block; max-width: 100%; }
 .muted { color: var(--ink-3); margin: 0; line-height: 1.5; }
 .small { font-size: 12.5px; }
@@ -46,7 +16,11 @@ img { display: block; max-width: 100%; }
 
 /* ---------- shell ---------- */
 .app { position: relative; height: 100%; }
-.titlebar { position: fixed; top: 0; left: 0; right: 0; height: 40px; -webkit-app-region: drag; z-index: 3; }
+.titlebar { position: fixed; top: 0; left: 0; right: 0; height: 40px; z-index: 3; }
+.win-controls { position: absolute; top: 0; right: 0; display: flex; height: 36px; }
+.win-btn { width: 46px; height: 100%; display: flex; align-items: center; justify-content: center; color: var(--ink-2); background: transparent; border: 0; border-radius: 0; transition: background 120ms ease, color 120ms ease; }
+.win-btn:hover { background: rgba(255, 255, 255, 0.08); color: var(--ink); }
+.win-btn.is-close:hover { background: #c42b1c; color: #fff; }
 .backdrop { position: fixed; inset: 0; z-index: 0; background: radial-gradient(circle at 25% 30%, #1f8a73, var(--ground) 65%); }
 .backdrop-canvas { width: 100%; height: 100%; display: block; }
 .backdrop-shade { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(3, 10, 12, 0.15), rgba(3, 10, 12, 0.45)); }
@@ -642,35 +616,6 @@ html[data-hidden] *, html[data-hidden] *::before, html[data-hidden] *::after { a
 .hero-cover { width: 200px; }
 .link-btn.strong { font-weight: 700; color: var(--ink); }
 
-/* ---------- mini player window: one slim bar ---------- */
-html.is-overlay, html.is-overlay body { background: transparent; }
-/* the card fills the whole window: a transparent margin or a shadow would be cut off at the
-   window edge and show up as a dark square on Windows */
-.overlay { height: 100%; padding: 0; }
-.overlay-card {
-  position: relative; height: 100%; display: flex; align-items: center; gap: 10px; padding: 0 8px 0 7px; border-radius: 16px; overflow: hidden;
-  background: rgba(8, 18, 20, 0.94); border: 1px solid rgba(238, 247, 244, 0.12);
-}
-/* only the title area moves the window: buttons stay outside every drag region, so Windows never swallows their clicks */
-.overlay-text { -webkit-app-region: drag; cursor: grab; align-self: stretch; justify-content: center; }
-.overlay-art { position: relative; width: 38px; height: 38px; border-radius: 10px; overflow: hidden; flex-shrink: 0; background: rgba(238, 247, 244, 0.08); }
-.overlay-art img { width: 100%; height: 100%; object-fit: cover; }
-.overlay-art-hover { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.5); opacity: 0; transition: opacity 120ms ease; }
-.overlay-art:hover .overlay-art-hover { opacity: 1; }
-.overlay-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
-.overlay-title { font-weight: 700; font-size: 13px; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.overlay-sub { font-size: 11.5px; line-height: 1.2; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.overlay-controls { display: flex; align-items: center; gap: 1px; flex-shrink: 0; }
-.overlay-btn { width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: var(--ink-2); }
-.overlay-btn:hover:not(:disabled) { background: var(--hover); color: var(--ink); }
-.overlay-btn.is-liked { color: var(--accent); }
-.overlay-btn.is-main { width: 32px; height: 32px; margin: 0 2px; background: var(--ink); color: var(--ground); }
-.overlay-btn.is-main:hover:not(:disabled) { background: #fff; color: var(--ground); }
-.overlay-progress { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: rgba(238, 247, 244, 0.08); cursor: pointer; }
-.overlay-progress:hover { height: 5px; }
-.overlay-progress span { display: block; height: 100%; background: var(--accent); }
-
-
 /* ---------- settings ---------- */
 .settings-layout { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 22px; align-items: start; }
 .settings-tabs { position: sticky; top: 0; display: flex; flex-direction: column; gap: 14px; padding: 12px; border-radius: 24px; }
@@ -894,3 +839,6 @@ html.is-overlay, html.is-overlay body { background: transparent; }
 .volume-panel .vslider::-webkit-slider-thumb { width: 36px; }
 .volume-panel .volume-value { position: absolute; top: 9px; left: 0; right: 0; text-align: center; font-size: 11px; font-weight: 700; color: var(--ink-2); pointer-events: none; }
 .volume-panel .volume-value.is-on-fill { color: var(--ground); }
+
+/* dragging a row to a new place */
+html.is-reordering, html.is-reordering * { cursor: grabbing !important; }

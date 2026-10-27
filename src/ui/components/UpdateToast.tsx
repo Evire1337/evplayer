@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { UpdateState } from "../../../electron/updates";
+import type { UpdateState } from "@/platform/api";
 
 // "A new version is ready" with a restart button; nothing shows until there is one
 export default function UpdateToast() {

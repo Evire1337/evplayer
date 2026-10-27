@@ -26,6 +26,25 @@ import TrackStatsDialog from "@/stats/TrackStatsDialog";
 import TagEditorDialog from "@/files/tagEditor";
 import { useSettings } from "@/settings/store";
 import { IconBack } from "@/ui/components/Icons";
+import WindowControls from "@/ui/components/WindowControls";
+import { useVisible } from "@/app/visibility";
+
+/** after this long out of sight the window lets go of its pages */
+const SLEEP_AFTER_MS = 20_000;
+
+function useAsleep(): boolean {
+  const visible = useVisible((s) => s.visible);
+  const [asleep, setAsleep] = useState(false);
+  useEffect(() => {
+    if (visible) {
+      setAsleep(false);
+      return;
+    }
+    const timer = setTimeout(() => setAsleep(true), SLEEP_AFTER_MS);
+    return () => clearTimeout(timer);
+  }, [visible]);
+  return asleep;
+}
 
 export default function App() {
   const page = useNavigation((s) => s.page);
@@ -39,15 +58,20 @@ export default function App() {
   const overlayLyrics = useSettings((s) => s.overlayEnabled && s.overlayShowLyrics);
   const [overlayOpen, setOverlayOpen] = useState(false);
   useEffect(() => window.evplayer?.overlay.onVisible(setOverlayOpen), []);
+  const asleep = useAsleep();
+  // hidden in the tray or minimized for a while: the pages, pictures and the backdrop are
+  // taken off the page so their memory can go back to the system; the player keeps playing
+  if (asleep) return overlayLyrics && overlayOpen ? <LyricsTracker /> : null;
   return (
     <div className={`app page-${page} lyrics-${lyricsSize}${lyricsBlur ? "" : " no-lyrics-blur"}${glow ? "" : " no-glow"}`}>
       <Backdrop image={artwork} playing={playing} />
-      <div className="titlebar">
+      <div className="titlebar" data-tauri-drag-region>
         {canGoBack && page !== "now" && (
           <button type="button" className="back-btn" aria-label="Назад" onClick={goBack}>
             <IconBack size={18} />
           </button>
         )}
+        <WindowControls />
       </div>
       <Rail />
       <main className="content">

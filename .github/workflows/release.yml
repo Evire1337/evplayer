@@ -1,7 +1,8 @@
 name: Release
 
-# Push a tag like v0.2.0 (matching "version" in package.json) and this builds the Windows
-# installer and publishes it as a GitHub release. Installed apps pick it up automatically.
+# Push a tag like v0.4.0 (matching "version" in package.json) and this builds the Windows
+# installer and publishes it as a GitHub release, with latest.json for the updater.
+# Needs the repository secret TAURI_SIGNING_PRIVATE_KEY (the update signing key).
 on:
   push:
     tags: ["v*"]
@@ -21,6 +22,10 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
       - run: pnpm install --frozen-lockfile
       - run: pnpm test
       - name: Check the tag matches package.json
@@ -30,26 +35,26 @@ jobs:
           if [ "v$VERSION" != "$GITHUB_REF_NAME" ]; then
             echo "Tag $GITHUB_REF_NAME does not match package.json version $VERSION"; exit 1
           fi
-      # One release per tag: electron-builder uploads its files in parallel, and when no
-      # release exists yet each upload may create its own, leaving the installer in one
-      # release and the update files in another. So the draft is made first, filled, and
-      # only then published.
-      - name: Create the draft release
-        shell: bash
-        run: gh release create "$GITHUB_REF_NAME" --draft --title "${GITHUB_REF_NAME#v}" --notes "EvPlayer ${GITHUB_REF_NAME#v}. Установщик для Windows — EvPlayer-Setup-${GITHUB_REF_NAME#v}.exe. Уже установленные копии обновятся сами."
+      # built into a draft first and published only when every file is there, so a release
+      # is never seen half-uploaded
+      - uses: tauri-apps/tauri-action@v0
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - run: pnpm run release:win
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: ${{ github.ref_name }}
+          releaseBody: "Установщик для Windows — файл EvPlayer_*_x64-setup.exe ниже. Уже установленные копии обновятся сами."
+          releaseDraft: true
+          includeUpdaterJson: true
       - name: Check every file landed in the release, then publish it
         shell: bash
         run: |
           FILES=$(gh release view "$GITHUB_REF_NAME" --json assets -q '.assets[].name')
           echo "$FILES"
-          for f in "EvPlayer-Setup-${GITHUB_REF_NAME#v}.exe" "latest.yml"; do
-            echo "$FILES" | grep -qx "$f" || { echo "missing $f"; exit 1; }
-          done
+          echo "$FILES" | grep -q 'setup\.exe$' || { echo "missing the installer"; exit 1; }
+          echo "$FILES" | grep -qx 'latest.json' || { echo "missing latest.json"; exit 1; }
           gh release edit "$GITHUB_REF_NAME" --draft=false --latest
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

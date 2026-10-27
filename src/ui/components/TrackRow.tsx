@@ -1,3 +1,4 @@
+import type React from "react";
 import Artwork from "@/ui/components/Artwork";
 import type { Track } from "@/types";
 import { player } from "@/player/engine";
@@ -17,11 +18,8 @@ export interface TrackRowProps {
   addedAt?: string;
   menu?: TrackMenuContext;
   number?: number;
-  /** drag to reorder */
-  draggable?: boolean;
-  onDragStart?: () => void;
-  onDragOverRow?: (before: boolean) => void;
-  onDrop?: () => void;
+  /** drag to reorder: the row's handlers from useReorder */
+  reorder?: { "data-reorder": number; onPointerDown: (e: React.PointerEvent) => void };
   dropHint?: "before" | "after" | null;
   /** a small SC / YT / file badge next to the artist */
   showSource?: boolean;
@@ -31,7 +29,8 @@ export interface TrackRowProps {
 
 const SOURCE_LABEL = { soundcloud: "SC", youtube: "YT", local: "Файл" } as const;
 
-export default function TrackRow({ track, queue, index, addedAt, menu, number, draggable, onDragStart, onDragOverRow, onDrop, dropHint, showSource, note }: TrackRowProps) {
+export default function TrackRow({ track, queue, index, addedAt, menu, number, reorder, dropHint, showSource, note }: TrackRowProps) {
+  const draggable = Boolean(reorder);
   const isCurrent = usePlayer((s) => currentTrack(s)?.id === track.id);
   const playing = usePlayer((s) => s.status === "playing");
   const liked = useIsLiked(track.id);
@@ -55,21 +54,7 @@ export default function TrackRow({ track, queue, index, addedAt, menu, number, d
         if (e.key === "Enter") isCurrent ? player.toggle() : void player.playQueue(queue, index);
       }}
       onContextMenu={(e) => openMenu(e, trackMenuItems(track, menu))}
-      draggable={draggable}
-      onDragStart={(e) => {
-        e.dataTransfer.effectAllowed = "move";
-        onDragStart?.();
-      }}
-      onDragOver={(e) => {
-        if (!onDragOverRow) return;
-        e.preventDefault();
-        const r = e.currentTarget.getBoundingClientRect();
-        onDragOverRow(e.clientY < r.top + r.height / 2);
-      }}
-      onDrop={(e) => {
-        e.preventDefault();
-        onDrop?.();
-      }}
+      {...reorder}
     >
       <span className="track-lead">
         {draggable ? (

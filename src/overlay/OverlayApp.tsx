@@ -78,9 +78,10 @@ export default function OverlayApp() {
           <Artwork src={track?.artwork} lazy={false} size="row" />
           <span className="overlay-art-hover"><IconExpand size={13} /></span>
         </button>
-        <div className="overlay-text">
-          <span className="overlay-title">{track?.title ?? "Ничего не играет"}</span>
-          <span className="overlay-sub">{state?.line ?? track?.artist ?? "Включите трек в EvPlayer"}</span>
+        {/* only the title area moves the window: buttons stay outside it, so their clicks always land */}
+        <div className="overlay-text" data-tauri-drag-region>
+          <span className="overlay-title" data-tauri-drag-region>{track?.title ?? "Ничего не играет"}</span>
+          <span className="overlay-sub" data-tauri-drag-region>{state?.line ?? track?.artist ?? "Включите трек в EvPlayer"}</span>
         </div>
         <div className="overlay-controls">
           <button type="button" className={`overlay-btn${state?.liked ? " is-liked" : ""}`} aria-label="Нравится" onClick={() => cmd("like")} disabled={!track}>

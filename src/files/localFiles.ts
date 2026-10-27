@@ -1,9 +1,14 @@
 import { create } from "zustand";
 import type { Track } from "@/types";
-import type { LocalTrackRecord } from "../../electron/local-files";
+import type { LocalTrackRecord } from "@/platform/api";
 import { toast } from "@/ui/toasts";
 
 // Your own audio files. The main process keeps the index; this mirrors it for the page.
+
+/** where a local song or its cover is served from by the desktop side */
+export function mediaUrl(kind: "track" | "cover", id: string): string {
+  return window.evplayer?.localFiles.mediaUrl(kind, id) ?? `evmedia://localhost/${encodeURIComponent(`${kind}/${id}`)}`;
+}
 
 export function recordToTrack(r: LocalTrackRecord): Track {
   return {
@@ -12,7 +17,7 @@ export function recordToTrack(r: LocalTrackRecord): Track {
     title: r.title,
     artists: (r.artists.length ? r.artists : ["Неизвестный исполнитель"]).map((name) => ({ id: `local-artist:${name.toLowerCase()}`, name })),
     durationMs: r.durationMs,
-    artwork: r.hasCover ? `evplayer-media://cover/${encodeURIComponent(r.id)}?v=${encodeURIComponent(r.addedAt)}${r.edited ? "e" : ""}` : undefined,
+    artwork: r.hasCover ? `${mediaUrl("cover", r.id)}?v=${encodeURIComponent(r.addedAt)}${r.edited ? "e" : ""}` : undefined,
   };
 }
 
@@ -30,7 +35,7 @@ interface LocalFilesState {
   loaded: boolean;
   refresh: () => Promise<void>;
   pick: (kind: "files" | "folder") => Promise<void>;
-  drop: (files: File[]) => Promise<void>;
+  drop: (paths: string[]) => Promise<void>;
   remove: (ids: string[]) => Promise<void>;
   unwatch: (folder: string) => Promise<void>;
 }
@@ -58,10 +63,10 @@ export const useLocalFiles = create<LocalFilesState>((set, get) => ({
     report(await api.pick(kind));
     await get().refresh();
   },
-  drop: async (files) => {
+  drop: async (paths) => {
     const api = bridge();
-    if (!api || !files.length) return;
-    report(await api.addDropped(files));
+    if (!api || !paths.length) return;
+    report(await api.addPaths(paths));
     await get().refresh();
   },
   remove: async (ids) => {
@@ -76,4 +81,6 @@ export const useLocalFiles = create<LocalFilesState>((set, get) => ({
 
 if (typeof window !== "undefined") {
   window.evplayer?.localFiles.onChanged(() => void useLocalFiles.getState().refresh());
+  // files dragged from the file manager onto any part of the window are added
+  window.evplayer?.localFiles.onDrop((paths) => void useLocalFiles.getState().drop(paths));
 }

@@ -1,0 +1,54 @@
+[package]
+name = "evplayer"
+version = "0.4.0"
+description = "Music player for SoundCloud, YouTube Music and your own files"
+authors = ["Evire1337"]
+license = "MIT"
+edition = "2021"
+rust-version = "1.80"
+
+[lib]
+name = "evplayer_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
+tauri-plugin-single-instance = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-opener = "2"
+tauri-plugin-global-shortcut = "2"
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+reqwest = { version = "0.12", default-features = false, features = ["native-tls", "cookies", "gzip", "brotli", "deflate", "json", "blocking"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "fs", "io-util", "net"] }
+lofty = "0.22"
+notify = "8"
+sha1_smol = "1"
+sha2 = "0.10"
+base64 = "0.22"
+rand = "0.8"
+regex = "1"
+url = "2"
+percent-encoding = "2"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+rusty-leveldb = "3"
+log = "0.4"
+tiny_http = "0.12"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }
+# must match the versions tauri uses (memory.rs talks to WebView2 directly)
+webview2-com = "0.39"
+windows = "0.62"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true

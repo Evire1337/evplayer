@@ -1,65 +1,27 @@
 {
   "name": "evplayer",
   "productName": "EvPlayer",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "description": "Music player for SoundCloud, YouTube Music and your own files",
   "author": "Evire1337",
   "license": "MIT",
   "private": true,
   "type": "module",
-  "main": "dist-electron/main.js",
   "scripts": {
-    "dev": "vite",
+    "dev": "tauri dev",
+    "web": "vite",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "build": "tsc --noEmit && vite build",
-    "dist:win": "pnpm build && electron-builder --win --publish never",
-    "release:win": "pnpm build && electron-builder --win --publish always"
-  },
-  "build": {
-    "appId": "io.github.evire1337.evplayer",
-    "productName": "EvPlayer",
-    "executableName": "EvPlayer",
-    "artifactName": "EvPlayer-Setup-${version}.${ext}",
-    "directories": {
-      "output": "release"
-    },
-    "files": [
-      "dist/**/*",
-      "dist-electron/**/*"
-    ],
-    "win": {
-      "target": [
-        "nsis"
-      ],
-      "icon": "build/icon.png"
-    },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
-      "perMachine": false
-    },
-    "publish": [
-      {
-        "provider": "github",
-        "owner": "Evire1337",
-        "repo": "evplayer",
-        "releaseType": "draft"
-      }
-    ]
-  },
-  "dependencies": {
-    "electron-updater": "^6.8.11",
-    "music-metadata": "^11.16.1"
+    "tauri": "tauri"
   },
   "devDependencies": {
     "@fontsource/onest": "^5.3.1",
+    "@tauri-apps/cli": "^2.12.4",
     "@types/node": "^26.6.5",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.2",
-    "electron": "^45.0.0",
-    "electron-builder": "^26.18.0",
     "fflate": "^0.8.3",
     "hls.js": "^1.7.3",
     "jsdom": "^30.1.3",
@@ -67,8 +29,10 @@
     "react-dom": "^19.3.1",
     "typescript": "^7.0.2",
     "vite": "^8.3.5",
-    "vite-plugin-electron": "^1.1.2",
     "vitest": "^5.0.5",
     "zustand": "^5.0.16"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.12.4"
   }
 }

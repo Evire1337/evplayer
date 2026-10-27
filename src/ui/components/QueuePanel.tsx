@@ -1,5 +1,5 @@
 import Artwork from "@/ui/components/Artwork";
-import { useState } from "react";
+import { useReorder } from "../useReorder";
 import { player } from "@/player/engine";
 import { usePlayer } from "@/player/store";
 import { useSettings } from "@/settings/store";
@@ -13,7 +13,8 @@ export default function QueuePanel() {
   const queue = usePlayer((s) => s.queue);
   const index = usePlayer((s) => s.index);
   const autoplay = useSettings((s) => s.autoplay);
-  const [drag, setDrag] = useState<{ from: number; over: number } | null>(null);
+  // positions here are queue positions, so a move is a move in the queue
+  const reorder = useReorder((from, to) => player.moveInQueue(from, to));
   const upcoming = queue.slice(index + 1, index + 61);
   return (
     <aside className="queue glass" aria-label="Далее в очереди">
@@ -35,23 +36,8 @@ export default function QueuePanel() {
             return (
               <li
                 key={`${t.id}-${at}`}
-                draggable
-                className={drag && drag.over === at && drag.from !== at ? (drag.from < at ? "drop-after" : "drop-before") : ""}
-                onDragStart={(e) => {
-                  e.dataTransfer.effectAllowed = "move";
-                  setDrag({ from: at, over: at });
-                }}
-                onDragOver={(e) => {
-                  if (!drag) return;
-                  e.preventDefault();
-                  if (drag.over !== at) setDrag({ ...drag, over: at });
-                }}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  if (drag) player.moveInQueue(drag.from, at);
-                  setDrag(null);
-                }}
-                onDragEnd={() => setDrag(null)}
+                className={reorder.hint(at) ? `drop-${reorder.hint(at)}` : ""}
+                {...reorder.rowProps(at)}
               >
                 <button
                   type="button"

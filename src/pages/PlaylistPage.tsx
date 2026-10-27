@@ -1,3 +1,4 @@
+import { useReorder } from "@/ui/useReorder";
 import VirtualList from "@/ui/components/VirtualList";
 import { useMemo, useState } from "react";
 import type { Track } from "@/types";
@@ -34,7 +35,6 @@ export default function PlaylistPage() {
   const likes = useLibrary((s) => s.likes);
   const playlist = useLibrary((s) => s.playlists.find((p) => p.id === id));
   const [filter, setFilter] = useState("");
-  const [drag, setDrag] = useState<{ from: number; over: number; before: boolean } | null>(null);
   const [renaming, setRenaming] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
@@ -89,14 +89,12 @@ export default function PlaylistPage() {
     }
   };
 
-  const drop = () => {
-    if (!drag) return;
-    const to = drag.over + (drag.before ? 0 : 1) - (drag.from < drag.over + (drag.before ? 0 : 1) ? 1 : 0);
-    const row = rows[drag.from];
+  const reorder = useReorder((from, to) => {
+    const row = rows[from];
+    if (!row) return;
     if (isLikes) useLibrary.getState().moveLike(row.track.id, to);
     else if (row.itemId && playlist) useLibrary.getState().moveInPlaylist(playlist.id, row.itemId, to);
-    setDrag(null);
-  };
+  });
 
   return (
     <div className="page">
@@ -179,7 +177,7 @@ export default function PlaylistPage() {
         {!canReorder && sort.key !== "custom" && <button type="button" className="reset-btn" onClick={() => useSettings.getState().set({ trackSort: { key: "custom", dir: "asc" } })}>Вернуть свой порядок</button>}
       </div>
 
-      <div className="track-list" onDragEnd={() => setDrag(null)}>
+      <div className="track-list">
         <div className="track-head">
           <button type="button" className="head-sort" onClick={() => setSort("title")}>Трек{arrow("title")}</button>
           <button type="button" className="head-sort" onClick={() => setSort("added")}>Добавлен{arrow("added")}</button>
@@ -197,11 +195,8 @@ export default function PlaylistPage() {
               index={i}
               addedAt={r.addedAt}
               menu={r.itemId && playlist ? { playlistId: playlist.id, itemId: r.itemId } : undefined}
-              draggable={canReorder}
-              onDragStart={() => setDrag({ from: i, over: i, before: true })}
-              onDragOverRow={(before) => setDrag((d) => (d ? { ...d, over: i, before } : d))}
-              onDrop={drop}
-              dropHint={drag && drag.over === i && drag.from !== i ? (drag.before ? "before" : "after") : null}
+              reorder={canReorder ? reorder.rowProps(i) : undefined}
+              dropHint={reorder.hint(i)}
             />
           )}
         />

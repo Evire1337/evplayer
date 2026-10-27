@@ -1,3 +1,4 @@
+import { proxied } from "@/platform/net";
 import { FRAGMENT, VERTEX } from "./shaders";
 
 const TEX_SIZE = 64;
@@ -122,7 +123,8 @@ export class BackdropRenderer {
     img.onload = () => {
       if (this.currentUrl === url) this.swapTo(img);
     };
-    img.src = url;
+    // the cover is read into a texture, so a service image has to come through the proxy
+    img.src = proxied(url);
   }
 
   private resize(): void {
