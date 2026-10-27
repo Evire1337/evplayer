@@ -212,8 +212,8 @@ function SpotifyCard() {
       ) : (
         <>
           <p className="muted small">
-            Войдите своим аккаунтом Spotify (Premium не нужен) — и импорт заберёт плейлисты любой длины, а ещё ваши «Любимые треки». Вход открывается в
-            браузере на spotify.com, пароль EvPlayer не видит.
+            Без Premium проще всего архив данных Spotify — он переносит все плейлисты целиком. Вход через Spotify тоже забирает плейлисты любой длины,
+            но Spotify открывает свой API только приложениям, владелец которых с Premium (войти в такое приложение можно и с бесплатным аккаунтом).
           </p>
           <div className="svc-actions">
             <button
@@ -244,9 +244,9 @@ function SpotifyCard() {
       {open && (
         <>
           <ol className="steps">
-            <li>Откройте <button type="button" className="link-btn strong" onClick={() => window.open("https://developer.spotify.com/dashboard", "_blank")}>developer.spotify.com/dashboard</button> и войдите аккаунтом Spotify.</li>
+            <li>Нужен аккаунт с Spotify Premium (ваш или друга): только им Spotify разрешает Web API. Откройте <button type="button" className="link-btn strong" onClick={() => window.open("https://developer.spotify.com/dashboard", "_blank")}>developer.spotify.com/dashboard</button>.</li>
             <li>«Create app»: любое имя, Redirect URI — <code>http://127.0.0.1:43821/callback</code>, отметьте «Web API».</li>
-            <li>Скопируйте <b>Client ID</b> сюда. Пока приложение в режиме разработки, войти в него могут только аккаунты, добавленные в «User Management» (до 25).</li>
+            <li>Скопируйте <b>Client ID</b> сюда. Войти в приложение могут только аккаунты, которые владелец добавил в «User Management» (до 25), — они могут быть и без Premium.</li>
           </ol>
           <label className="field">
             <span>Client ID{builtIn ? " (пусто — встроенный EvPlayer)" : ""}</span>
