@@ -3,11 +3,12 @@ import PlaylistCover from "@/library/Cover";
 import { openCreatePlaylist, openImportCode } from "@/library/dialogs";
 import { useNavigation } from "@/ui/navigation";
 import { formatDate } from "@/ui/dates";
-import { IconCode, IconFolder, IconPlus, IconSparkle } from "@/ui/components/Icons";
+import { IconCode, IconFolder, IconPlus } from "@/ui/components/Icons";
 import { openSpotifyExport } from "@/library/SpotifyExportDialog";
 import { useLocalFiles } from "@/files/localFiles";
 import { getSmartPlaylist, SMART_PLAYLISTS } from "@/stats/listeningStats";
 import { SMART_INFO } from "@/stats/smart";
+import SmartCover from "@/stats/SmartCover";
 import { useStatsVersion } from "@/stats/useStats";
 import { useEffect, useMemo } from "react";
 import { useSettings } from "@/settings/store";
@@ -30,7 +31,10 @@ export default function LibraryPage() {
   const version = useStatsVersion();
   useEffect(() => void useLocalFiles.getState().refresh(), []);
   const smart = useMemo(
-    () => SMART_PLAYLISTS.map((kind) => ({ kind, n: getSmartPlaylist(kind, likes.map((l) => l.track)).length })).filter((x) => x.n > 0),
+    () => SMART_PLAYLISTS.map((kind) => {
+        const tracks = getSmartPlaylist(kind, likes.map((l) => l.track));
+        return { kind, n: tracks.length, tracks };
+      }).filter((x) => x.n > 0),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [likes, version],
   );
@@ -70,9 +74,9 @@ export default function LibraryPage() {
           <span className="pl-card-title">Мои файлы</span>
           <span className="pl-card-sub">{files ? songs(files) : "MP3, FLAC и другие с компьютера"}</span>
         </button>
-        {smart.map(({ kind, n }) => (
+        {smart.map(({ kind, n, tracks }) => (
           <button key={kind} type="button" className="pl-card" onClick={() => go("smart", kind)}>
-            <span className="pl-cover smart-cover" style={{ "--hue": SMART_INFO[kind].hue } as React.CSSProperties}><IconSparkle size={44} /></span>
+            <SmartCover kind={kind} tracks={tracks} />
             <span className="pl-card-title">{SMART_INFO[kind].title}</span>
             <span className="pl-card-sub">Умный · {songs(n)}</span>
           </button>

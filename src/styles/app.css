@@ -836,3 +836,14 @@ html.is-overlay, html.is-overlay body { background: transparent; }
 .pl-list .pl-card .pl-cover svg { width: 22px; height: 22px; }
 .pl-list .pl-card-title { align-self: end; }
 .pl-list .pl-card-sub { align-self: start; }
+
+/* smart playlists: covers like a playlist, with a sparkle badge in their colour */
+.smart-mosaic { position: relative; }
+.pl-card .smart-mosaic { width: 100%; }
+.smart-badge {
+  position: absolute; right: 8px; bottom: 8px; width: 26px; height: 26px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center; color: #fff;
+  background: linear-gradient(145deg, hsl(var(--hue) 80% 60%), hsl(var(--hue) 70% 30%)); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+.pl-list .smart-badge { right: 2px; bottom: 2px; width: 18px; height: 18px; }
+.pl-list .smart-badge svg { width: 10px !important; height: 10px !important; }

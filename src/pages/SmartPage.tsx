@@ -3,9 +3,10 @@ import { useNavigation } from "@/ui/navigation";
 import { useLibrary } from "@/library/store";
 import { getSmartPlaylist, type SmartPlaylistKind } from "@/stats/listeningStats";
 import { SMART_INFO } from "@/stats/smart";
+import SmartCover from "@/stats/SmartCover";
 import { useStatsVersion } from "@/stats/useStats";
 import TrackRow from "@/ui/components/TrackRow";
-import { IconPlay, IconShuffle, IconSparkle } from "@/ui/components/Icons";
+import { IconPlay, IconShuffle } from "@/ui/components/Icons";
 import { player } from "@/player/engine";
 import { usePlayer } from "@/player/store";
 import { openCreatePlaylist } from "@/library/dialogs";
@@ -20,7 +21,7 @@ export default function SmartPage() {
   return (
     <div className="page">
       <header className="pl-hero">
-        <span className="pl-cover smart-cover" style={{ "--hue": info.hue } as React.CSSProperties}><IconSparkle size={56} /></span>
+        <SmartCover kind={kind} tracks={tracks} size={210} />
         <div className="pl-hero-text">
           <span className="eyebrow">Умный плейлист · обновляется сам</span>
           <h1 className="display">{info.title}</h1>
