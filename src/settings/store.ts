@@ -6,7 +6,7 @@ import type { Bindings } from "./shortcuts";
 // needs (tray, global keys, Discord, mini player) are sent to it by app/bridge.ts.
 
 export type SearchSource = "all" | "soundcloud" | "youtube";
-export type OverlayCorner = "top-left" | "top-right" | "bottom-left" | "bottom-right";
+export type OverlayCorner = "top-left" | "top-center" | "top-right" | "bottom-left" | "bottom-center" | "bottom-right";
 /** what Discord shows next to your name in the member list */
 export type DiscordStatusShows = "app" | "artist" | "song";
 
@@ -67,6 +67,8 @@ export interface SettingsState {
   /** your own app from developer.spotify.com: lets imports read whole playlists */
   spotifyClientId: string;
   spotifyClientSecret: string;
+  /** a Yandex Music profile by login: its public playlists and likes can be imported */
+  yandexAccount: { login: string; name: string; playlists: number } | null;
   // discord
   discordEnabled: boolean;
   discordAppId: string;
@@ -104,6 +106,7 @@ const DEFAULTS = {
   soundcloudAccount: null as SoundCloudAccount | null,
   spotifyClientId: "",
   spotifyClientSecret: "",
+  yandexAccount: null as { login: string; name: string; playlists: number } | null,
   discordEnabled: true,
   discordAppId: "",
   discordShowArtwork: true,

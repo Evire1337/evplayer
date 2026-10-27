@@ -4,7 +4,7 @@ import { BrowserWindow, screen } from "electron";
 // buttons. It is a second page of the same app (index.html#overlay) that only shows what
 // the main window tells it, and sends its button presses back.
 
-export type OverlayCorner = "top-left" | "top-right" | "bottom-left" | "bottom-right";
+export type OverlayCorner = "top-left" | "top-center" | "top-right" | "bottom-left" | "bottom-center" | "bottom-right";
 
 export interface OverlayOptions {
   enabled: boolean;
@@ -19,9 +19,10 @@ const MARGIN = 24;
 
 export function cornerPosition(corner: OverlayCorner, area: { x: number; y: number; width: number; height: number }, size = OVERLAY_SIZE): { x: number; y: number } {
   const left = corner.endsWith("left");
+  const center = corner.endsWith("center");
   const top = corner.startsWith("top");
   return {
-    x: Math.round(left ? area.x + MARGIN : area.x + area.width - size.width - MARGIN),
+    x: Math.round(center ? area.x + (area.width - size.width) / 2 : left ? area.x + MARGIN : area.x + area.width - size.width - MARGIN),
     y: Math.round(top ? area.y + MARGIN : area.y + area.height - size.height - MARGIN),
   };
 }

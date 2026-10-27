@@ -9,6 +9,7 @@ describe("linkKind", () => {
     expect(linkKind("https://soundcloud.com/a/sets/b")).toBe("soundcloud");
     expect(linkKind("https://www.deezer.com/en/playlist/908622995")).toBe("deezer");
     expect(linkKind("EVP2.abc")).toBe("code");
+    expect(linkKind("https://music.yandex.ru/users/x/playlists/3")).toBe("yandex");
     expect(linkKind("daft punk")).toBeNull();
     expect(linkKind("https://example.com/x")).toBeNull();
   });

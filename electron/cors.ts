@@ -16,6 +16,7 @@ const OPEN_HOSTS = [
   /^open\.spotify\.com$/,
   /^accounts\.spotify\.com$/,
   /^api\.spotify\.com$/,
+  /^api\.music\.yandex\.net$/,
 ];
 
 export function isOpenHost(url: string): boolean {

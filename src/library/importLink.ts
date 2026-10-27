@@ -6,13 +6,14 @@ import { matchTracks, type NamedTrack } from "./matchTracks";
 import { useLibrary } from "./store";
 import { useImportProgress } from "./importProgress";
 import { toast } from "@/ui/toasts";
+import { isYandexMusicUrl, parseYandexLink, yandexCollection } from "@/services/yandex/music";
 import { hasSpotifyApp, spotifyCollection } from "@/services/spotify/webApi";
 import { useNavigation } from "@/ui/navigation";
 
 // "Import by link": paste a playlist, album or track link from a service and it becomes
 // one of your playlists.
 
-export type LinkKind = "soundcloud" | "youtube" | "spotify" | "deezer" | "code" | "apple" | null;
+export type LinkKind = "soundcloud" | "youtube" | "spotify" | "deezer" | "yandex" | "code" | "apple" | null;
 
 export function linkKind(text: string): LinkKind {
   const value = text.trim();
@@ -29,6 +30,7 @@ export function linkKind(text: string): LinkKind {
   if (host === "open.spotify.com" || host === "spotify.link") return "spotify";
   if (host === "deezer.com" || host === "link.deezer.com") return "deezer";
   if (host === "music.apple.com") return "apple";
+  if (isYandexMusicUrl(url)) return "yandex";
   return null;
 }
 
@@ -142,6 +144,12 @@ async function fetchLink(text: string, signal: AbortSignal): Promise<Fetched> {
       return spotify(url, signal);
     case "deezer":
       return deezer(url, signal);
+    case "yandex": {
+      const link = parseYandexLink(url.toString());
+      if (!link) throw new Error("Ссылка Яндекс Музыки должна вести на плейлист, альбом, трек или профиль");
+      const { title, tracks } = await yandexCollection(link, signal);
+      return { title, named: tracks, description: "Импортировано из Яндекс Музыки" };
+    }
     case "apple":
       throw new Error("Apple Music не даёт читать плейлисты без своего аккаунта разработчика. Экспортируйте плейлист в Spotify или вставьте названия вручную.");
     default:

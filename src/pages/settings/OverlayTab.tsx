@@ -6,8 +6,10 @@ import { Card, Row, SwitchRow, TabHeader } from "./parts";
 
 const CORNERS: Array<{ id: OverlayCorner; label: string }> = [
   { id: "top-left", label: "Слева сверху" },
+  { id: "top-center", label: "По центру сверху" },
   { id: "top-right", label: "Справа сверху" },
   { id: "bottom-left", label: "Слева снизу" },
+  { id: "bottom-center", label: "По центру снизу" },
   { id: "bottom-right", label: "Справа снизу" },
 ];
 
@@ -40,8 +42,8 @@ export default function OverlayTab() {
         <SwitchRow title="Показывать при сворачивании" hint="Свернули EvPlayer — появился мини-плеер; развернули — исчез" checked={o.overlayOnMinimize} onChange={(v) => o.set({ overlayOnMinimize: v })} disabled={!o.overlayEnabled} />
         <SwitchRow title="Строка текста песни" hint="Вместо исполнителя показывать строку, которую сейчас поют" checked={o.overlayShowLyrics} onChange={(v) => o.set({ overlayShowLyrics: v })} disabled={!o.overlayEnabled} />
       </Card>
-      <Card title="Где появляется" hint="Если вы перетащили мини-плеер, он остаётся там, пока не выберете угол заново">
-        <div className="corner-picker" role="radiogroup" aria-label="Угол экрана">
+      <Card title="Где появляется"  hint="Если вы перетащили мини-плеер, он остаётся там, пока не выберете угол заново">
+        <div className="corner-picker" role="radiogroup" aria-label="Место на экране">
           {CORNERS.map((c) => (
             <button key={c.id} type="button" role="radio" aria-checked={o.overlayCorner === c.id} className={`corner corner-${c.id}${o.overlayCorner === c.id ? " is-on" : ""}`} onClick={() => o.set({ overlayCorner: c.id })} data-tip={c.label}>
               <span />

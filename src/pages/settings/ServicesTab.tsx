@@ -6,6 +6,7 @@ import { openSpotifyExport } from "@/library/SpotifyExportDialog";
 import { useImportProgress } from "@/library/importProgress";
 import { useNavigation } from "@/ui/navigation";
 import { spotifyCollection } from "@/services/spotify/webApi";
+import { connectYandex, disconnectYandex, importYandexLikes, importYandexPlaylists } from "@/services/yandex/account";
 import { useLocalFiles } from "@/files/localFiles";
 import { formatCount } from "@/ui/format";
 import { toast } from "@/ui/toasts";
@@ -25,7 +26,7 @@ function ImportBox() {
   const [value, setValue] = useState("");
   const busy = useImportProgress((s) => s.text !== null);
   const kind = linkKind(value);
-  const names = { soundcloud: "SoundCloud", youtube: "YouTube", spotify: "Spotify", deezer: "Deezer", code: "код EvPlayer", apple: "Apple Music" } as const;
+  const names = { soundcloud: "SoundCloud", youtube: "YouTube", spotify: "Spotify", deezer: "Deezer", yandex: "Яндекс Музыка", code: "код EvPlayer", apple: "Apple Music" } as const;
   return (
     <form
       className="import-box"
@@ -37,7 +38,7 @@ function ImportBox() {
       }}
     >
       <span className="import-box-icon"><IconLink size={18} /></span>
-      <input value={value} onChange={(e) => setValue(e.target.value)} placeholder="Вставьте ссылку из Spotify, YouTube, SoundCloud, Deezer или код EVP…" spellCheck={false} />
+      <input value={value} onChange={(e) => setValue(e.target.value)} placeholder="Ссылка из Spotify, Яндекс Музыки, YouTube, SoundCloud, Deezer или код EVP…" spellCheck={false} />
       {kind && <Pill tone="info">{names[kind]}</Pill>}
       <button type="submit" className="btn primary" disabled={!value.trim() || busy}>Импортировать</button>
     </form>
@@ -240,6 +241,67 @@ function SpotifyCard() {
   );
 }
 
+function YandexCard() {
+  const account = useSettings((s) => s.yandexAccount);
+  const busy = useImportProgress((s) => s.text !== null);
+  const [input, setInput] = useState("");
+  const [connecting, setConnecting] = useState(false);
+  return (
+    <section className="svc-card">
+      <div className="svc-head">
+        <ServiceBadge name="Яндекс" color="#ffcc00" />
+        <span className="svc-head-text">
+          <span className="svc-name">Яндекс Музыка</span>
+          <span className="muted small">Перенос «Мне нравится», плейлистов и альбомов — песни находятся на YouTube Music и SoundCloud</span>
+        </span>
+        <Pill tone={account ? "ok" : "info"}>{account ? "профиль подключён" : "перенос"}</Pill>
+      </div>
+      {account ? (
+        <>
+          <div className="svc-account">
+            <span className="svc-avatar ym-avatar">{account.name.slice(0, 1).toUpperCase()}</span>
+            <span className="svc-account-text">
+              <span className="set-row-title">{account.name}</span>
+              <span className="muted small">@{account.login} · публичных плейлистов: {account.playlists}</span>
+            </span>
+            <button type="button" className="btn ghost" onClick={disconnectYandex}>Отключить</button>
+          </div>
+          <div className="svc-actions">
+            <button type="button" className="btn ghost" disabled={busy} onClick={() => void importYandexLikes()}><IconHeart size={15} /> Забрать «Мне нравится»</button>
+            <button type="button" className="btn ghost" disabled={busy} onClick={() => void importYandexPlaylists()}><IconListPlus size={15} /> Забрать плейлисты</button>
+          </div>
+        </>
+      ) : (
+        <form
+          className="svc-connect"
+          onSubmit={async (e) => {
+            e.preventDefault();
+            if (!input.trim()) return;
+            setConnecting(true);
+            try {
+              await connectYandex(input);
+              toast("Профиль Яндекс Музыки подключён");
+            } catch (err) {
+              toast(err instanceof Error ? err.message : "Не получилось", "error");
+            } finally {
+              setConnecting(false);
+            }
+          }}
+        >
+          <input value={input} onChange={(e) => setInput(e.target.value)} placeholder="Логин или ссылка: music.yandex.ru/users/ваш-логин" spellCheck={false} />
+          <button type="submit" className="btn primary" disabled={!input.trim() || connecting}>
+            {connecting ? <span className="spinner small-spin" /> : <IconPlug size={15} />} Подключить
+          </button>
+        </form>
+      )}
+      <p className="muted small">
+        Читаются публичные плейлисты и «Мне нравится» (в Яндекс Музыке: Настройки → Приватность → открыть). Пароль не нужен. Отдельный плейлист или
+        альбом можно перенести по ссылке — поле вверху.
+      </p>
+    </section>
+  );
+}
+
 function OtherCard() {
   const files = useLocalFiles((s) => s.records.length);
   const go = useNavigation((s) => s.go);
@@ -284,6 +346,7 @@ export default function ServicesTab() {
         <SoundCloudCard />
         <YouTubeCard />
         <SpotifyCard />
+        <YandexCard />
         <OtherCard />
       </div>
     </>

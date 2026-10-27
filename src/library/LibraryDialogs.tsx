@@ -90,7 +90,7 @@ function ImportDialog() {
           }
         }}
       >
-        <p className="muted small">Вставьте ссылку на плейлист, альбом или трек из Spotify, YouTube / YouTube Music, SoundCloud или Deezer — или код EvPlayer (строка с EVP), который прислал друг.</p>
+        <p className="muted small">Вставьте ссылку на плейлист, альбом или трек из Spotify, Яндекс Музыки, YouTube / YouTube Music, SoundCloud или Deezer — или код EvPlayer (строка с EVP), который прислал друг.</p>
         <label className="field">
           <span>Ссылка или код</span>
           <textarea id="pl-code" autoFocus rows={4} value={code} onChange={(e) => { setCode(e.target.value); setError(""); }} placeholder="https://open.spotify.com/playlist/… или EVP2.…" spellCheck={false} />
