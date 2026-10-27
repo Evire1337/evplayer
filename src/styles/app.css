@@ -885,11 +885,14 @@ html.is-overlay, html.is-overlay body { background: transparent; }
 .virtual-list { display: flex; flex-direction: column; gap: 2px; }
 .page-loading { min-height: 50vh; }
 
-/* volume popover: a slim pill */
-.popover:has(.volume-panel) { padding: 8px 0 6px; border-radius: 18px; }
-.volume-panel { gap: 6px; }
-.volume-panel .vslider { width: 22px; height: 112px; border-radius: 11px; }
-.volume-panel .vslider::-webkit-slider-thumb { width: 22px; }
-.volume-panel .volume-value { font-size: 11px; color: var(--ink-2); }
-.volume-mute { width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: var(--ink-2); }
-.volume-mute:hover { background: var(--hover); color: var(--ink); }
+/* volume popover: just the slider, no frame around it */
+.popover:has(.volume-panel) { padding: 0; border-radius: 18px; background: transparent; border: 0; box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none; overflow: visible; }
+.volume-panel { position: relative; gap: 0; }
+.volume-panel .vslider {
+  width: 36px; height: 132px; border-radius: 18px;
+  background: linear-gradient(0deg, rgba(238, 247, 244, 0.9) var(--fill), rgba(8, 20, 22, 0.9) var(--fill));
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45), inset 0 0 0 1px rgba(238, 247, 244, 0.1);
+}
+.volume-panel .vslider::-webkit-slider-thumb { width: 36px; }
+.volume-panel .volume-value { position: absolute; top: 9px; left: 0; right: 0; text-align: center; font-size: 11px; font-weight: 700; color: var(--ink-2); pointer-events: none; }
+.volume-panel .volume-value.is-on-fill { color: var(--ground); }
