@@ -4,15 +4,15 @@ const TEX_SIZE = 64;
 const FADE_MS = 1400;
 const RENDER_SCALE = 0.5;
 
-/** the default look before anything plays: deep violet with a warm corner */
+/** the default look before anything plays: deep sea green with a cool blue glow */
 function fallbackSource(): HTMLCanvasElement {
   const c = document.createElement("canvas");
   c.width = c.height = TEX_SIZE;
   const g = c.getContext("2d")!;
   const grad = g.createLinearGradient(0, 0, TEX_SIZE, TEX_SIZE);
-  grad.addColorStop(0, "#1c1433");
-  grad.addColorStop(0.55, "#3f1f5c");
-  grad.addColorStop(1, "#8a3a5f");
+  grad.addColorStop(0, "#38d9a9");
+  grad.addColorStop(0.5, "#1f6a8a");
+  grad.addColorStop(1, "#082b28");
   g.fillStyle = grad;
   g.fillRect(0, 0, TEX_SIZE, TEX_SIZE);
   return c;

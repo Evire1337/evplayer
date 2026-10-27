@@ -22,3 +22,10 @@ export const IconHome = (p: P) => <Svg {...p}><path d="M4 10.5L12 4l8 6.5V19a1.5
 export const IconSearch = (p: P) => <Svg {...p}><circle cx="11" cy="11" r="6.5" /><path d="M20 20l-4.2-4.2" /></Svg>;
 export const IconLibrary = (p: P) => <Svg {...p}><path d="M5 4v16M10 4v16" /><path d="M14.5 4.8l4.6 14.4" /></Svg>;
 export const IconClose = (p: P) => <Svg {...p}><path d="M6 6l12 12M18 6L6 18" /></Svg>;
+export const IconDisc = (p: P) => <Svg {...p}><circle cx="12" cy="12" r="8.5" /><circle cx="12" cy="12" r="2.5" /></Svg>;
+export const IconSliders = (p: P) => <Svg {...p}><path d="M4 7h10M18 7h2M4 17h4M12 17h8" /><circle cx="16" cy="7" r="2" /><circle cx="10" cy="17" r="2" /></Svg>;
+export const IconLyrics = (p: P) => <Svg {...p}><path d="M5 6h14M5 11h10M5 16h7" /><path d="M17 14v5.5a1.5 1.5 0 1 1-1.5-1.5H17" /></Svg>;
+export const IconQueue = (p: P) => <Svg {...p}><path d="M4 6h12M4 11h12M4 16h7" /><path d="M16 14l4 2.5-4 2.5z" fill="currentColor" stroke="none" /></Svg>;
+export const IconMinus = (p: P) => <Svg {...p}><path d="M6 12h12" /></Svg>;
+export const IconPlus = (p: P) => <Svg {...p}><path d="M12 6v12M6 12h12" /></Svg>;
+export const IconExpand = (p: P) => <Svg {...p}><path d="M9 4H4v5M15 4h5v5M9 20H4v-5M15 20h5v-5" /></Svg>;

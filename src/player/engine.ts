@@ -2,6 +2,8 @@ import Hls from "hls.js";
 import type { Track } from "@/types";
 import { currentTrack, nextIndex, prevIndex, shuffledQueue, usePlayer } from "./store";
 import { resolveStream } from "./streams";
+import { createAudioGraph, type AudioGraph } from "@/audio/graph";
+import { effectsForNextTrack, useEffects, type EffectsState } from "./effects";
 
 // One <audio> element for the whole app. HLS streams go through hls.js, plain files play
 // directly. The OS media controls (keyboard keys, the Windows volume flyout) are wired via
@@ -12,6 +14,8 @@ class PlayerEngine {
   private hls: Hls | null = null;
   private loadAbort: AbortController | null = null;
   private loadToken = 0;
+  private graph: AudioGraph;
+  private firstTrack = true;
 
   constructor() {
     this.audio = new Audio();
@@ -41,6 +45,20 @@ class PlayerEngine {
       }
     });
     this.setupMediaSession();
+
+    this.graph = createAudioGraph(this.audio);
+    useEffects.subscribe((fx) => this.applyEffects(fx));
+    this.audio.addEventListener("play", () => this.graph.resume());
+  }
+
+  private applyEffects(fx: EffectsState = useEffects.getState()): void {
+    this.audio.defaultPlaybackRate = fx.speed;
+    this.audio.playbackRate = fx.speed;
+    // linked: the speed also moves the pitch, the way a faster record sounds higher
+    this.audio.preservesPitch = !fx.linked;
+    void this.graph
+      .apply({ pitchSemitones: fx.linked ? 0 : fx.pitch, reverb: fx.reverb, reverbAmount: fx.reverbAmount })
+      .catch((err) => console.warn("[effects]", err));
   }
 
   async playQueue(tracks: Track[], startIndex = 0): Promise<void> {
@@ -134,6 +152,8 @@ class PlayerEngine {
     this.audio.pause();
     usePlayer.setState({ status: "loading", positionMs: 0, durationMs: track.durationMs, error: undefined });
     this.updateMetadata(track);
+    if (!this.firstTrack) useEffects.setState(effectsForNextTrack(useEffects.getState()));
+    this.firstTrack = false;
     try {
       const stream = await resolveStream(track, controller.signal);
       if (token !== this.loadToken) return;
@@ -148,6 +168,7 @@ class PlayerEngine {
       } else {
         this.audio.src = stream.url;
       }
+      this.applyEffects();
       await this.audio.play();
     } catch (error) {
       if (token !== this.loadToken || controller.signal.aborted) return;

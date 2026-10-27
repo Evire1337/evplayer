@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-export type Page = "home" | "search" | "library";
+export type Page = "now" | "home" | "search" | "library";
 
 export const useNavigation = create<{ page: Page; go: (page: Page) => void }>((set) => ({
   page: "home",
