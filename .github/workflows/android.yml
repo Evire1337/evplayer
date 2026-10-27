@@ -53,9 +53,12 @@ jobs:
             echo "keyAlias=evplayer"
           } > src-tauri/gen/android/keystore.properties
       - name: Build the APK
-        env:
-          NDK_HOME: ${{ env.ANDROID_NDK_LATEST_HOME }}
-        run: pnpm tauri android build --apk --target aarch64 armv7
+        shell: bash
+        run: |
+          # the runner comes with the Android SDK and NDK; tell Tauri where the NDK is
+          export NDK_HOME="${ANDROID_NDK_LATEST_HOME:-$ANDROID_NDK_HOME}"
+          echo "NDK: $NDK_HOME"
+          pnpm tauri android build --apk --target aarch64 armv7
       - name: Name it
         shell: bash
         run: |
