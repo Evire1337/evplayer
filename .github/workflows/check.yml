@@ -54,7 +54,7 @@ jobs:
         with:
           workspaces: src-tauri
       - run: pnpm install --frozen-lockfile
-      - name: Build the installer (no update signature: this is a test build)
+      - name: Build the installer (a test build, without the update signature)
         run: pnpm tauri build --config "{\"bundle\":{\"createUpdaterArtifacts\":false}}"
       - uses: actions/upload-artifact@v4
         with:
