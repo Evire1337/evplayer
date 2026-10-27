@@ -61,9 +61,18 @@ export function transcodingsOf(raw: unknown): Transcoding[] {
   });
 }
 
-/** prefer a single mp3 file, then plain HLS (mp3 before aac/opus because it works everywhere) */
-export function pickTranscoding(list: Transcoding[]): Transcoding | undefined {
+/** best first: a single mp3 file, then plain HLS (mp3 before aac/opus because it works everywhere) */
+export function rankTranscodings(list: Transcoding[]): Transcoding[] {
   const rank = (t: Transcoding) =>
     (t.protocol === "progressive" ? 0 : 10) + (t.mimeType.includes("mpeg") ? 0 : t.mimeType.includes("mp4") ? 1 : 2);
-  return [...list].sort((a, b) => rank(a) - rank(b))[0];
+  return [...list].sort((a, b) => rank(a) - rank(b));
+}
+
+export function pickTranscoding(list: Transcoding[]): Transcoding | undefined {
+  return rankTranscodings(list)[0];
+}
+
+/** the per-track token SoundCloud wants on every stream request */
+export function trackAuthorization(raw: unknown): string | undefined {
+  return isObj(raw) ? str(raw.track_authorization) : undefined;
 }

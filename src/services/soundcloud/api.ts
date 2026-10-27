@@ -1,5 +1,5 @@
 import type { ArtistSummary, Track } from "@/types";
-import { mapScTrack, mapScUser, pickTranscoding, transcodingsOf, type Transcoding } from "./mappers";
+import { mapScTrack, mapScUser, rankTranscodings, trackAuthorization, transcodingsOf } from "./mappers";
 
 const API = "https://api-v2.soundcloud.com";
 
@@ -21,10 +21,10 @@ export async function scGet<T = unknown>(path: string, params: Record<string, st
     url.searchParams.set("client_id", await getClientId(attempt > 0));
     const res = await fetch(url, { signal });
     if (res.status === 401 || res.status === 403) continue;
-    if (!res.ok) throw new Error(`SoundCloud answered ${res.status}`);
+    if (!res.ok) throw new Error(`SoundCloud ответил ${res.status}`);
     return (await res.json()) as T;
   }
-  throw new Error("SoundCloud refused the request");
+  throw new Error("SoundCloud отклонил запрос");
 }
 
 interface Collection {
@@ -60,9 +60,19 @@ export interface ScStream {
 export async function resolveSoundCloudStream(trackId: string, signal?: AbortSignal): Promise<ScStream> {
   const id = trackId.replace(/^sc:/, "");
   const track = await scGet(`/tracks/${id}`, {}, signal);
-  const choice: Transcoding | undefined = pickTranscoding(transcodingsOf(track));
-  if (!choice) throw new Error("This track cannot be streamed");
-  const { url } = await scGet<{ url?: string }>(choice.url, {}, signal);
-  if (!url) throw new Error("SoundCloud gave no stream address");
-  return { url, hls: choice.protocol === "hls" };
+  const auth = trackAuthorization(track);
+  const options = rankTranscodings(transcodingsOf(track));
+  if (options.length === 0) throw new Error("Этот трек нельзя проиграть (только для подписчиков SoundCloud Go или закрыт автором)");
+  let lastError: unknown;
+  // a format can be missing for a given track: fall through to the next one
+  for (const option of options) {
+    try {
+      const { url } = await scGet<{ url?: string }>(option.url, auth ? { track_authorization: auth } : {}, signal);
+      if (url) return { url, hls: option.protocol === "hls" };
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      lastError = error;
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error("SoundCloud не отдал поток");
 }

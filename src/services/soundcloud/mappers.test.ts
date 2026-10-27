@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { artworkUrl, mapScTrack, pickTranscoding, transcodingsOf } from "./mappers";
+import { artworkUrl, mapScTrack, pickTranscoding, trackAuthorization, transcodingsOf } from "./mappers";
 
 describe("soundcloud mappers", () => {
   it("maps a track and asks for big artwork", () => {
@@ -33,5 +33,10 @@ describe("soundcloud mappers", () => {
     expect(list.map((t) => t.url)).toEqual(["a", "c", "d"]);
     expect(pickTranscoding(list)?.url).toBe("c");
     expect(pickTranscoding(list.filter((t) => t.url !== "c"))?.url).toBe("d");
+  });
+
+  it("reads the per-track stream token", () => {
+    expect(trackAuthorization({ track_authorization: "tok" })).toBe("tok");
+    expect(trackAuthorization({})).toBeUndefined();
   });
 });
