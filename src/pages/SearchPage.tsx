@@ -1,3 +1,4 @@
+import RowScroll from "@/ui/components/RowScroll";
 import { useEffect, useRef, useState } from "react";
 import type { ArtistSummary, CollectionSummary, Track } from "@/types";
 import { searchSoundCloud, searchSoundCloudCollections } from "@/services/soundcloud/api";
@@ -164,7 +165,7 @@ export default function SearchPage() {
       {showArtists && (
         <section className="row">
           <h2 className="row-title">Исполнители</h2>
-          <div className="row-scroll">
+          <RowScroll>
             {artists.map((a) => (
               <button key={a.id} type="button" className="artist-chip" onClick={() => go("artist", a.id, a.name)}>
                 <span className="artist-avatar">{a.avatar ? <img src={a.avatar} alt="" loading="lazy" /> : null}</span>
@@ -172,16 +173,18 @@ export default function SearchPage() {
                 {a.followers !== undefined && <span className="muted small">{formatCount(a.followers)} подписчиков</span>}
               </button>
             ))}
-          </div>
+          </RowScroll>
         </section>
       )}
 
       {shownAlbums.length > 0 && (
         <section className="row">
           <h2 className="row-title">Альбомы</h2>
-          <div className={kind === "albums" ? "card-grid" : "row-scroll"}>
-            {shownAlbums.map((a) => <CollectionCard key={a.id} item={a} />)}
-          </div>
+          {kind === "albums" ? (
+            <div className="card-grid">{shownAlbums.map((a) => <CollectionCard key={a.id} item={a} />)}</div>
+          ) : (
+            <RowScroll>{shownAlbums.map((a) => <CollectionCard key={a.id} item={a} />)}</RowScroll>
+          )}
         </section>
       )}
 

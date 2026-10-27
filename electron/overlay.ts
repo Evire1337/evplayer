@@ -29,7 +29,7 @@ export function cornerPosition(corner: OverlayCorner, area: { x: number; y: numb
 
 export class OverlayController {
   private win: BrowserWindow | null = null;
-  private options: OverlayOptions = { enabled: true, onTop: true, onMinimize: false, corner: "bottom-right" };
+  private options: OverlayOptions = { enabled: true, onTop: true, onMinimize: true, corner: "top-center" };
   private lastState: unknown = null;
   /** where the user dragged it; null = use the corner */
   private moved: { x: number; y: number } | null = null;

@@ -59,6 +59,7 @@ img { display: block; max-width: 100%; }
   right: 20px;
   bottom: 118px;
   overflow-y: auto;
+  overflow-x: hidden;
   scrollbar-width: thin;
   scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
 }
@@ -114,8 +115,23 @@ img { display: block; max-width: 100%; }
 .display { margin: 0; font-weight: 800; font-size: clamp(30px, 3.6vw, 46px); letter-spacing: -0.02em; text-wrap: balance; }
 .row { display: flex; flex-direction: column; gap: 14px; }
 .row-title { margin: 0; font-weight: 800; font-size: 19px; }
-.row-scroll { display: flex; gap: 18px; overflow-x: auto; padding-bottom: 6px; scrollbar-width: none; }
-.row-scroll::-webkit-scrollbar { display: none; }
+.row-scroll { display: flex; gap: 18px; overflow-x: auto; padding-bottom: 8px; scrollbar-width: thin; scrollbar-color: transparent transparent; scroll-snap-type: x proximity; }
+.row-scroll > * { scroll-snap-align: start; }
+.row-scroll-wrap:hover .row-scroll { scrollbar-color: rgba(238, 247, 244, 0.22) transparent; }
+.row-scroll::-webkit-scrollbar { height: 6px; }
+.row-scroll::-webkit-scrollbar-thumb { background: transparent; border-radius: 3px; }
+.row-scroll-wrap:hover .row-scroll::-webkit-scrollbar-thumb { background: rgba(238, 247, 244, 0.22); }
+.row-scroll-wrap { position: relative; min-width: 0; }
+.row-arrow {
+  position: absolute; z-index: 2; top: 64px; width: 42px; height: 42px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center; color: var(--ground); background: rgba(238, 247, 244, 0.92);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45); opacity: 0; transition: opacity 150ms ease, transform 150ms ease;
+}
+.row-arrow.is-left { left: 4px; }
+.row-arrow.is-right { right: 4px; }
+.row-arrow.is-right svg { transform: rotate(180deg); }
+.row-scroll-wrap:hover .row-arrow { opacity: 1; }
+.row-arrow:hover { transform: scale(1.08); }
 
 .track-card { flex: 0 0 172px; display: flex; flex-direction: column; gap: 4px; text-align: left; min-width: 0; }
 .track-card-art {

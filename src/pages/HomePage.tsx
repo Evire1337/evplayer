@@ -1,3 +1,4 @@
+import RowScroll from "@/ui/components/RowScroll";
 import { useEffect, useMemo, useState } from "react";
 import type { Track } from "@/types";
 import { soundCloudCharts } from "@/services/soundcloud/api";
@@ -55,11 +56,11 @@ function Row({ title, tracks, state, ranked, hint }: { title: string; tracks: Tr
       {state === "error" ? (
         <p className="muted">SoundCloud сейчас не отвечает. Попробуйте позже.</p>
       ) : (
-        <div className="row-scroll">
+        <RowScroll>
           {state === "loading"
             ? Array.from({ length: 8 }, (_, i) => <span key={i} className="track-card skeleton" />)
             : tracks.map((t, i) => <TrackCard key={t.id} track={t} queue={tracks} index={i} rank={ranked ? i + 1 : undefined} />)}
-        </div>
+        </RowScroll>
       )}
     </section>
   );
@@ -67,7 +68,7 @@ function Row({ title, tracks, state, ranked, hint }: { title: string; tracks: Tr
 
 function Recent() {
   const entries = useHistory((s) => s.entries);
-  const tracks = useMemo(() => entries.slice(0, 16).map((e) => e.track), [entries]);
+  const tracks = useMemo(() => entries.slice(0, 20).map((e) => e.track), [entries]);
   if (!tracks.length) return null;
   return <Row title="Недавно слушали" tracks={tracks} state="ready" />;
 }
@@ -84,7 +85,7 @@ function SmartRow({ version }: { version: number }) {
   return (
     <section className="row">
       <h2 className="row-title">Собрано для вас</h2>
-      <div className="row-scroll">
+      <RowScroll>
         {lists.map(({ kind, tracks }) => (
           <button key={kind} type="button" className="smart-card" onClick={() => go("smart", kind)} style={{ "--hue": SMART_INFO[kind].hue } as React.CSSProperties}>
             <span className="smart-art">
@@ -95,7 +96,7 @@ function SmartRow({ version }: { version: number }) {
             <span className="track-card-artist">{tracks.length} треков</span>
           </button>
         ))}
-      </div>
+      </RowScroll>
     </section>
   );
 }
@@ -125,6 +126,11 @@ function Tops({ version }: { version: number }) {
           ]}
         />
       </div>
+      {top.length > 0 && top.length < 10 && (
+        <p className="muted small row-hint">
+          {range === "all" ? "Пока" : "За этот период"} прослушано {top.length} {top.length === 1 ? "трек" : top.length < 5 ? "трека" : "треков"} — топ дополнится, когда послушаете больше (трек засчитывается после 5 секунд)
+        </p>
+      )}
       {top.length === 0 ? (
         <p className="muted">За этот период ещё ничего не слушали.</p>
       ) : (
@@ -189,11 +195,11 @@ function ForYou() {
           ) : null}
         </div>
         <p className="muted small row-hint">По тому, что вы слушаете и лайкаете</p>
-        <div className="row-scroll">
+        <RowScroll>
           {state === "loading"
             ? Array.from({ length: 8 }, (_, i) => <span key={i} className="track-card skeleton" />)
             : data!.forYou.map((t, i) => <TrackCard key={t.id} track={t} queue={data!.forYou} index={i} />)}
-        </div>
+        </RowScroll>
       </section>
       {data?.because.map((b) => (
         <Row key={b.seed.id} title={`Похоже на «${b.seed.title}»`} tracks={b.tracks} state="ready" />
