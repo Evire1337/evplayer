@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { activityFor, decodeFrames, encodeFrame } from "./discord";
 
 describe("discord frames", () => {
@@ -22,15 +22,23 @@ describe("discord frames", () => {
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { DiscordPresence } from "./discord";
 
 describe("discord connection", () => {
   it("handshakes, reads the user and sends the activity", async () => {
+    // Windows has no unix sockets: Discord listens on a named pipe there, and a
+    // filesystem path cannot be listened on at all (EACCES, which broke CI).
     const dir = mkdtempSync(path.join(os.tmpdir(), "dc-"));
-    process.env.XDG_RUNTIME_DIR = dir;
+    const address =
+      process.platform === "win32"
+        ? `\\\\.\\pipe\\evplayer-discord-test-${process.pid}-${Date.now()}`
+        : path.join(dir, "discord-ipc-0");
+
     const got: Array<{ op: number; data: any }> = [];
+    const peers: net.Socket[] = [];
     const server = net.createServer((sock) => {
+      peers.push(sock);
       sock.on("data", (chunk: Buffer) => {
         const { frames } = decodeFrames(chunk);
         for (const f of frames) {
@@ -39,17 +47,31 @@ describe("discord connection", () => {
         }
       });
     });
-    await new Promise<void>((r) => server.listen(path.join(dir, "discord-ipc-0"), r));
-    const dc = new DiscordPresence();
-    dc.update({ title: "Song", artist: "Artist", startedAt: 1 });
-    dc.setAppId("123456789012345678");
-    await new Promise((r) => setTimeout(r, 300));
-    expect(dc.status().status).toBe("connected");
-    expect(dc.status().user).toMatchObject({ username: "evire", globalName: "Evire" });
-    expect(got[0]).toMatchObject({ op: 0, data: { client_id: "123456789012345678" } });
-    expect(got[1].data.cmd).toBe("SET_ACTIVITY");
-    expect(got[1].data.args.activity.details).toBe("Song");
-    dc.destroy();
-    server.close();
+    await new Promise<void>((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(address, resolve);
+    });
+
+    const dc = new DiscordPresence(() => address);
+    try {
+      dc.update({ title: "Song", artist: "Artist", startedAt: 1 });
+      dc.setAppId("123456789012345678");
+      await vi.waitFor(
+        () => {
+          expect(dc.status().status).toBe("connected");
+          expect(got.length).toBeGreaterThanOrEqual(2);
+        },
+        { timeout: 3000 },
+      );
+      expect(dc.status().user).toMatchObject({ username: "evire", globalName: "Evire" });
+      expect(got[0]).toMatchObject({ op: 0, data: { client_id: "123456789012345678" } });
+      expect(got[1].data.cmd).toBe("SET_ACTIVITY");
+      expect(got[1].data.args.activity.details).toBe("Song");
+    } finally {
+      dc.destroy();
+      peers.forEach((s) => s.destroy());
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

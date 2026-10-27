@@ -11,11 +11,12 @@ export type OverlayCorner = "top-left" | "top-right" | "bottom-left" | "bottom-r
 export type DiscordStatusShows = "app" | "artist" | "song";
 
 /**
- * Discord needs an application id for "Listening to …". Put the id of the EvPlayer
- * application from discord.com/developers here before building, and everyone using the
- * build gets the Discord status without setting anything up.
+ * EvPlayer's own application id from discord.com/developers, where it is named "EvPlayer".
+ * Discord always needs an application id for "Listening to …"; shipping ours here means
+ * users just launch the player and the status appears, with nothing to set up.
+ * Never paste another project's id here: the status would show that project's name.
  */
-export const DEFAULT_DISCORD_APP_ID = "";
+export const DEFAULT_DISCORD_APP_ID = "1564485226267279360";
 
 export interface SoundCloudAccount {
   id: string;

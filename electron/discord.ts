@@ -88,6 +88,8 @@ export function activityFor(state: PresenceState) {
 }
 
 export class DiscordPresence {
+  /** where the RPC pipe lives; overridable so tests can run their own mock server */
+  private readonly ipcPath: (index: number) => string;
   private appId: string | null = null;
   private socket: net.Socket | null = null;
   private ready = false;
@@ -100,6 +102,10 @@ export class DiscordPresence {
   /** older Discord builds reject the newer "status_display_type" field */
   private plainActivity = false;
   private attempt = 0;
+
+  constructor(ipcPath: (index: number) => string = pipePath) {
+    this.ipcPath = ipcPath;
+  }
 
   status(): { status: Status; user: DiscordUser | null; error: string | null } {
     return { status: this.current, user: this.current === "connected" ? this.user : null, error: this.lastError };
@@ -146,7 +152,7 @@ export class DiscordPresence {
   private open(index = 0): Promise<net.Socket | null> {
     if (index > 9) return Promise.resolve(null);
     return new Promise((resolve) => {
-      const socket = net.createConnection(pipePath(index));
+      const socket = net.createConnection(this.ipcPath(index));
       socket.once("connect", () => {
         socket.removeAllListeners("error");
         resolve(socket);
