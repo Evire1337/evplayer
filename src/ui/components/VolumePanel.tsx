@@ -16,12 +16,13 @@ export default function VolumePanel() {
         max={100}
         value={value}
         onChange={(e) => player.setVolume(Number(e.target.value) / 100)}
+        onWheel={(e) => player.setVolume((value + (e.deltaY < 0 ? 5 : -5)) / 100)}
         aria-label="Громкость"
         style={{ "--fill": `${value}%` } as React.CSSProperties}
       />
       <output htmlFor="volume-vertical" className="volume-value">{value}%</output>
-      <button type="button" className="step-btn" onClick={() => usePlayer.setState({ muted: !muted })} aria-label={muted ? "Включить звук" : "Выключить звук"}>
-        {muted || value === 0 ? <IconMute size={16} /> : <IconVolume size={16} />}
+      <button type="button" className="volume-mute" onClick={() => usePlayer.setState({ muted: !muted })} aria-label={muted ? "Включить звук" : "Выключить звук"}>
+        {muted || value === 0 ? <IconMute size={14} /> : <IconVolume size={14} />}
       </button>
     </div>
   );

@@ -70,7 +70,7 @@ export function Tools() {
       <Popover label="Звук, скорость и тон" icon={<IconSliders size={19} />} width={292} active={tuned}>
         <SoundPanel />
       </Popover>
-      <Popover label="Громкость" icon={muted || volume === 0 ? <IconMute size={19} /> : <IconVolume size={19} />} width={76}>
+      <Popover label="Громкость" icon={muted || volume === 0 ? <IconMute size={19} /> : <IconVolume size={19} />} width={50}>
         <VolumePanel />
       </Popover>
     </div>
