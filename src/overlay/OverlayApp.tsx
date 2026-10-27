@@ -47,43 +47,41 @@ export default function OverlayApp() {
   return (
     <div className="overlay">
       <div className="overlay-card">
-        <button type="button" className="overlay-art" onClick={() => cmd("showWindow")} aria-label="Открыть EvPlayer" data-tip="Открыть EvPlayer">
+        <button type="button" className="overlay-art" onClick={() => cmd("showWindow")} aria-label="Открыть EvPlayer">
           {track?.artwork ? <img src={track.artwork} alt="" /> : null}
-          <span className="overlay-art-hover"><IconExpand size={16} /></span>
+          <span className="overlay-art-hover"><IconExpand size={13} /></span>
         </button>
-        <div className="overlay-main">
-          <div className="overlay-text">
-            <span className="overlay-title">{track?.title ?? "Ничего не играет"}</span>
-            <span className="overlay-sub">{state?.line ?? track?.artist ?? "Включите трек в EvPlayer"}</span>
-          </div>
-          <div className="overlay-controls">
-            <button type="button" className="overlay-btn" aria-label="Нравится" onClick={() => cmd("like")} disabled={!track}>
-              {state?.liked ? <IconHeartFill size={16} /> : <IconHeart size={16} />}
-            </button>
-            <button type="button" className="overlay-btn" aria-label="Предыдущий" onClick={() => cmd("prev")} disabled={!track}>
-              <IconPrev size={16} />
-            </button>
-            <button type="button" className="overlay-btn is-main" aria-label={playing ? "Пауза" : "Играть"} onClick={() => cmd("togglePlay")} disabled={!track}>
-              {playing ? <IconPause size={17} /> : <IconPlay size={17} />}
-            </button>
-            <button type="button" className="overlay-btn" aria-label="Следующий" onClick={() => cmd("next")} disabled={!track}>
-              <IconNext size={16} />
-            </button>
-            <span className="overlay-time">{track ? `${formatTime(pos)} / ${formatTime(state?.durationMs ?? 0)}` : ""}</span>
-          </div>
-          <div
-            className="overlay-progress"
-            onClick={(e) => {
-              if (!state?.durationMs) return;
-              const r = e.currentTarget.getBoundingClientRect();
-              cmd("seekTo", ((e.clientX - r.left) / r.width) * state.durationMs);
-            }}
-          >
-            <span style={{ width: `${progress * 100}%` }} />
-          </div>
+        <div className="overlay-text">
+          <span className="overlay-title">{track?.title ?? "Ничего не играет"}</span>
+          <span className="overlay-sub">{state?.line ?? track?.artist ?? "Включите трек в EvPlayer"}</span>
+        </div>
+        <div className="overlay-controls">
+          <button type="button" className={`overlay-btn${state?.liked ? " is-liked" : ""}`} aria-label="Нравится" onClick={() => cmd("like")} disabled={!track}>
+            {state?.liked ? <IconHeartFill size={15} /> : <IconHeart size={15} />}
+          </button>
+          <button type="button" className="overlay-btn" aria-label="Предыдущий" onClick={() => cmd("prev")} disabled={!track}>
+            <IconPrev size={15} />
+          </button>
+          <button type="button" className="overlay-btn is-main" aria-label={playing ? "Пауза" : "Играть"} onClick={() => cmd("togglePlay")} disabled={!track}>
+            {playing ? <IconPause size={15} /> : <IconPlay size={15} />}
+          </button>
+          <button type="button" className="overlay-btn" aria-label="Следующий" onClick={() => cmd("next")} disabled={!track}>
+            <IconNext size={15} />
+          </button>
+        </div>
+        <div
+          className="overlay-progress"
+          title={track ? `${formatTime(pos)} / ${formatTime(state?.durationMs ?? 0)}` : undefined}
+          onClick={(e) => {
+            if (!state?.durationMs) return;
+            const r = e.currentTarget.getBoundingClientRect();
+            cmd("seekTo", ((e.clientX - r.left) / r.width) * state.durationMs);
+          }}
+        >
+          <span style={{ width: `${progress * 100}%` }} />
         </div>
         <button type="button" className="overlay-close" aria-label="Спрятать мини-плеер" onClick={() => api()?.hide()}>
-          <IconClose size={13} />
+          <IconClose size={10} />
         </button>
       </div>
     </div>

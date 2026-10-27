@@ -13,7 +13,8 @@ export interface OverlayOptions {
   corner: OverlayCorner;
 }
 
-export const OVERLAY_SIZE = { width: 360, height: 112 };
+// a slim bar: small enough to sit over a game without covering anything important
+export const OVERLAY_SIZE = { width: 340, height: 62 };
 const MARGIN = 24;
 
 export function cornerPosition(corner: OverlayCorner, area: { x: number; y: number; width: number; height: number }, size = OVERLAY_SIZE): { x: number; y: number } {
