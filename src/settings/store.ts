@@ -18,6 +18,22 @@ export type DiscordStatusShows = "app" | "artist" | "song";
  */
 export const DEFAULT_DISCORD_APP_ID = "1564485226267279360";
 
+/**
+ * Client ID of EvPlayer's app on developer.spotify.com (no secret needed: sign-in uses
+ * PKCE). With it, "Sign in with Spotify" works without any setup. Its redirect URI must be
+ * http://127.0.0.1:43821/callback.
+ */
+export const DEFAULT_SPOTIFY_CLIENT_ID = "";
+
+export interface SpotifyAccount {
+  name: string;
+  avatar?: string;
+  product?: string;
+  accessToken: string;
+  refreshToken: string;
+  expiresAt: number;
+}
+
 export interface SoundCloudAccount {
   id: string;
   name: string;
@@ -74,6 +90,8 @@ export interface SettingsState {
   /** your own app from developer.spotify.com: lets imports read whole playlists */
   spotifyClientId: string;
   spotifyClientSecret: string;
+  /** signed in with Spotify (PKCE): playlists of any length, your liked songs */
+  spotifyAccount: SpotifyAccount | null;
   /** a Yandex Music profile by login: its public playlists and likes can be imported */
   yandexAccount: { login: string; name: string; playlists: number } | null;
   // discord
@@ -117,6 +135,7 @@ const DEFAULTS = {
   soundcloudAccount: null as SoundCloudAccount | null,
   spotifyClientId: "",
   spotifyClientSecret: "",
+  spotifyAccount: null as SpotifyAccount | null,
   yandexAccount: null as { login: string; name: string; playlists: number } | null,
   discordEnabled: true,
   discordAppId: "",
@@ -139,3 +158,5 @@ export const useSettings = create<SettingsState>()(
 );
 
 export const discordAppId = (s: Pick<SettingsState, "discordAppId"> = useSettings.getState()) => s.discordAppId.trim() || DEFAULT_DISCORD_APP_ID;
+
+export const spotifyClientId = (s: Pick<SettingsState, "spotifyClientId"> = useSettings.getState()) => s.spotifyClientId.trim() || DEFAULT_SPOTIFY_CLIENT_ID;

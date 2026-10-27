@@ -8,6 +8,7 @@ import { setupUpdates } from "./updates.js";
 import { LOCAL_SCHEME, LocalLibrary, type LocalTrackEdit } from "./local-files.js";
 import { TrayController, type TrayAction, type TrayOptions } from "./tray.js";
 import { DiscordPresence, type PresenceState } from "./discord.js";
+import { refreshSpotify, signInWithSpotify } from "./spotifyAuth.js";
 import { OverlayController, type OverlayOptions } from "./overlay.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -200,6 +201,8 @@ if (!app.requestSingleInstanceLock()) {
     });
 
     ipcMain.handle("app:version", () => app.getVersion());
+    ipcMain.handle("spotify:sign-in", (_e, clientId: string) => signInWithSpotify(String(clientId)));
+    ipcMain.handle("spotify:refresh", (_e, clientId: string, refreshToken: string) => refreshSpotify(String(clientId), String(refreshToken)));
     ipcMain.handle("app:data-size", async () => {
       const info = await session.defaultSession.getCacheSize();
       return { cache: info };

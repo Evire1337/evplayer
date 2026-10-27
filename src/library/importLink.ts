@@ -7,7 +7,7 @@ import { useLibrary } from "./store";
 import { useImportProgress } from "./importProgress";
 import { toast } from "@/ui/toasts";
 import { isYandexMusicUrl, parseYandexLink, yandexCollection } from "@/services/yandex/music";
-import { hasSpotifyApp, spotifyCollection } from "@/services/spotify/webApi";
+import { hasSpotifyAccess, spotifyCollection } from "@/services/spotify/webApi";
 import { useNavigation } from "@/ui/navigation";
 
 // "Import by link": paste a playlist, album or track link from a service and it becomes
@@ -78,10 +78,12 @@ async function spotify(url: URL, signal: AbortSignal): Promise<Fetched> {
   }
   const m = /\/(playlist|album|track)\/([A-Za-z0-9]+)/.exec(target.pathname);
   if (!m) throw new Error("Ссылка Spotify должна вести на плейлист, альбом или трек");
-  if (hasSpotifyApp()) {
-    // the whole list through the official API
-    const full = await spotifyCollection(m[1] as "playlist" | "album" | "track", m[2], signal);
-    return { title: full.title, named: full.tracks, description: "Импортировано из Spotify" };
+  if (hasSpotifyAccess()) {
+    // the whole list through the official API, page after page
+    const full = await spotifyCollection(m[1] as "playlist" | "album" | "track", m[2], signal, (n, total) =>
+      useImportProgress.getState().update(`Spotify: прочитано ${n} из ${total}`),
+    );
+    return { title: full.title, named: full.tracks, artwork: full.artwork, description: "Импортировано из Spotify" };
   }
   const res = await fetch(`https://open.spotify.com/embed/${m[1]}/${m[2]}`, { signal });
   if (!res.ok) throw new Error(`Spotify ответил ${res.status}`);
@@ -192,7 +194,7 @@ export async function importFromLink(text: string): Promise<void> {
     const missed = fetched.named ? fetched.named.length - tracks.length : 0;
     toast(missed > 0 ? `Плейлист «${fetched.title}»: ${tracks.length} треков, ${missed} не нашлось` : `Плейлист «${fetched.title}» добавлен`);
     if (fetched.truncated) {
-      toast("Spotify без своего приложения показывает только первые 100 треков. Подключите Spotify в Настройки → Сервисы — и импорт заберёт плейлист целиком", "error");
+      toast("Без входа Spotify показывает по ссылке только первые 100 треков. Войдите через Spotify в Настройки → Сервисы — и импорт заберёт плейлист целиком", "error");
     }
     useNavigation.getState().go("playlist", playlist.id);
   } catch (error) {

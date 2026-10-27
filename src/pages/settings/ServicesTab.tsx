@@ -5,7 +5,8 @@ import { importFromLink, linkKind } from "@/library/importLink";
 import { openSpotifyExport } from "@/library/SpotifyExportDialog";
 import { useImportProgress } from "@/library/importProgress";
 import { useNavigation } from "@/ui/navigation";
-import { spotifyCollection } from "@/services/spotify/webApi";
+import { importSpotifyLiked, importSpotifyPlaylists, signInSpotify, signOutSpotify } from "@/services/spotify/account";
+import { DEFAULT_SPOTIFY_CLIENT_ID } from "@/settings/store";
 import { connectYandex, disconnectYandex, importYandexLikes, importYandexPlaylists } from "@/services/yandex/account";
 import { useLocalFiles } from "@/files/localFiles";
 import { formatCount } from "@/ui/format";
@@ -174,67 +175,88 @@ function YouTubeCard() {
 function SpotifyCard() {
   const id = useSettings((s) => s.spotifyClientId);
   const secret = useSettings((s) => s.spotifyClientSecret);
+  const account = useSettings((s) => s.spotifyAccount);
   const set = useSettings((s) => s.set);
+  const busy = useImportProgress((s) => s.text !== null);
   const [open, setOpen] = useState(false);
-  const [checking, setChecking] = useState(false);
-  const connected = Boolean(id.trim() && secret.trim());
+  const [working, setWorking] = useState(false);
+  const builtIn = Boolean(DEFAULT_SPOTIFY_CLIENT_ID);
+  const canSignIn = Boolean(id.trim() || builtIn);
+  const appOnly = !account && Boolean(id.trim() && secret.trim());
   return (
     <section className="svc-card">
       <div className="svc-head">
         <ServiceBadge name="Spotify" color="#1ed760" />
         <span className="svc-head-text">
           <span className="svc-name">Spotify</span>
-          <span className="muted small">Перенос плейлистов, альбомов и любимых — песни находятся на YouTube Music и SoundCloud</span>
+          <span className="muted small">Перенос «Любимых треков» и плейлистов любой длины — песни находятся на YouTube Music и SoundCloud</span>
         </span>
-        <Pill tone={connected ? "ok" : "info"}>{connected ? "приложение подключено" : "до 100 треков"}</Pill>
+        <Pill tone={account || appOnly ? "ok" : "info"}>{account ? "аккаунт подключён" : appOnly ? "приложение подключено" : "до 100 треков"}</Pill>
       </div>
-      <p className="muted small">
-        {connected
-          ? "Плейлисты по ссылке импортируются целиком, любой длины."
-          : "Без своего приложения Spotify показывает по ссылке только первые 100 треков плейлиста. Подключите бесплатное приложение — и импорт заберёт всё."}
-      </p>
-      <div className="svc-actions">
-        <button type="button" className="btn ghost" onClick={() => setOpen((v) => !v)}>{connected ? "Изменить ключи" : "Подключить приложение"}</button>
-        <button type="button" className="btn ghost" onClick={openSpotifyExport}>Импорт архива данных</button>
-      </div>
-      {open && (
+
+      {account ? (
         <>
-          <ol className="steps">
-            <li>Откройте <button type="button" className="link-btn strong" onClick={() => window.open("https://developer.spotify.com/dashboard", "_blank")}>developer.spotify.com/dashboard</button> и войдите своим аккаунтом Spotify.</li>
-            <li>«Create app»: любое имя, в Redirect URI впишите <code>http://127.0.0.1:8888/callback</code>, отметьте «Web API».</li>
-            <li>В настройках приложения скопируйте <b>Client ID</b> и <b>Client Secret</b> сюда.</li>
-          </ol>
-          <label className="field">
-            <span>Client ID</span>
-            <input value={id} onChange={(e) => set({ spotifyClientId: e.target.value.trim() })} spellCheck={false} />
-          </label>
-          <label className="field">
-            <span>Client Secret</span>
-            <input type="password" value={secret} onChange={(e) => set({ spotifyClientSecret: e.target.value.trim() })} spellCheck={false} />
-            <span className="toggle-hint">Ключи хранятся только на этом компьютере и используются для чтения публичных плейлистов.</span>
-          </label>
+          <div className="svc-account">
+            <span className="svc-avatar">{account.avatar ? <img src={account.avatar} alt="" /> : <IconUser size={22} />}</span>
+            <span className="svc-account-text">
+              <span className="set-row-title">{account.name}</span>
+              <span className="muted small">{account.product === "premium" ? "Spotify Premium" : "Spotify"} · плейлисты по ссылке читаются целиком</span>
+            </span>
+            <button type="button" className="btn ghost" onClick={signOutSpotify}>Выйти</button>
+          </div>
+          <div className="svc-actions">
+            <button type="button" className="btn ghost" disabled={busy} onClick={() => void importSpotifyLiked()}><IconHeart size={15} /> Забрать «Любимые треки»</button>
+            <button type="button" className="btn ghost" disabled={busy} onClick={() => void importSpotifyPlaylists()}><IconListPlus size={15} /> Забрать плейлисты</button>
+          </div>
+        </>
+      ) : (
+        <>
+          <p className="muted small">
+            Войдите своим аккаунтом Spotify (Premium не нужен) — и импорт заберёт плейлисты любой длины, а ещё ваши «Любимые треки». Вход открывается в
+            браузере на spotify.com, пароль EvPlayer не видит.
+          </p>
           <div className="svc-actions">
             <button
               type="button"
               className="btn primary"
-              disabled={!connected || checking}
+              disabled={!canSignIn || working}
               onClick={async () => {
-                setChecking(true);
+                setWorking(true);
                 try {
-                  await spotifyCollection("album", "4m2880jivSbbyEGAKfITCa");
-                  toast("Spotify подключён — плейлисты будут импортироваться целиком");
-                  setOpen(false);
+                  await signInSpotify();
+                  toast("Spotify подключён");
                 } catch (e) {
                   toast(e instanceof Error ? e.message : "Не получилось", "error");
                 } finally {
-                  setChecking(false);
+                  setWorking(false);
                 }
               }}
             >
-              {checking ? <span className="spinner small-spin" /> : null} Проверить
+              {working ? <span className="spinner small-spin" /> : <IconPlug size={15} />} {working ? "Жду вход в браузере…" : "Войти через Spotify"}
             </button>
-            {connected && <button type="button" className="btn ghost" onClick={() => set({ spotifyClientId: "", spotifyClientSecret: "" })}>Отключить</button>}
+            <button type="button" className="btn ghost" onClick={openSpotifyExport}>Импорт архива данных</button>
           </div>
+          {!canSignIn && <p className="muted small">Для входа нужен Client ID приложения Spotify — откройте «Своё приложение Spotify» ниже.</p>}
+        </>
+      )}
+
+      <button type="button" className="svc-more" onClick={() => setOpen((v) => !v)}>{open ? "Скрыть" : "Своё приложение Spotify"}</button>
+      {open && (
+        <>
+          <ol className="steps">
+            <li>Откройте <button type="button" className="link-btn strong" onClick={() => window.open("https://developer.spotify.com/dashboard", "_blank")}>developer.spotify.com/dashboard</button> и войдите аккаунтом Spotify.</li>
+            <li>«Create app»: любое имя, Redirect URI — <code>http://127.0.0.1:43821/callback</code>, отметьте «Web API».</li>
+            <li>Скопируйте <b>Client ID</b> сюда. Пока приложение в режиме разработки, войти в него могут только аккаунты, добавленные в «User Management» (до 25).</li>
+          </ol>
+          <label className="field">
+            <span>Client ID{builtIn ? " (пусто — встроенный EvPlayer)" : ""}</span>
+            <input value={id} onChange={(e) => set({ spotifyClientId: e.target.value.trim() })} spellCheck={false} />
+          </label>
+          <label className="field">
+            <span>Client Secret — необязательно</span>
+            <input type="password" value={secret} onChange={(e) => set({ spotifyClientSecret: e.target.value.trim() })} spellCheck={false} />
+            <span className="toggle-hint">Только если не хотите входить: тогда по ссылке читаются публичные плейлисты, но без «Любимых треков». Хранится только на этом компьютере.</span>
+          </label>
         </>
       )}
     </section>

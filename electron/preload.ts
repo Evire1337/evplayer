@@ -4,6 +4,7 @@ import type { LocalTrackEdit, LocalTrackRecord } from "./local-files";
 import type { TrayOptions } from "./tray";
 import type { DiscordUser, PresenceState } from "./discord";
 import type { OverlayOptions } from "./overlay";
+import type { SpotifyTokens } from "./spotifyAuth";
 
 function on<T>(channel: string, cb: (value: T) => void): () => void {
   const listener = (_e: IpcRendererEvent, value: T) => cb(value);
@@ -67,6 +68,10 @@ const api = {
     ready: () => ipcRenderer.send("overlay:ready"),
     onState: (cb: (state: unknown) => void) => on("overlay:state", cb),
     command: (action: string, value?: number) => ipcRenderer.send("overlay:command", action, value),
+  },
+  spotify: {
+    signIn: (clientId: string): Promise<SpotifyTokens> => ipcRenderer.invoke("spotify:sign-in", clientId),
+    refresh: (clientId: string, refreshToken: string): Promise<SpotifyTokens> => ipcRenderer.invoke("spotify:refresh", clientId, refreshToken),
   },
   discord: {
     setAppId: (appId: string | null) => ipcRenderer.send("discord:set", appId),
