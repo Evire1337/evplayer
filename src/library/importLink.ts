@@ -6,6 +6,7 @@ import { matchTracks, type NamedTrack } from "./matchTracks";
 import { useLibrary } from "./store";
 import { useImportProgress } from "./importProgress";
 import { toast } from "@/ui/toasts";
+import { hasSpotifyApp, spotifyCollection } from "@/services/spotify/webApi";
 import { useNavigation } from "@/ui/navigation";
 
 // "Import by link": paste a playlist, album or track link from a service and it becomes
@@ -38,6 +39,8 @@ interface Fetched {
   description?: string;
   tracks?: Track[];
   named?: NamedTrack[];
+  /** the source showed only part of the list */
+  truncated?: boolean;
 }
 
 async function youtube(url: URL, signal: AbortSignal): Promise<Fetched> {
@@ -71,6 +74,11 @@ async function spotify(url: URL, signal: AbortSignal): Promise<Fetched> {
   }
   const m = /\/(playlist|album|track)\/([A-Za-z0-9]+)/.exec(target.pathname);
   if (!m) throw new Error("Ссылка Spotify должна вести на плейлист, альбом или трек");
+  if (hasSpotifyApp()) {
+    // the whole list through the official API
+    const full = await spotifyCollection(m[1] as "playlist" | "album" | "track", m[2], signal);
+    return { title: full.title, named: full.tracks, description: "Импортировано из Spotify" };
+  }
   const res = await fetch(`https://open.spotify.com/embed/${m[1]}/${m[2]}`, { signal });
   if (!res.ok) throw new Error(`Spotify ответил ${res.status}`);
   const html = await res.text();
@@ -86,7 +94,9 @@ async function spotify(url: URL, signal: AbortSignal): Promise<Fetched> {
   const named = list
     .filter((t) => t.title)
     .map((t) => ({ title: t.title, artists: t.subtitle.split(/,\s*/).filter(Boolean), durationMs: t.duration }));
-  return { title: entity.name ?? entity.title ?? "Spotify", named, description: "Импортировано из Spotify" };
+  // the embed page stops at 100 songs: a longer playlist needs the official API
+  const cut = m[1] === "playlist" && list.length >= 100;
+  return { title: entity.name ?? entity.title ?? "Spotify", named, description: "Импортировано из Spotify", truncated: cut };
 }
 
 async function deezer(url: URL, signal: AbortSignal): Promise<Fetched> {
@@ -165,6 +175,9 @@ export async function importFromLink(text: string): Promise<void> {
     lib.addToPlaylist(playlist.id, tracks);
     const missed = fetched.named ? fetched.named.length - tracks.length : 0;
     toast(missed > 0 ? `Плейлист «${fetched.title}»: ${tracks.length} треков, ${missed} не нашлось` : `Плейлист «${fetched.title}» добавлен`);
+    if (fetched.truncated) {
+      toast("Spotify без своего приложения показывает только первые 100 треков. Подключите Spotify в Настройки → Сервисы — и импорт заберёт плейлист целиком", "error");
+    }
     useNavigation.getState().go("playlist", playlist.id);
   } catch (error) {
     if (!controller.signal.aborted) toast(error instanceof Error ? error.message : String(error), "error");

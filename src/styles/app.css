@@ -299,7 +299,7 @@ img { display: block; max-width: 100%; }
   z-index: 10;
   border-radius: 24px;
   padding: 16px;
-  background: rgba(6, 18, 20, 0.86);
+  background: rgba(6, 18, 20, 0.93);
   backdrop-filter: blur(40px) saturate(1.5);
   -webkit-backdrop-filter: blur(40px) saturate(1.5);
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
@@ -329,7 +329,7 @@ img { display: block; max-width: 100%; }
   background:
     repeating-linear-gradient(90deg, rgba(238, 247, 244, 0.55) 0 2px, transparent 2px 9px) 0 50% / var(--fill) 12px no-repeat,
     repeating-linear-gradient(90deg, rgba(238, 247, 244, 0.16) 0 2px, transparent 2px 9px) 0 50% / 100% 12px no-repeat;
-  cursor: ew-resize;
+  cursor: pointer;
 }
 .dial::-webkit-slider-thumb { appearance: none; width: 4px; height: 26px; border-radius: 2px; background: var(--accent); box-shadow: 0 0 12px rgba(111, 240, 196, 0.6); }
 .dial:disabled { cursor: default; opacity: 0.45; }
@@ -355,7 +355,7 @@ img { display: block; max-width: 100%; }
   margin: 0;
   border-radius: 14px;
   background: linear-gradient(0deg, rgba(238, 247, 244, 0.85) var(--fill), rgba(238, 247, 244, 0.12) var(--fill));
-  cursor: ns-resize;
+  cursor: pointer;
 }
 .vslider::-webkit-slider-thumb { appearance: none; width: 34px; height: 4px; background: transparent; }
 .volume-value { font-weight: 600; font-size: 12.5px; font-variant-numeric: tabular-nums; }
@@ -794,3 +794,23 @@ html.is-overlay, html.is-overlay body { background: transparent; }
 .corner-top-right { right: 10px; top: 10px; }
 .corner-bottom-left { left: 10px; bottom: 10px; }
 .corner-bottom-right { right: 10px; bottom: 10px; }
+
+/* the sound panel: compact */
+.popover:has(.sound-panel) { padding: 12px; border-radius: 20px; }
+.sound-panel { gap: 11px; }
+.sound-panel .preset-row { gap: 2px; padding: 3px; border-radius: 12px; }
+.sound-panel .preset { height: 26px; font-size: 11.5px; border-radius: 9px; }
+.sound-panel .stepper { gap: 5px; }
+.sound-panel .stepper-label { font-size: 12.5px; }
+.sound-panel .dial { height: 18px; }
+.sound-panel .dial::-webkit-slider-thumb { height: 18px; }
+.sound-panel .stepper-row { grid-template-columns: 30px minmax(0, 1fr) 30px; gap: 6px; }
+.sound-panel .step-btn { width: 30px; height: 26px; border-radius: 9px; }
+.sound-panel .stepper-value { padding: 4px 0; font-size: 12.5px; border-radius: 9px; }
+.sound-panel .toggle-row { gap: 10px; }
+.sound-panel .toggle-title { font-size: 12.5px; }
+.sound-panel .toggle-hint { font-size: 11px; }
+.sound-panel .switch { width: 36px; height: 20px; }
+.sound-panel .switch::after { width: 14px; height: 14px; }
+.sound-panel .switch:checked::after { transform: translateX(16px); }
+.sound-panel .reset-btn { font-size: 11.5px; padding: 0; }

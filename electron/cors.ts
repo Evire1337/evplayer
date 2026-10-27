@@ -14,6 +14,8 @@ const OPEN_HOSTS = [
   /(^|\.)genius\.com$/,
   /^api\.deezer\.com$/,
   /^open\.spotify\.com$/,
+  /^accounts\.spotify\.com$/,
+  /^api\.spotify\.com$/,
 ];
 
 export function isOpenHost(url: string): boolean {

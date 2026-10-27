@@ -5,6 +5,7 @@ import { importFromLink, linkKind } from "@/library/importLink";
 import { openSpotifyExport } from "@/library/SpotifyExportDialog";
 import { useImportProgress } from "@/library/importProgress";
 import { useNavigation } from "@/ui/navigation";
+import { spotifyCollection } from "@/services/spotify/webApi";
 import { useLocalFiles } from "@/files/localFiles";
 import { formatCount } from "@/ui/format";
 import { toast } from "@/ui/toasts";
@@ -170,6 +171,12 @@ function YouTubeCard() {
 }
 
 function SpotifyCard() {
+  const id = useSettings((s) => s.spotifyClientId);
+  const secret = useSettings((s) => s.spotifyClientSecret);
+  const set = useSettings((s) => s.set);
+  const [open, setOpen] = useState(false);
+  const [checking, setChecking] = useState(false);
+  const connected = Boolean(id.trim() && secret.trim());
   return (
     <section className="svc-card">
       <div className="svc-head">
@@ -178,12 +185,57 @@ function SpotifyCard() {
           <span className="svc-name">Spotify</span>
           <span className="muted small">Перенос плейлистов, альбомов и любимых — песни находятся на YouTube Music и SoundCloud</span>
         </span>
-        <Pill tone="info">перенос</Pill>
+        <Pill tone={connected ? "ok" : "info"}>{connected ? "приложение подключено" : "до 100 треков"}</Pill>
       </div>
+      <p className="muted small">
+        {connected
+          ? "Плейлисты по ссылке импортируются целиком, любой длины."
+          : "Без своего приложения Spotify показывает по ссылке только первые 100 треков плейлиста. Подключите бесплатное приложение — и импорт заберёт всё."}
+      </p>
       <div className="svc-actions">
+        <button type="button" className="btn ghost" onClick={() => setOpen((v) => !v)}>{connected ? "Изменить ключи" : "Подключить приложение"}</button>
         <button type="button" className="btn ghost" onClick={openSpotifyExport}>Импорт архива данных</button>
       </div>
-      <p className="muted small">Ссылка на плейлист переносит до 50 треков. Для больших плейлистов и всех любимых — архив «Скачать свои данные» из аккаунта Spotify.</p>
+      {open && (
+        <>
+          <ol className="steps">
+            <li>Откройте <button type="button" className="link-btn strong" onClick={() => window.open("https://developer.spotify.com/dashboard", "_blank")}>developer.spotify.com/dashboard</button> и войдите своим аккаунтом Spotify.</li>
+            <li>«Create app»: любое имя, в Redirect URI впишите <code>http://127.0.0.1:8888/callback</code>, отметьте «Web API».</li>
+            <li>В настройках приложения скопируйте <b>Client ID</b> и <b>Client Secret</b> сюда.</li>
+          </ol>
+          <label className="field">
+            <span>Client ID</span>
+            <input value={id} onChange={(e) => set({ spotifyClientId: e.target.value.trim() })} spellCheck={false} />
+          </label>
+          <label className="field">
+            <span>Client Secret</span>
+            <input type="password" value={secret} onChange={(e) => set({ spotifyClientSecret: e.target.value.trim() })} spellCheck={false} />
+            <span className="toggle-hint">Ключи хранятся только на этом компьютере и используются для чтения публичных плейлистов.</span>
+          </label>
+          <div className="svc-actions">
+            <button
+              type="button"
+              className="btn primary"
+              disabled={!connected || checking}
+              onClick={async () => {
+                setChecking(true);
+                try {
+                  await spotifyCollection("album", "4m2880jivSbbyEGAKfITCa");
+                  toast("Spotify подключён — плейлисты будут импортироваться целиком");
+                  setOpen(false);
+                } catch (e) {
+                  toast(e instanceof Error ? e.message : "Не получилось", "error");
+                } finally {
+                  setChecking(false);
+                }
+              }}
+            >
+              {checking ? <span className="spinner small-spin" /> : null} Проверить
+            </button>
+            {connected && <button type="button" className="btn ghost" onClick={() => set({ spotifyClientId: "", spotifyClientSecret: "" })}>Отключить</button>}
+          </div>
+        </>
+      )}
     </section>
   );
 }

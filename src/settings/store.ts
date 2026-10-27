@@ -63,6 +63,9 @@ export interface SettingsState {
   /** client id of your own app from soundcloud.com/you/apps; empty = automatic */
   soundcloudClientId: string;
   soundcloudAccount: SoundCloudAccount | null;
+  /** your own app from developer.spotify.com: lets imports read whole playlists */
+  spotifyClientId: string;
+  spotifyClientSecret: string;
   // discord
   discordEnabled: boolean;
   discordAppId: string;
@@ -98,6 +101,8 @@ const DEFAULTS = {
   overlayShowLyrics: true,
   soundcloudClientId: "",
   soundcloudAccount: null as SoundCloudAccount | null,
+  spotifyClientId: "",
+  spotifyClientSecret: "",
   discordEnabled: false,
   discordAppId: "",
   discordShowArtwork: true,

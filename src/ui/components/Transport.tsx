@@ -67,7 +67,7 @@ export function Tools() {
   const { volume, muted } = usePlayer(useShallow((s) => ({ volume: s.volume, muted: s.muted })));
   return (
     <div className="tools">
-      <Popover label="Звук, скорость и тон" icon={<IconSliders size={19} />} width={330} active={tuned}>
+      <Popover label="Звук, скорость и тон" icon={<IconSliders size={19} />} width={292} active={tuned}>
         <SoundPanel />
       </Popover>
       <Popover label="Громкость" icon={muted || volume === 0 ? <IconMute size={19} /> : <IconVolume size={19} />} width={76}>
