@@ -3,6 +3,7 @@ import { getVersion } from "@tauri-apps/api/app";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import type { EvPlayerApi, UpdateState } from "./api";
 import { installProxy, schemeBase } from "./net";
+import { onPhoneCommand, onPhoneVisible } from "./androidMedia";
 
 // `window.evplayer` on top of Tauri: every call is a command in src-tauri/src/lib.rs, every
 // subscription an event the Rust side sends to this window.
@@ -34,9 +35,23 @@ export function createTauriApi(): EvPlayerApi {
     clearCache: () => invoke("clear_cache"),
     setNoCache: (on) => invoke("set_no_cache", { on }),
     openDataFolder: () => invoke("open_data_folder"),
-    onPlayerCommand: (cb) => on<{ action: string; value?: number | null }>("player:command", (p) => cb(p.action, p.value ?? undefined)),
+    onPlayerCommand: (cb) => {
+      const offDesktop = on<{ action: string; value?: number | null }>("player:command", (p) => cb(p.action, p.value ?? undefined));
+      const offPhone = onPhoneCommand(cb);
+      return () => {
+        offDesktop();
+        offPhone();
+      };
+    },
     showWindow: () => fire("show_window"),
-    onWindowVisible: (cb) => on<boolean>("window:visible", cb),
+    onWindowVisible: (cb) => {
+      const offDesktop = on<boolean>("window:visible", cb);
+      const offPhone = onPhoneVisible(cb);
+      return () => {
+        offDesktop();
+        offPhone();
+      };
+    },
     window: {
       minimize: () => void win.minimize(),
       toggleMaximize: () => void win.toggleMaximize(),

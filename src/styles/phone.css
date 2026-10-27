@@ -47,7 +47,7 @@ html.is-phone .mini-art { width: 46px; height: 46px; border-radius: 12px; }
 html.is-phone .mini-side, html.is-phone .mini-center .progress { display: none; }
 /* in the small player only play and next; the rest is on "Now playing" */
 html.is-phone .mini-center .round-btn.ghost, html.is-phone .mini-center .round-btn[aria-label="Предыдущий"] { display: none; }
-html.is-phone .mini .like-btn { display: none; }
+html.is-phone .mini-left { gap: 2px; }
 
 /* now playing: one column, cover and controls first, lyrics below */
 html.is-phone .now { display: flex; flex-direction: column; gap: 18px; padding: calc(var(--safe-top) + 4px) 4px 0; overflow-y: auto; height: 100%; }
@@ -59,10 +59,11 @@ html.is-phone .now .queue { display: none; }
 
 /* settings: tabs scroll sideways */
 html.is-phone .settings-layout { grid-template-columns: 1fr; }
-html.is-phone .settings-tabs { position: static; flex-direction: row; overflow-x: auto; flex-wrap: nowrap; scrollbar-width: none; }
-html.is-phone .settings-tab-group { flex-direction: row; flex-wrap: nowrap; }
+/* all sections visible at once, wrapped over a few lines (a sideways scroll hid most of them) */
+html.is-phone .settings-tabs { position: static; flex-direction: row; flex-wrap: wrap; gap: 6px; padding: 8px; }
+html.is-phone .settings-tab-group { display: contents; }
 html.is-phone .settings-tab-group-title { display: none; }
-html.is-phone .settings-tabs button { white-space: nowrap; }
+html.is-phone .settings-tabs button { white-space: nowrap; padding: 8px 12px; font-size: 13px; }
 
 /* rows: the date column does not fit */
 html.is-phone .track-row .track-date, html.is-phone .track-row .track-plays { display: none; }

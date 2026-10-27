@@ -5,6 +5,7 @@ import { globalMap } from "@/settings/shortcuts";
 import { useLibrary } from "@/library/store";
 import { runAction, type Command } from "./actions";
 import { useLyricsLine } from "@/ui/lyricsLine";
+import { sendPhoneMedia } from "@/platform/androidMedia";
 
 // Keeps the main process in step with the page: tray menu and options, global keys,
 // Discord status. Also takes commands from the tray and the global keys.
@@ -91,6 +92,34 @@ export function startBridge(): void {
     lastOverlay = "";
     pushOverlay();
   });
+
+  // phone: the song in the notification and on the lock screen. Position is only sent when
+  // it jumps (seek, new song, play/pause); the phone moves the bar on by itself in between
+  const pushPhone = () => {
+    const s = usePlayer.getState();
+    const track = currentTrack(s);
+    if (!track) return sendPhoneMedia(null);
+    sendPhoneMedia({
+      title: track.title,
+      artist: artistLine(track.artists),
+      artwork: track.artwork && /^https:/.test(track.artwork) ? track.artwork : undefined,
+      playing: s.status === "playing",
+      positionMs: Math.round(s.positionMs / 2000) * 2000,
+      durationMs: Math.round(s.durationMs),
+      liked: useLibrary.getState().likes.some((l) => l.track.id === track.id),
+    });
+  };
+  let phonePos = 0;
+  usePlayer.subscribe((s, prev) => {
+    const jumped = Math.abs(s.positionMs - phonePos) > 4000;
+    if (s.status !== prev.status || currentTrack(s)?.id !== currentTrack(prev)?.id || s.durationMs !== prev.durationMs || jumped) {
+      phonePos = s.positionMs;
+      pushPhone();
+    } else if (s.status === "playing") {
+      phonePos = s.positionMs;
+    }
+  });
+  useLibrary.subscribe(pushPhone);
 
   usePlayer.subscribe((s, prev) => {
     const track = currentTrack(s);
