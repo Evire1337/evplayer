@@ -18,7 +18,7 @@ export default function NowPlayingPage() {
   return (
     <div className={`now${showQueue ? "" : " no-queue"}`}>
       <section className="now-left" aria-label="Обложка и управление">
-        <div className={`now-art${route === "embed" ? " is-embed" : ""}`}><Artwork src={track?.artwork} lazy={false} /></div>
+        <div className="now-art"><Artwork src={track?.artwork} lazy={false} /></div>
         <div className="now-meta">
           <h1 className="now-title">{track?.title ?? "Ничего не играет"}</h1>
           <span className="now-artist">
@@ -39,7 +39,6 @@ export default function NowPlayingPage() {
             <span className="now-source">
               {SOURCE[track.source]}
               {route === "matched" && " · играет копия с SoundCloud"}
-              {route === "embed" && " · официальный плеер YouTube (эквалайзер и эффекты недоступны)"}
             </span>
           )}
         </div>

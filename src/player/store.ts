@@ -16,7 +16,7 @@ export interface PlayerState {
   shuffle: boolean;
   error?: string;
   /** how a YouTube song is playing: through its SoundCloud copy or the YouTube player */
-  route?: "matched" | "embed";
+  route?: "matched";
 }
 
 const VOLUME_KEY = "evplayer.volume";

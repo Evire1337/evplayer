@@ -15,7 +15,6 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DIST = path.join(__dirname, "../dist");
 const PUBLIC = app.isPackaged ? DIST : path.join(__dirname, "../public");
 const DEV_URL = process.env.VITE_DEV_SERVER_URL;
-const APP_REFERER = "https://github.com/Evire1337/evplayer";
 
 let mainWindow: BrowserWindow | null = null;
 let quitting = false;
@@ -37,10 +36,6 @@ const tray = new TrayController(
   },
   app.getLocale(),
 );
-
-function fromYouTubeFrame(referrer: string | undefined, frameUrl: string | undefined): boolean {
-  return [referrer, frameUrl].some((u) => Boolean(u) && /^https:\/\/(www\.)?youtube(-nocookie)?\.com\//.test(u!));
-}
 
 function loadPage(win: BrowserWindow, hash = ""): void {
   if (DEV_URL) void win.loadURL(`${DEV_URL}${hash ? `#${hash}` : ""}`);
@@ -185,20 +180,12 @@ if (!app.requestSingleInstanceLock()) {
   app.whenReady().then(() => {
     const filter = { urls: ["https://*/*"] };
     session.defaultSession.webRequest.onHeadersReceived(filter, (details, callback) => {
-      // the YouTube player inside its own frame handles CORS itself: leave its traffic alone
-      if (!isOpenHost(details.url) || fromYouTubeFrame(details.referrer, details.frame?.url)) return callback({});
+      if (!isOpenHost(details.url)) return callback({});
       const preflight = details.method === "OPTIONS";
       callback({
         responseHeaders: openCorsHeaders(details.responseHeaders),
         ...(preflight ? { statusLine: "HTTP/1.1 200 OK" } : {}),
       });
-    });
-
-    // The YouTube player refuses to start without knowing which site embeds it. A desktop
-    // app has no site, so it names its project page — the same thing a web page would send.
-    const embedFilter = { urls: ["https://www.youtube.com/embed/*", "https://www.youtube-nocookie.com/embed/*"] };
-    session.defaultSession.webRequest.onBeforeSendHeaders(embedFilter, (details, callback) => {
-      callback({ requestHeaders: { ...details.requestHeaders, Referer: APP_REFERER } });
     });
 
     ipcMain.handle("app:version", () => app.getVersion());

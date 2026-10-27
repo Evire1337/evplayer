@@ -149,8 +149,6 @@ function SoundCloudCard() {
 }
 
 function YouTubeCard() {
-  const match = useSettings((s) => s.youtubeMatchSoundCloud);
-  const set = useSettings((s) => s.set);
   return (
     <section className="svc-card">
       <div className="svc-head">
@@ -161,12 +159,7 @@ function YouTubeCard() {
         </span>
         <Pill tone="info">работает без входа</Pill>
       </div>
-      <SwitchRow
-        title="Играть через копию на SoundCloud"
-        hint="Тогда работают эквалайзер, скорость, тон и реверберация. Если копии нет — играет официальный плеер YouTube в углу окна"
-        checked={match}
-        onChange={(v) => set({ youtubeMatchSoundCloud: v })}
-      />
+      <p className="muted small">Песни с YouTube играют из их копии на SoundCloud. Если копии нет, трек пропускается.</p>
       <p className="muted small">Плейлисты YouTube и YouTube Music можно перенести по ссылке — поле выше.</p>
     </section>
   );

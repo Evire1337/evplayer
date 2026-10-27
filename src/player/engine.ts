@@ -1,11 +1,10 @@
 import Hls from "hls.js";
 import type { Track } from "@/types";
 import { currentTrack, nextIndex, prevIndex, shuffledQueue, usePlayer } from "./store";
-import { resolveStream } from "./streams";
+import { NoCopyError, resolveStream } from "./streams";
 import { createAudioGraph, type AudioGraph } from "@/audio/graph";
 import { setLevelingTrack } from "@/equalizer/eqAudio";
 import { effectsForNextTrack, useEffects, type EffectsState } from "./effects";
-import { YouTubeEmbed } from "./youtubeEmbed";
 import { similarTracks, songKey } from "./radio";
 import { useSettings } from "@/settings/store";
 import { HISTORY_AFTER_MS, useHistory } from "@/stats/history";
@@ -13,10 +12,8 @@ import { recordListen } from "@/stats/listeningStats";
 
 // Two <audio> "decks": one plays, the other gets the next song ready shortly before the
 // end, so it starts without a gap (or fades in over the end, with crossfade on). HLS streams
-// go through hls.js, plain files play directly, YouTube songs without a SoundCloud copy use
-// the official YouTube player. The OS media controls are wired via the Media Session API.
-
-type Mode = "audio" | "embed";
+// go through hls.js, plain files play directly, YouTube songs play from their SoundCloud
+// copy. The OS media controls are wired via the Media Session API.
 
 interface Deck {
   audio: HTMLAudioElement;
@@ -48,8 +45,6 @@ class PlayerEngine {
   private loadToken = 0;
   private graph: AudioGraph;
   private firstTrack = true;
-  private mode: Mode = "audio";
-  private embed: YouTubeEmbed;
   // the next song, waiting on the other deck
   private prepared: Prepared | null = null;
   private prepareAbort: AbortController | null = null;
@@ -83,32 +78,12 @@ class PlayerEngine {
     this.decks = [makeDeck(state.volume), makeDeck(state.volume)];
     for (const deck of this.decks) this.listen(deck);
 
-    this.embed = new YouTubeEmbed({
-      onPlaying: () => usePlayer.setState({ status: "playing", error: undefined }),
-      onPaused: () => usePlayer.setState({ status: "paused" }),
-      onBuffering: () => {},
-      onEnded: () => this.advance(false),
-      onTime: (pos, duration) => {
-        usePlayer.setState({ positionMs: pos, ...(duration ? { durationMs: duration } : {}) });
-        this.heard(pos, usePlayer.getState().status === "playing");
-      },
-      onError: (message) => {
-        this.embed.stop();
-        usePlayer.setState({ status: "error", error: message });
-        // a video that may not be embedded: go on with the next song instead of stopping
-        const token = this.loadToken;
-        const s = usePlayer.getState();
-        if (s.index < s.queue.length - 1) setTimeout(() => token === this.loadToken && this.advance(true), 2500);
-      },
-    });
-
     usePlayer.subscribe((s, prev) => {
       if (s.volume !== prev.volume || s.muted !== prev.muted) {
         for (const deck of this.decks) {
           deck.audio.volume = s.volume;
           deck.audio.muted = s.muted;
         }
-        this.embed.setVolume(s.volume, s.muted);
       }
       // the queue changed under the prepared song: get the right one ready instead
       if (this.prepared && s.queue !== prev.queue && s.queue[this.prepared.index]?.id !== this.prepared.track.id) this.dropPrepared();
@@ -122,7 +97,7 @@ class PlayerEngine {
 
   private listen(deck: Deck): void {
     const a = deck.audio;
-    const isCur = () => deck === this.cur && this.mode === "audio";
+    const isCur = () => deck === this.cur;
     a.addEventListener("play", () => this.graph.resume());
     a.addEventListener("timeupdate", () => {
       if (!isCur()) return;
@@ -164,7 +139,6 @@ class PlayerEngine {
       audio.preservesPitch = !fx.linked;
     }
     this.graph.apply({ pitchSemitones: fx.linked ? 0 : fx.pitch, reverb: fx.reverb, reverbAmount: fx.reverbAmount });
-    if (this.mode === "embed") this.embed.setRate(fx.speed);
   }
 
   // ---- listening ---------------------------------------------------------------------
@@ -223,7 +197,7 @@ class PlayerEngine {
     if (!track) return;
     this.resumeAt = 0;
     // "next" onto the song that is already waiting: switch at once
-    if (this.prepared?.ready && this.prepared.index === index && this.prepared.track.id === track.id && this.mode === "audio") {
+    if (this.prepared?.ready && this.prepared.index === index && this.prepared.track.id === track.id) {
       this.transition(0);
       return;
     }
@@ -299,17 +273,13 @@ class PlayerEngine {
   }
 
   private pause(): void {
-    if (this.mode === "embed") this.embed.pause();
-    else {
-      this.cur.audio.pause();
-      // a crossfade in progress stops with it
-      if (this.transitioning) this.spare.audio.pause();
-    }
+    this.cur.audio.pause();
+    // a crossfade in progress stops with it
+    if (this.transitioning) this.spare.audio.pause();
   }
 
   private resume(): void {
-    if (this.mode === "embed") this.embed.play();
-    else void this.cur.audio.play().catch(() => {});
+    void this.cur.audio.play().catch(() => {});
   }
 
   next(): void {
@@ -329,8 +299,7 @@ class PlayerEngine {
   seek(ms: number): void {
     if (!Number.isFinite(ms)) return;
     const target = Math.max(0, ms);
-    if (this.mode === "embed") this.embed.seek(target);
-    else this.cur.audio.currentTime = target / 1000;
+    this.cur.audio.currentTime = target / 1000;
     this.lastPos = target;
     usePlayer.setState({ positionMs: target });
   }
@@ -443,16 +412,6 @@ class PlayerEngine {
     try {
       const stream = await resolveStream(track, controller.signal);
       if (token !== this.loadToken) return;
-      if (stream.kind === "embed") {
-        this.mode = "embed";
-        usePlayer.setState({ route: "embed" });
-        const { volume, muted } = usePlayer.getState();
-        await this.embed.load(stream.videoId, volume, muted);
-        this.applyResume();
-        return;
-      }
-      this.mode = "audio";
-      this.embed.stop();
       if (stream.via) usePlayer.setState({ route: "matched" });
       this.graph.setDeck(this.cur.audio, 1);
       this.attach(this.cur, stream, () => token === this.loadToken && usePlayer.setState({ status: "error", error: "Поток прервался" }));
@@ -462,6 +421,8 @@ class PlayerEngine {
     } catch (error) {
       if (token !== this.loadToken || controller.signal.aborted) return;
       usePlayer.setState({ status: "error", error: error instanceof Error ? error.message : String(error) });
+      // a song that cannot be found: go on with the next one instead of stopping
+      if (error instanceof NoCopyError) setTimeout(() => token === this.loadToken && this.advance(true), 2000);
     }
   }
 
@@ -480,7 +441,7 @@ class PlayerEngine {
 
   private async prepareNext(): Promise<void> {
     const state = usePlayer.getState();
-    if (state.repeat === "one" || this.mode !== "audio") return;
+    if (state.repeat === "one") return;
     const index = nextIndex(state, false);
     const track = state.queue[index];
     if (index < 0 || !track || index === state.index) return;
@@ -492,11 +453,6 @@ class PlayerEngine {
     try {
       const stream = await resolveStream(track, controller.signal);
       if (this.prepared !== prepared) return;
-      // the official YouTube player cannot be cued on a deck: that song loads when its turn comes
-      if (stream.kind === "embed") {
-        this.prepared = null;
-        return;
-      }
       if (stream.via) prepared.route = "matched";
       const deck = this.spare;
       this.unload(deck);

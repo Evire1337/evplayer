@@ -192,7 +192,7 @@ pnpm dev          # запуск с горячей перезагрузкой
 | Интерфейс | React 19, TypeScript, Vite |
 | Состояние | Zustand |
 | Звук | Web Audio API: свой AudioWorklet для тона, свёрточная реверберация, BiquadFilter-эквалайзер, лимитер |
-| Потоки | hls.js, официальный YouTube IFrame Player |
+| Потоки | hls.js; песни с YouTube играют из копии на SoundCloud |
 | Файлы | music-metadata, свой протокол `evplayer-media://` с поддержкой перемотки |
 | Фон | свой WebGL-шейдер из цветов обложки |
 | Тесты и CI | Vitest, GitHub Actions |

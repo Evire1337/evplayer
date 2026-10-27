@@ -6,9 +6,8 @@ import electron from "vite-plugin-electron/simple";
 // strict content security policy for the packaged app (the dev server needs inline scripts)
 const CSP = [
   "default-src 'self'",
-  // the official YouTube player (for YouTube songs without a SoundCloud copy)
-  "script-src 'self' https://www.youtube.com https://s.ytimg.com",
-  "frame-src https://www.youtube.com https://www.youtube-nocookie.com",
+  "script-src 'self'",
+  "frame-src 'none'",
   "style-src 'self' 'unsafe-inline'",
   "font-src 'self' data:",
   "img-src 'self' data: blob: https: evplayer-media:",
