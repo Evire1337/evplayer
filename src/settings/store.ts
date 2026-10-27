@@ -47,6 +47,8 @@ export interface SettingsState {
   coverGlow: boolean;
   lyricsBlur: boolean;
   lyricsSize: "s" | "m" | "l";
+  /** the "Up next" panel on the now playing screen */
+  showQueue: boolean;
   // library
   libraryView: "grid" | "list";
   trackSort: { key: import("@/library/sort").SortKey; dir: import("@/library/sort").SortDir };
@@ -96,6 +98,7 @@ const DEFAULTS = {
   lyricsBlur: true,
   lyricsSize: "m" as const,
   geniusFallback: true,
+  showQueue: true,
   libraryView: "grid" as "grid" | "list",
   trackSort: { key: "custom", dir: "asc" } as { key: import("@/library/sort").SortKey; dir: import("@/library/sort").SortDir },
   closeToTray: true,

@@ -18,9 +18,12 @@ export default function QueuePanel() {
     <aside className="queue glass" aria-label="Далее в очереди">
       <div className="queue-head">
         <h2 className="queue-title">Далее</h2>
-        {upcoming.length > 0 && (
-          <button type="button" className="reset-btn" onClick={() => player.clearUpcoming()}>Очистить</button>
-        )}
+        <span className="queue-actions">
+          {upcoming.length > 0 && (
+            <button type="button" className="reset-btn" onClick={() => player.clearUpcoming()}>Очистить</button>
+          )}
+          <button type="button" className="reset-btn" onClick={() => useSettings.getState().set({ showQueue: false })}>Скрыть</button>
+        </span>
       </div>
       {upcoming.length === 0 ? (
         <p className="muted small">{autoplay ? "Очередь пуста — после этого трека включатся похожие." : "Очередь пуста. Выберите трек на главной или в поиске."}</p>

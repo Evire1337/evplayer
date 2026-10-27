@@ -3,6 +3,8 @@ import Lyrics from "@/ui/components/Lyrics";
 import QueuePanel from "@/ui/components/QueuePanel";
 import { Progress, Tools, Transport } from "@/ui/components/Transport";
 import { useNavigation } from "@/ui/navigation";
+import { useSettings } from "@/settings/store";
+import { IconQueue } from "@/ui/components/Icons";
 
 const SOURCE = { soundcloud: "SoundCloud", youtube: "YouTube Music", local: "Мои файлы" } as const;
 
@@ -11,8 +13,9 @@ export default function NowPlayingPage() {
   const error = usePlayer((s) => s.error);
   const route = usePlayer((s) => s.route);
   const go = useNavigation((s) => s.go);
+  const showQueue = useSettings((s) => s.showQueue);
   return (
-    <div className="now">
+    <div className={`now${showQueue ? "" : " no-queue"}`}>
       <section className="now-left" aria-label="Обложка и управление">
         <div className={`now-art${route === "embed" ? " is-embed" : ""}`}>{track?.artwork ? <img src={track.artwork} alt="" /> : null}</div>
         <div className="now-meta">
@@ -41,12 +44,24 @@ export default function NowPlayingPage() {
         </div>
         <Progress big />
         <Transport big />
-        <Tools />
+        <div className="now-tools">
+          <Tools />
+          <button
+            type="button"
+            className={`tool-btn${showQueue ? " is-on" : ""}`}
+            aria-label={showQueue ? "Скрыть «Далее»" : "Показать «Далее»"}
+            data-tip={showQueue ? "Скрыть «Далее»" : "Показать «Далее»"}
+            aria-pressed={showQueue}
+            onClick={() => useSettings.getState().set({ showQueue: !showQueue })}
+          >
+            <IconQueue size={19} />
+          </button>
+        </div>
       </section>
       <section className="now-lyrics" aria-label="Текст песни">
         <Lyrics track={track} />
       </section>
-      <QueuePanel />
+      {showQueue && <QueuePanel />}
     </div>
   );
 }

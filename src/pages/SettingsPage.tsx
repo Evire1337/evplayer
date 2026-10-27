@@ -8,7 +8,7 @@ import { useHistory } from "@/stats/history";
 import { clearListeningStats } from "@/stats/listeningStats";
 import { clearLyricsCache } from "@/ui/useLyrics";
 import {
-  IconChat, IconDatabase, IconEq, IconInfo, IconKeyboard, IconPalette, IconPip, IconPlayCircle, IconPlug, IconRefresh,
+  IconChat, IconDatabase, IconHeartFill, IconEq, IconInfo, IconKeyboard, IconPalette, IconPip, IconPlayCircle, IconPlug, IconRefresh,
 } from "@/ui/components/Icons";
 import EqualizerSection from "./settings/EqualizerSection";
 import KeysTab from "./settings/KeysTab";
@@ -86,6 +86,7 @@ function Appearance() {
       <TabHeader icon={<IconPalette size={22} />} hue={300} title="Внешний вид" description="Фон, свечение и текст песен." />
       <Card title="Фон и обложка">
         <SwitchRow title="Живой фон из обложки" hint="Медленно переливающийся фон в цветах трека. Выключите на слабом компьютере" checked={s.animatedBackdrop} onChange={(v) => s.set({ animatedBackdrop: v })} />
+        <SwitchRow title="Панель «Далее»" hint="Очередь справа на экране «Сейчас играет». Можно скрыть, если не хотите знать, что будет дальше" checked={s.showQueue} onChange={(v) => s.set({ showQueue: v })} />
         <SwitchRow title="Свечение обложки" hint="Мягкий ореол вокруг большой обложки на экране «Сейчас играет»" checked={s.coverGlow} onChange={(v) => s.set({ coverGlow: v })} />
       </Card>
       <Card title="Текст песни">
@@ -224,6 +225,14 @@ function About() {
           <h2 className="about-name">EvPlayer</h2>
           <p className="muted">Версия {version || "—"} · открытый проект, лицензия MIT</p>
         </div>
+      </div>
+      <div className="donate-card">
+        <span className="donate-icon"><IconHeartFill size={22} /></span>
+        <span className="donate-text">
+          <span className="set-row-title">Поддержать автора</span>
+          <span className="set-row-hint">EvPlayer бесплатный и без рекламы. Если он вам нравится, можно поддержать разработку через DonationAlerts.</span>
+        </span>
+        <button type="button" className="btn donate" onClick={() => window.open("https://www.donationalerts.com/r/evire", "_blank")}>Поддержать</button>
       </div>
       <Card>
         <Row title="Обновления" hint={status} icon={<IconRefresh size={16} />}>

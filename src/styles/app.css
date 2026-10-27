@@ -847,3 +847,11 @@ html.is-overlay, html.is-overlay body { background: transparent; }
 }
 .pl-list .smart-badge { right: 2px; bottom: 2px; width: 18px; height: 18px; }
 .pl-list .smart-badge svg { width: 10px !important; height: 10px !important; }
+
+.now.no-queue { grid-template-columns: minmax(300px, 420px) minmax(0, 1fr); }
+.now-tools { display: flex; align-items: center; justify-content: center; gap: 4px; }
+.queue-actions { display: flex; gap: 14px; }
+.donate-card { display: flex; align-items: center; gap: 16px; padding: 18px 20px; border-radius: 22px; background: linear-gradient(135deg, rgba(255, 140, 60, 0.18), rgba(255, 80, 120, 0.14)); border: 1px solid rgba(255, 170, 120, 0.25); }
+.donate-icon { width: 46px; height: 46px; border-radius: 14px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; background: linear-gradient(145deg, #ff9a3c, #ff4f7a); color: #fff; }
+.donate-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.btn.donate { background: linear-gradient(135deg, #ff9a3c, #ff4f7a); color: #fff; }
