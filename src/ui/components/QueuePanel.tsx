@@ -1,3 +1,4 @@
+import Artwork from "@/ui/components/Artwork";
 import { useState } from "react";
 import { player } from "@/player/engine";
 import { usePlayer } from "@/player/store";
@@ -58,7 +59,7 @@ export default function QueuePanel() {
                   onClick={() => void player.playIndex(at)}
                   onContextMenu={(e) => openMenu(e, trackMenuItems(t, { queueIndex: at }))}
                 >
-                  <span className="queue-art">{t.artwork ? <img src={t.artwork} alt="" loading="lazy" draggable={false} /> : null}</span>
+                  <span className="queue-art"><Artwork src={t.artwork} /></span>
                   <span className="queue-text">
                     <span className="queue-name">{t.title}</span>
                     <span className="queue-sub">{artistLine(t.artists)} · {SOURCE_LABEL[t.source]}</span>

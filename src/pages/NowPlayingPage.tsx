@@ -1,3 +1,4 @@
+import Artwork from "@/ui/components/Artwork";
 import { currentTrack, usePlayer } from "@/player/store";
 import Lyrics from "@/ui/components/Lyrics";
 import QueuePanel from "@/ui/components/QueuePanel";
@@ -17,7 +18,7 @@ export default function NowPlayingPage() {
   return (
     <div className={`now${showQueue ? "" : " no-queue"}`}>
       <section className="now-left" aria-label="Обложка и управление">
-        <div className={`now-art${route === "embed" ? " is-embed" : ""}`}>{track?.artwork ? <img src={track.artwork} alt="" /> : null}</div>
+        <div className={`now-art${route === "embed" ? " is-embed" : ""}`}><Artwork src={track?.artwork} lazy={false} /></div>
         <div className="now-meta">
           <h1 className="now-title">{track?.title ?? "Ничего не играет"}</h1>
           <span className="now-artist">

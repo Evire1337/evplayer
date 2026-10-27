@@ -1,3 +1,4 @@
+import Artwork from "@/ui/components/Artwork";
 import { currentTrack, usePlayer } from "@/player/store";
 import { useNavigation } from "../navigation";
 import { artistLine } from "../format";
@@ -12,7 +13,7 @@ export default function MiniPlayer() {
   return (
     <footer className="mini glass" aria-label="Плеер">
       <button type="button" className="mini-now" onClick={() => go("now")} aria-label="Открыть «Сейчас играет»" disabled={!track}>
-        <span className="mini-art">{track?.artwork ? <img src={track.artwork} alt="" /> : null}</span>
+        <span className="mini-art"><Artwork src={track?.artwork} lazy={false} /></span>
         <span className="mini-text">
           <span className="mini-title">{track?.title ?? "Ничего не играет"}</span>
           <span className="mini-sub">{error ? <span className="error-text">{error}</span> : track ? artistLine(track.artists) : "Найдите трек в поиске"}</span>

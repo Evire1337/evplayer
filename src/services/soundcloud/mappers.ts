@@ -9,6 +9,8 @@ const num = (v: unknown): number | undefined => (typeof v === "number" && Number
 /** SoundCloud serves "-large" (100px) artwork by default; ask for the 500px version */
 export function artworkUrl(raw: unknown, size = 500): string | undefined {
   const url = str(raw);
+  // SoundCloud's grey placeholder has no bigger sizes (they 404): treat it as no picture
+  if (!url || /default_avatar|placeholder/.test(url)) return undefined;
   return url ? url.replace(/-(large|t\d+x\d+|crop|original)(?=\.\w+$)/, `-t${size}x${size}`) : undefined;
 }
 

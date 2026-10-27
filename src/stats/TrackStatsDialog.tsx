@@ -1,3 +1,4 @@
+import Artwork from "@/ui/components/Artwork";
 import { useEffect, useMemo, useState } from "react";
 import Dialog from "@/ui/components/Dialog";
 import { Segmented } from "@/ui/components/Controls";
@@ -96,7 +97,7 @@ export default function TrackStatsDialog() {
       {track && stats && (
         <div className="stats-body">
           <div className="stats-track">
-            <span className="stats-art">{track.artwork ? <img src={track.artwork} alt="" /> : null}</span>
+            <span className="stats-art"><Artwork src={track.artwork} lazy={false} /></span>
             <span className="track-text">
               <span className="track-title">{track.title}</span>
               <span className="track-artist">{artistLine(track.artists)}</span>

@@ -871,3 +871,14 @@ html.is-overlay, html.is-overlay body { background: transparent; }
 .donate-icon { width: 46px; height: 46px; border-radius: 14px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; background: linear-gradient(145deg, #ff9a3c, #ff4f7a); color: #fff; }
 .donate-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .btn.donate { background: linear-gradient(135deg, #ff9a3c, #ff4f7a); color: #fff; }
+
+/* the card of the song that is playing: its button stays visible and shows pause */
+.track-card.is-current .track-card-play { opacity: 1; transform: none; }
+.track-card.is-current .track-card-title { color: var(--accent); }
+.track-card.is-current .track-card-art { box-shadow: 0 0 0 2px var(--accent), 0 18px 40px rgba(0, 0, 0, 0.3); }
+.track-card-play .spinner { width: 18px; height: 18px; }
+.eq-bars { position: absolute; left: 12px; bottom: 14px; display: flex; align-items: flex-end; gap: 3px; height: 18px; }
+.eq-bars i { width: 4px; border-radius: 2px; background: var(--accent); animation: eq-bar 900ms ease-in-out infinite; }
+.eq-bars i:nth-child(2) { animation-delay: -300ms; }
+.eq-bars i:nth-child(3) { animation-delay: -600ms; }
+@keyframes eq-bar { 0%, 100% { height: 5px; } 50% { height: 18px; } }

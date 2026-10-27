@@ -1,3 +1,4 @@
+import Artwork from "@/ui/components/Artwork";
 import { useEffect, useRef, useState } from "react";
 import { IconExpand, IconHeart, IconHeartFill, IconNext, IconPause, IconPlay, IconPrev } from "@/ui/components/Icons";
 import { formatTime } from "@/ui/format";
@@ -74,7 +75,7 @@ export default function OverlayApp() {
     <div className="overlay">
       <div className="overlay-card">
         <button type="button" className="overlay-art" onClick={() => cmd("showWindow")} aria-label="Открыть EvPlayer">
-          {track?.artwork ? <img src={track.artwork} alt="" /> : null}
+          <Artwork src={track?.artwork} lazy={false} />
           <span className="overlay-art-hover"><IconExpand size={13} /></span>
         </button>
         <div className="overlay-text">

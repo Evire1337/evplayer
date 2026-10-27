@@ -1,3 +1,4 @@
+import Artwork from "@/ui/components/Artwork";
 import type { Track } from "@/types";
 import { player } from "@/player/engine";
 import { currentTrack, usePlayer } from "@/player/store";
@@ -77,7 +78,7 @@ export default function TrackRow({ track, queue, index, addedAt, menu, number, d
           <span className="track-num">{number}</span>
         ) : null}
         <span className="track-art">
-          {track.artwork ? <img src={track.artwork} alt="" loading="lazy" draggable={false} /> : null}
+          <Artwork src={track.artwork} />
           <span className="track-art-overlay">{active ? <IconPause size={16} /> : <IconPlay size={16} />}</span>
         </span>
       </span>
