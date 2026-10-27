@@ -1,0 +1,583 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"></head><body>
+<title>EvPlayer Live Backdrop</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700&family=Manrope:wght@400;500;600;700&display=swap">
+<style>
+/* layout: full-bleed WebGL backdrop, lyrics column on the left, glass control panel on the right, glass mini player pinned to the bottom */
+:root {
+  --ink: #f5f3f8;
+  --ink-dim: rgba(245, 243, 248, 0.62);
+  --ink-faint: rgba(245, 243, 248, 0.34);
+  --glass: rgba(18, 16, 24, 0.38);
+  --glass-edge: rgba(255, 255, 255, 0.12);
+  --chip: rgba(255, 255, 255, 0.1);
+  --chip-on: #f5f3f8;
+  --chip-on-ink: #14121a;
+  --ground: #0c0b10;
+  --font-display: "Unbounded", "Segoe UI", system-ui, sans-serif;
+  --font-body: "Manrope", "Segoe UI", system-ui, sans-serif;
+  color-scheme: dark;
+}
+html, body { height: 100%; }
+body {
+  margin: 0;
+  background: var(--ground);
+  color: var(--ink);
+  font-family: var(--font-body);
+  overflow: hidden;
+}
+canvas#bg { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+.stage {
+  position: relative;
+  z-index: 1;
+  height: 100%;
+  box-sizing: border-box;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 24px 132px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 24px;
+}
+.lyrics {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 14px;
+  padding-left: clamp(0px, 4vw, 56px);
+  overflow: hidden;
+}
+.line {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: clamp(22px, 3.4vw, 44px);
+  line-height: 1.18;
+  letter-spacing: -0.01em;
+  color: var(--ink-faint);
+  filter: blur(1.6px);
+  transform-origin: left center;
+  transform: scale(0.94);
+  transition: color 420ms ease, filter 420ms ease, transform 520ms cubic-bezier(.2,.8,.2,1), opacity 420ms ease;
+  text-wrap: balance;
+  max-width: 22ch;
+}
+.line.near { filter: blur(0.6px); color: var(--ink-dim); }
+.line.active { color: var(--ink); filter: none; transform: scale(1); text-shadow: 0 2px 24px rgba(0,0,0,0.25); }
+.line.past { opacity: 0.5; }
+
+.panel {
+  align-self: start;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 18px;
+  border-radius: 20px;
+  background: var(--glass);
+  border: 1px solid var(--glass-edge);
+  backdrop-filter: blur(28px) saturate(1.4);
+  -webkit-backdrop-filter: blur(28px) saturate(1.4);
+}
+.panel h1 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+.panel p.note { margin: 0; font-size: 12.5px; line-height: 1.45; color: var(--ink-dim); }
+.group { display: flex; flex-direction: column; gap: 8px; }
+.label { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-faint); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip {
+  border: 0;
+  cursor: pointer;
+  font: 600 12.5px var(--font-body);
+  color: var(--ink);
+  background: var(--chip);
+  padding: 7px 12px;
+  border-radius: 999px;
+  transition: background 160ms ease, color 160ms ease;
+}
+.chip:hover { background: rgba(255,255,255,0.18); }
+.chip[aria-pressed="true"] { background: var(--chip-on); color: var(--chip-on-ink); }
+.chip:focus-visible, input:focus-visible + .slider-ui, .toggle input:focus-visible + span { outline: 2px solid var(--ink); outline-offset: 2px; }
+.row { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 13px; }
+.row output { font-variant-numeric: tabular-nums; color: var(--ink-dim); font-size: 12px; }
+input[type="range"] { width: 100%; accent-color: var(--ink); }
+.toggle { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 13px; cursor: pointer; }
+.toggle input { position: absolute; opacity: 0; pointer-events: none; }
+.toggle span {
+  width: 38px; height: 22px; border-radius: 999px; background: var(--chip); position: relative; flex-shrink: 0; transition: background 160ms ease;
+}
+.toggle span::after {
+  content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: var(--ink); transition: transform 180ms ease;
+}
+.toggle input:checked + span { background: rgba(255,255,255,0.42); }
+.toggle input:checked + span::after { transform: translateX(16px); background: #fff; }
+.drop {
+  border: 1px dashed rgba(255,255,255,0.28);
+  border-radius: 14px;
+  padding: 12px;
+  font-size: 12.5px;
+  color: var(--ink-dim);
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 160ms ease, background 160ms ease;
+}
+.drop:hover, .drop.over { border-color: var(--ink); background: rgba(255,255,255,0.06); color: var(--ink); }
+
+.player {
+  position: fixed;
+  z-index: 2;
+  left: max(16px, env(safe-area-inset-left, 0px));
+  right: max(16px, env(safe-area-inset-right, 0px));
+  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 16px 12px 12px;
+  border-radius: 20px;
+  background: var(--glass);
+  border: 1px solid var(--glass-edge);
+  backdrop-filter: blur(32px) saturate(1.5);
+  -webkit-backdrop-filter: blur(32px) saturate(1.5);
+  max-width: 760px;
+  margin-inline: auto;
+}
+.player img { width: 56px; height: 56px; border-radius: 12px; object-fit: cover; flex-shrink: 0; box-shadow: 0 6px 20px rgba(0,0,0,0.35); }
+.meta { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 6px; }
+.meta .t { font-weight: 700; font-size: 14.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.meta .a { font-size: 12.5px; color: var(--ink-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bar { height: 4px; border-radius: 999px; background: rgba(255,255,255,0.16); overflow: hidden; }
+.bar i { display: block; height: 100%; width: 0; background: var(--ink); border-radius: inherit; }
+.time { font-size: 11.5px; color: var(--ink-dim); font-variant-numeric: tabular-nums; flex-shrink: 0; }
+.play {
+  width: 42px; height: 42px; border-radius: 50%; border: 0; background: var(--ink); color: var(--chip-on-ink); cursor: pointer; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+}
+.fallback { position: fixed; inset: 0; z-index: 0; background: radial-gradient(circle at 30% 30%, #3b2a5c, #0c0b10 70%); }
+
+@media (max-width: 760px) {
+  body { overflow: auto; }
+  .stage { grid-template-columns: minmax(0, 1fr); height: auto; min-height: 100%; padding-block: 20px 120px; }
+  .lyrics { padding-left: 0; min-height: 46vh; }
+  .panel { order: 2; }
+  .time { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .line { transition: none; }
+}
+</style>
+
+<canvas id="bg" aria-hidden="true"></canvas>
+<div class="fallback" id="fallback" hidden></div>
+
+<div class="stage">
+  <section class="lyrics" id="lyrics" aria-label="Текст песни (пример)"></section>
+
+  <aside class="panel" aria-label="Настройки фона">
+    <div class="group">
+      <h1>Живой фон из обложки</h1>
+      <p class="note">Своя реализация для нового EvPlayer: обложка размывается, а цвета медленно перетекают по шумовому полю. Это демо, музыка здесь не играет.</p>
+    </div>
+
+    <div class="group">
+      <span class="label">Обложка</span>
+      <div class="chips" id="covers"></div>
+      <label class="drop" id="drop" for="file">Своя картинка: перетащите сюда или нажмите</label>
+      <input type="file" id="file" accept="image/*" hidden>
+    </div>
+
+    <div class="group">
+      <span class="label">Движение</span>
+      <div class="row"><label for="speed">Скорость</label><output id="speedOut" for="speed">1.0×</output></div>
+      <input type="range" id="speed" min="0" max="3" step="0.1" value="1">
+      <div class="row"><label for="warp">Перетекание</label><output id="warpOut" for="warp">55%</output></div>
+      <input type="range" id="warp" min="0" max="1" step="0.01" value="0.55">
+      <label class="toggle" for="beat">Пульс в такт (120 BPM, имитация)<input type="checkbox" id="beat" checked><span></span></label>
+      <label class="toggle" for="grain">Зерно против полос<input type="checkbox" id="grain" checked><span></span></label>
+    </div>
+  </aside>
+</div>
+
+<div class="player" role="group" aria-label="Мини-плеер (пример)">
+  <img id="thumb" alt="Обложка трека">
+  <div class="meta">
+    <span class="t" id="trackTitle">Ночной город</span>
+    <span class="a" id="trackArtist">Пример трека</span>
+    <div class="bar" aria-hidden="true"><i id="progress"></i></div>
+  </div>
+  <span class="time" id="time">0:00 / 3:12</span>
+  <button class="play" id="play" type="button" aria-label="Пауза">
+    <svg width="16" height="16" viewBox="0 0 16 16" id="playIcon" aria-hidden="true"><rect x="3" y="2" width="3.5" height="12" rx="1" fill="currentColor"/><rect x="9.5" y="2" width="3.5" height="12" rx="1" fill="currentColor"/></svg>
+  </button>
+</div>
+
+<script>
+(() => {
+  "use strict";
+
+  // ---------- sample covers, painted locally so the demo needs no image hosting ----------
+  function rng(seed) {
+    let s = seed >>> 0;
+    return () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296);
+  }
+  function paintCover(kind) {
+    const c = document.createElement("canvas");
+    c.width = c.height = 512;
+    const g = c.getContext("2d");
+    const r = rng(kind.length * 7919 + kind.charCodeAt(0));
+    if (kind === "night") {
+      const grad = g.createLinearGradient(0, 0, 512, 512);
+      grad.addColorStop(0, "#1b1446"); grad.addColorStop(0.55, "#5a1d6e"); grad.addColorStop(1, "#ff3d81");
+      g.fillStyle = grad; g.fillRect(0, 0, 512, 512);
+      for (let i = 0; i < 26; i++) {
+        g.fillStyle = `hsla(${190 + r() * 120}, 90%, ${50 + r() * 20}%, ${0.25 + r() * 0.4})`;
+        g.beginPath(); g.arc(r() * 512, r() * 512, 20 + r() * 110, 0, Math.PI * 2); g.fill();
+      }
+      g.fillStyle = "rgba(8,6,20,0.75)";
+      for (let x = 0; x < 512; x += 28 + r() * 30) { const h = 120 + r() * 230; g.fillRect(x, 512 - h, 22 + r() * 26, h); }
+    } else if (kind === "sunset") {
+      const grad = g.createLinearGradient(0, 0, 0, 512);
+      grad.addColorStop(0, "#ff9a3c"); grad.addColorStop(0.5, "#ff4e6a"); grad.addColorStop(1, "#3a1c71");
+      g.fillStyle = grad; g.fillRect(0, 0, 512, 512);
+      g.fillStyle = "#ffe08a"; g.beginPath(); g.arc(256, 300, 120, 0, Math.PI * 2); g.fill();
+      for (let i = 0; i < 8; i++) { g.fillStyle = `rgba(58,28,113,${0.25 + i * 0.08})`; g.fillRect(0, 330 + i * 24, 512, 12); }
+    } else if (kind === "forest") {
+      g.fillStyle = "#0f3b2e"; g.fillRect(0, 0, 512, 512);
+      for (let i = 0; i < 40; i++) {
+        g.fillStyle = `hsla(${100 + r() * 70}, ${50 + r() * 30}%, ${25 + r() * 35}%, 0.8)`;
+        const x = r() * 512, w = 30 + r() * 90, h = 120 + r() * 300;
+        g.beginPath(); g.moveTo(x, 512 - h); g.lineTo(x - w, 512); g.lineTo(x + w, 512); g.closePath(); g.fill();
+      }
+      g.fillStyle = "rgba(255, 236, 170, 0.55)"; g.beginPath(); g.arc(380, 120, 70, 0, Math.PI * 2); g.fill();
+    } else {
+      const grad = g.createRadialGradient(180, 160, 20, 256, 256, 400);
+      grad.addColorStop(0, "#7cf0ff"); grad.addColorStop(0.45, "#2f6bff"); grad.addColorStop(1, "#0a0f2e");
+      g.fillStyle = grad; g.fillRect(0, 0, 512, 512);
+      g.strokeStyle = "rgba(255,255,255,0.35)"; g.lineWidth = 3;
+      for (let i = 0; i < 14; i++) { g.beginPath(); g.arc(256, 256, 30 + i * 22, r() * 6, r() * 6 + 2.4); g.stroke(); }
+    }
+    return c;
+  }
+
+  const COVERS = [
+    { id: "night", title: "Ночной город", artist: "Пример · синти-поп" },
+    { id: "sunset", title: "Закат на крыше", artist: "Пример · инди" },
+    { id: "forest", title: "Туман в лесу", artist: "Пример · эмбиент" },
+    { id: "ocean", title: "Глубина", artist: "Пример · хаус" },
+  ];
+  const coverCanvases = Object.fromEntries(COVERS.map((c) => [c.id, paintCover(c.id)]));
+
+  const LYRICS = [
+    "Огни бегут по мокрому стеклу",
+    "Я снова слышу этот город",
+    "Он говорит со мной без слов",
+    "И ночь становится короче",
+    "Мы держим ритм до самого утра",
+    "Пока не выцветут неоны",
+    "Огни бегут по мокрому стеклу",
+    "И снова кажется, что дома",
+  ];
+
+  // ---------- WebGL backdrop ----------
+  const canvas = document.getElementById("bg");
+  const gl = canvas.getContext("webgl", { antialias: false, premultipliedAlpha: false, powerPreference: "low-power" });
+
+  const VERT = `
+    attribute vec2 aPos;
+    varying vec2 vUv;
+    void main() { vUv = aPos * 0.5 + 0.5; gl_Position = vec4(aPos, 0.0, 1.0); }
+  `;
+  // value noise + fbm drives a slow domain warp; the cover is sampled from a tiny
+  // texture so it is already soft, then two warped samples are mixed for depth
+  const FRAG = `
+    precision highp float;
+    varying vec2 vUv;
+    uniform sampler2D uFrom;
+    uniform sampler2D uTo;
+    uniform float uMix;
+    uniform float uTime;
+    uniform float uWarp;
+    uniform float uPulse;
+    uniform float uGrain;
+    uniform vec2 uRes;
+
+    float hash(vec2 p) { return fract(sin(dot(p, vec2(41.3, 289.1))) * 45758.5453); }
+    float noise(vec2 p) {
+      vec2 i = floor(p), f = fract(p);
+      vec2 u = f * f * (3.0 - 2.0 * f);
+      return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), u.x),
+                 mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), u.x), u.y);
+    }
+    float fbm(vec2 p) {
+      float v = 0.0, a = 0.5;
+      for (int i = 0; i < 4; i++) { v += a * noise(p); p = p * 2.03 + vec2(1.7, 9.2); a *= 0.5; }
+      return v;
+    }
+    vec2 rotate(vec2 p, float a) { float c = cos(a), s = sin(a); return mat2(c, -s, s, c) * p; }
+
+    vec3 sampleCover(sampler2D tex, vec2 uv, float t) {
+      vec2 q = vec2(fbm(uv * 1.6 + t * 0.07), fbm(uv * 1.6 + vec2(5.2, 1.3) - t * 0.06));
+      vec2 r = vec2(fbm(uv * 1.2 + q * 2.0 + t * 0.05), fbm(uv * 1.2 + q * 2.0 + vec2(8.3, 2.8) + t * 0.04));
+      float amount = uWarp * (0.55 + uPulse * 0.35);
+      vec2 a = rotate(uv - 0.5, t * 0.035) * (0.82 - uPulse * 0.04) + 0.5 + (r - 0.5) * amount;
+      vec2 b = rotate(uv - 0.5, -t * 0.028 + 1.9) * 0.62 + 0.5 + (q - 0.5) * amount * 1.3;
+      vec3 ca = texture2D(tex, clamp(a, 0.0, 1.0)).rgb;
+      vec3 cb = texture2D(tex, clamp(b, 0.0, 1.0)).rgb;
+      return mix(ca, cb, 0.45 + 0.25 * sin(t * 0.21 + r.x * 3.0));
+    }
+
+    void main() {
+      vec2 uv = vUv;
+      float aspect = uRes.x / uRes.y;
+      uv.x = (uv.x - 0.5) * min(aspect, 1.8) / 1.8 + 0.5;
+      vec3 col = mix(sampleCover(uFrom, uv, uTime), sampleCover(uTo, uv, uTime), uMix);
+      // richer colour and a soft vignette, like a lit room around the artwork
+      float l = dot(col, vec3(0.299, 0.587, 0.114));
+      col = mix(vec3(l), col, 1.28);
+      col *= 0.78 + uPulse * 0.06;
+      float vig = smoothstep(1.15, 0.25, length(vUv - vec2(0.5, 0.45)));
+      col *= mix(0.55, 1.0, vig);
+      // fine grain breaks up banding in the smooth gradients
+      col += (hash(gl_FragCoord.xy + fract(uTime) * 91.0) - 0.5) * 0.035 * uGrain;
+      gl_FragColor = vec4(clamp(col, 0.0, 1.0), 1.0);
+    }
+  `;
+
+  let program = null;
+  const uniforms = {};
+  const textures = { from: null, to: null };
+
+  function compile(type, src) {
+    const s = gl.createShader(type);
+    gl.shaderSource(s, src);
+    gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s) || "shader error");
+    return s;
+  }
+
+  function makeTexture(source) {
+    // downscale first: a 64px cover is all the backdrop needs and it comes out naturally soft
+    const small = document.createElement("canvas");
+    small.width = small.height = 64;
+    const g = small.getContext("2d");
+    g.filter = "blur(2px)";
+    const side = Math.min(source.width, source.height);
+    g.drawImage(source, (source.width - side) / 2, (source.height - side) / 2, side, side, 0, 0, 64, 64);
+    const tex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, small);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    return tex;
+  }
+
+  function initGL() {
+    if (!gl) return false;
+    try {
+      program = gl.createProgram();
+      gl.attachShader(program, compile(gl.VERTEX_SHADER, VERT));
+      gl.attachShader(program, compile(gl.FRAGMENT_SHADER, FRAG));
+      gl.linkProgram(program);
+      if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw new Error("link error");
+      gl.useProgram(program);
+      const buf = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1]), gl.STATIC_DRAW);
+      const loc = gl.getAttribLocation(program, "aPos");
+      gl.enableVertexAttribArray(loc);
+      gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+      for (const name of ["uFrom", "uTo", "uMix", "uTime", "uWarp", "uPulse", "uGrain", "uRes"]) {
+        uniforms[name] = gl.getUniformLocation(program, name);
+      }
+      gl.uniform1i(uniforms.uFrom, 0);
+      gl.uniform1i(uniforms.uTo, 1);
+      return true;
+    } catch (err) {
+      console.error(err);
+      return false;
+    }
+  }
+
+  const glReady = initGL();
+  if (!glReady) document.getElementById("fallback").hidden = false;
+
+  function resize() {
+    // render below screen resolution: the image is soft anyway and the GPU work drops a lot
+    const scale = Math.min(window.devicePixelRatio || 1, 1) * 0.5;
+    const w = Math.max(2, Math.round(window.innerWidth * scale));
+    const h = Math.max(2, Math.round(window.innerHeight * scale));
+    if (canvas.width !== w || canvas.height !== h) {
+      canvas.width = w;
+      canvas.height = h;
+      if (glReady) gl.viewport(0, 0, w, h);
+    }
+  }
+  window.addEventListener("resize", resize);
+  resize();
+
+  // ---------- state ----------
+  const state = {
+    speed: 1,
+    warp: 0.55,
+    beat: true,
+    grain: true,
+    mix: 1,
+    mixStart: 0,
+    playing: true,
+    trackMs: 0,
+    trackLen: 192000,
+  };
+  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (reduceMotion) state.speed = 0.25;
+
+  function setCover(source, title, artist) {
+    if (glReady) {
+      if (textures.from) gl.deleteTexture(textures.from);
+      textures.from = textures.to;
+      textures.to = makeTexture(source);
+      if (!textures.from) textures.from = textures.to;
+      state.mix = 0;
+      state.mixStart = performance.now();
+    }
+    document.getElementById("thumb").src = source.toDataURL ? source.toDataURL("image/jpeg", 0.85) : source.src;
+    document.getElementById("trackTitle").textContent = title;
+    document.getElementById("trackArtist").textContent = artist;
+    state.trackMs = 0;
+  }
+
+  // ---------- controls ----------
+  const coverBox = document.getElementById("covers");
+  COVERS.forEach((c, i) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "chip";
+    b.id = `cover-${c.id}`;
+    b.textContent = c.title;
+    b.setAttribute("aria-pressed", i === 0 ? "true" : "false");
+    b.addEventListener("click", () => {
+      coverBox.querySelectorAll(".chip").forEach((x) => x.setAttribute("aria-pressed", "false"));
+      b.setAttribute("aria-pressed", "true");
+      setCover(coverCanvases[c.id], c.title, c.artist);
+    });
+    coverBox.appendChild(b);
+  });
+
+  const speed = document.getElementById("speed");
+  const warp = document.getElementById("warp");
+  speed.value = String(state.speed);
+  const showSpeed = () => (document.getElementById("speedOut").textContent = `${Number(speed.value).toFixed(1)}×`);
+  const showWarp = () => (document.getElementById("warpOut").textContent = `${Math.round(Number(warp.value) * 100)}%`);
+  speed.addEventListener("input", () => { state.speed = Number(speed.value); showSpeed(); });
+  warp.addEventListener("input", () => { state.warp = Number(warp.value); showWarp(); });
+  showSpeed(); showWarp();
+  document.getElementById("beat").addEventListener("change", (e) => (state.beat = e.target.checked));
+  document.getElementById("grain").addEventListener("change", (e) => (state.grain = e.target.checked));
+
+  function loadFile(file) {
+    if (!file || !file.type.startsWith("image/")) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        const c = document.createElement("canvas");
+        c.width = c.height = 512;
+        const side = Math.min(img.width, img.height);
+        c.getContext("2d").drawImage(img, (img.width - side) / 2, (img.height - side) / 2, side, side, 0, 0, 512, 512);
+        coverBox.querySelectorAll(".chip").forEach((x) => x.setAttribute("aria-pressed", "false"));
+        setCover(c, file.name.replace(/\.[^.]+$/, ""), "Ваша картинка");
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  }
+  const drop = document.getElementById("drop");
+  document.getElementById("file").addEventListener("change", (e) => loadFile(e.target.files[0]));
+  drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("over"); });
+  drop.addEventListener("dragleave", () => drop.classList.remove("over"));
+  drop.addEventListener("drop", (e) => { e.preventDefault(); drop.classList.remove("over"); loadFile(e.dataTransfer.files[0]); });
+
+  const playBtn = document.getElementById("play");
+  const playIcon = document.getElementById("playIcon");
+  playBtn.addEventListener("click", () => {
+    state.playing = !state.playing;
+    playBtn.setAttribute("aria-label", state.playing ? "Пауза" : "Играть");
+    playIcon.innerHTML = state.playing
+      ? '<rect x="3" y="2" width="3.5" height="12" rx="1" fill="currentColor"/><rect x="9.5" y="2" width="3.5" height="12" rx="1" fill="currentColor"/>'
+      : '<path d="M4 2.5v11l9-5.5z" fill="currentColor"/>';
+  });
+
+  // ---------- lyrics ----------
+  const lyricsBox = document.getElementById("lyrics");
+  const lineEls = LYRICS.map((text) => {
+    const el = document.createElement("div");
+    el.className = "line";
+    el.textContent = text;
+    lyricsBox.appendChild(el);
+    return el;
+  });
+  let activeLine = -1;
+  function setActive(i) {
+    if (i === activeLine) return;
+    activeLine = i;
+    lineEls.forEach((el, k) => {
+      el.classList.toggle("active", k === i);
+      el.classList.toggle("near", Math.abs(k - i) === 1);
+      el.classList.toggle("past", k < i - 1);
+    });
+  }
+
+  const fmt = (ms) => `${Math.floor(ms / 60000)}:${String(Math.floor((ms % 60000) / 1000)).padStart(2, "0")}`;
+
+  // ---------- loop ----------
+  setCover(coverCanvases.night, COVERS[0].title, COVERS[0].artist);
+  let last = performance.now();
+  let t = 0;
+  let pulse = 0;
+  function frame(now) {
+    const dt = Math.min(100, now - last);
+    last = now;
+    if (state.playing) {
+      t += (dt / 1000) * state.speed;
+      state.trackMs = (state.trackMs + dt) % state.trackLen;
+    }
+    // a soft kick every half second at 120 bpm, decaying quickly
+    const beatPhase = (state.trackMs % 500) / 500;
+    const target = state.beat && state.playing ? Math.exp(-beatPhase * 6) : 0;
+    pulse += (target - pulse) * 0.25;
+
+    if (state.mix < 1) state.mix = Math.min(1, (now - state.mixStart) / 1400);
+    if (glReady) {
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, textures.from);
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, textures.to);
+      const eased = state.mix * state.mix * (3 - 2 * state.mix);
+      gl.uniform1f(uniforms.uMix, eased);
+      gl.uniform1f(uniforms.uTime, t);
+      gl.uniform1f(uniforms.uWarp, state.warp);
+      gl.uniform1f(uniforms.uPulse, reduceMotion ? 0 : pulse);
+      gl.uniform1f(uniforms.uGrain, state.grain ? 1 : 0);
+      gl.uniform2f(uniforms.uRes, canvas.width, canvas.height);
+      gl.drawArrays(gl.TRIANGLES, 0, 6);
+    }
+
+    document.getElementById("progress").style.width = `${(state.trackMs / state.trackLen) * 100}%`;
+    document.getElementById("time").textContent = `${fmt(state.trackMs)} / ${fmt(state.trackLen)}`;
+    setActive(Math.floor(state.trackMs / 3200) % LYRICS.length);
+    raf = requestAnimationFrame(frame);
+  }
+  let raf = requestAnimationFrame(frame);
+  // nothing to draw while the tab is hidden
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) cancelAnimationFrame(raf);
+    else { last = performance.now(); raf = requestAnimationFrame(frame); }
+  });
+})();
+</script>
+</body></html>
