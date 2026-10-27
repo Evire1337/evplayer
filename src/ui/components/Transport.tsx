@@ -65,7 +65,7 @@ export function Tools() {
   const { volume, muted } = usePlayer();
   return (
     <div className="tools">
-      <Popover label="Звук: скорость, тон, реверберация" icon={<IconSliders size={19} />} width={330} align="start" active={tuned}>
+      <Popover label="Звук: скорость, тон, реверберация" icon={<IconSliders size={19} />} width={330} active={tuned}>
         <SoundPanel />
       </Popover>
       <Popover label="Громкость" icon={muted || volume === 0 ? <IconMute size={19} /> : <IconVolume size={19} />} width={76}>

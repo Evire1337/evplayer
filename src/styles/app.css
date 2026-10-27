@@ -210,21 +210,16 @@ img { display: block; max-width: 100%; }
 /* ---------- popovers ---------- */
 .popover-anchor { position: relative; }
 .popover {
-  position: absolute;
+  position: fixed;
   z-index: 10;
-  bottom: calc(100% + 12px);
   border-radius: 24px;
   padding: 16px;
   background: rgba(6, 18, 20, 0.86);
   backdrop-filter: blur(40px) saturate(1.5);
   -webkit-backdrop-filter: blur(40px) saturate(1.5);
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
-  max-height: 70vh;
   overflow-y: auto;
 }
-.popover-center { left: 50%; transform: translateX(-50%); }
-.popover-start { left: 0; }
-.popover-end { right: 0; }
 
 .sound-panel { display: flex; flex-direction: column; gap: 16px; }
 .preset-row { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 4px; padding: 4px; border-radius: 14px; background: rgba(238, 247, 244, 0.06); }
