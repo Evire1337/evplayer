@@ -46,3 +46,8 @@ export async function newFromArtists(likes: LikedTrack[], signal?: AbortSignal):
   if (keeps("serviceCache")) cached = { key, at: Date.now(), tracks: out };
   return out;
 }
+
+/** what the remembered answer takes, roughly, in bytes */
+export function newFromArtistsCacheBytes(): number {
+  return cached ? JSON.stringify(cached).length * 2 : 0;
+}

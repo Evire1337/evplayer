@@ -60,3 +60,10 @@ export function useLyrics(track: Track | undefined): LyricsState {
 export function clearLyricsCache(): void {
   cache.clear();
 }
+
+/** what the remembered lyrics take, roughly, in bytes */
+export function lyricsCacheBytes(): number {
+  let n = 0;
+  for (const v of cache.values()) n += JSON.stringify(v).length * 2;
+  return n;
+}

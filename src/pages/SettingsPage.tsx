@@ -6,7 +6,10 @@ import { Segmented } from "@/ui/components/Controls";
 import { toast } from "@/ui/toasts";
 import { useHistory } from "@/stats/history";
 import { clearListeningStats } from "@/stats/listeningStats";
-import { clearLyricsCache } from "@/ui/useLyrics";
+import { clearLyricsCache, lyricsCacheBytes } from "@/ui/useLyrics";
+import { recommendationsCacheBytes } from "@/home/recommendations";
+import { newFromArtistsCacheBytes } from "@/home/newFromArtists";
+import { radioCacheBytes } from "@/player/radio";
 import {
   IconChat, IconDatabase, IconHeartFill, IconEq, IconInfo, IconKeyboard, IconPalette, IconPip, IconPlayCircle, IconPlug, IconRefresh,
 } from "@/ui/components/Icons";
@@ -101,9 +104,41 @@ const DONT_KEEP = [
   { key: "noHistory", title: "История", hint: "«Недавно слушали» на главной больше не пополняется" },
 ] as const;
 
+/** bytes a localStorage entry takes (the browser keeps strings as UTF-16) */
+function storedBytes(key: string): number {
+  return (localStorage.getItem(key)?.length ?? 0) * 2;
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return bytes ? "< 1 КБ" : "0 КБ";
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} КБ`;
+  return `${(bytes / 1024 / 1024).toFixed(bytes < 10 * 1024 * 1024 ? 1 : 0)} МБ`;
+}
+
+/** what each kind of data takes right now, so it is clear which box frees the most */
+function useDontKeepSizes(): Partial<Record<(typeof DONT_KEEP)[number]["key"], number>> {
+  const [sizes, setSizes] = useState<Partial<Record<(typeof DONT_KEEP)[number]["key"], number>>>({});
+  useEffect(() => {
+    let alive = true;
+    const local = {
+      noServiceCache: recommendationsCacheBytes() + newFromArtistsCacheBytes() + radioCacheBytes() + lyricsCacheBytes(),
+      noLoudnessMemory: storedBytes("evplayer.loudness.v1"),
+      noStats: storedBytes("evplayer.stats.v1"),
+      noHistory: storedBytes("evplayer.history.v1"),
+    };
+    setSizes(local);
+    void window.evplayer?.cacheSize().then((r) => alive && setSizes((prev) => ({ ...prev, noCache: r.cache })));
+    return () => {
+      alive = false;
+    };
+  }, []);
+  return sizes;
+}
+
 /** what EvPlayer should not remember; each ticked item frees disk or memory */
 function DontKeepList() {
   const s = useSettings();
+  const sizes = useDontKeepSizes();
   return (
     <div className="dont-keep">
       <span className="eyebrow">Не сохранять</span>
@@ -120,6 +155,9 @@ function DontKeepList() {
           <span className="check-text">
             <span className="check-title">{item.title}</span>
             <span className="muted small">{item.hint}</span>
+          </span>
+          <span className="check-size" title={item.key === "noCache" ? "на диске" : "в памяти и хранилище приложения"}>
+            {sizes[item.key] === undefined ? "…" : formatBytes(sizes[item.key]!)}
           </span>
         </label>
       ))}

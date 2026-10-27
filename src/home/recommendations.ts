@@ -53,3 +53,8 @@ export async function recommendations(likes: LikedTrack[], history: HistoryEntry
   if (forYou.length && keeps("serviceCache")) cached = { key, at: Date.now(), value };
   return value;
 }
+
+/** what the remembered answer takes, roughly, in bytes */
+export function recommendationsCacheBytes(): number {
+  return cached ? JSON.stringify(cached).length * 2 : 0;
+}

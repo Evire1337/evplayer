@@ -67,3 +67,10 @@ export async function similarTracks(seed: Track, exclude: Set<string> = new Set(
   const skip = new Set([...exclude, seed.id, songKey(seed)]);
   return uniqueSongs(all, skip).slice(0, limit);
 }
+
+/** what the remembered similar songs take, roughly, in bytes */
+export function radioCacheBytes(): number {
+  let n = 0;
+  for (const v of cache.values()) n += JSON.stringify(v).length * 2;
+  return n;
+}

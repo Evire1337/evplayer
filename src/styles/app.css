@@ -870,5 +870,6 @@ html.saver .now-art::before, html.saver .now-art::after { display: none !importa
 .check-row input { appearance: none; width: 18px; height: 18px; margin: 2px 0 0; flex-shrink: 0; border-radius: 6px; border: 1.5px solid var(--ink-3); display: grid; place-items: center; cursor: pointer; }
 .check-row input:checked { background: var(--accent); border-color: var(--accent); }
 .check-row input:checked::after { content: ""; width: 9px; height: 5px; border-left: 2px solid var(--ground); border-bottom: 2px solid var(--ground); transform: translateY(-1px) rotate(-45deg); }
-.check-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.check-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.check-size { flex-shrink: 0; margin-left: 12px; padding-top: 1px; font-size: 13px; font-weight: 600; color: var(--ink-2); font-variant-numeric: tabular-nums; }
 .check-title { font-weight: 600; }
