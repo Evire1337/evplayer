@@ -15,6 +15,15 @@ export type UpdateState =
   | { status: "latest" }
   | { status: "error"; message: string };
 
+/** a short, readable reason instead of electron-updater's full HTTP dump */
+export function shortUpdateError(message: string): string {
+  if (/latest\.yml/i.test(message) && /404/.test(message)) return "в последнем релизе на GitHub нет файла обновления (latest.yml)";
+  if (/ENOTFOUND|ECONNREFUSED|ETIMEDOUT|net::ERR/i.test(message)) return "нет связи с GitHub";
+  if (/403|rate limit/i.test(message)) return "GitHub временно ограничил запросы, попробуйте позже";
+  const first = message.split(/\n|(?<=\.)\s/)[0] ?? message;
+  return first.length > 140 ? `${first.slice(0, 137)}…` : first;
+}
+
 export function setupUpdates(getWindow: () => BrowserWindow | null): void {
   let state: UpdateState = { status: "idle" };
   const send = (next: UpdateState) => {
@@ -32,7 +41,7 @@ export function setupUpdates(getWindow: () => BrowserWindow | null): void {
       send({ status: "latest" });
       return;
     }
-    await autoUpdater.checkForUpdates().catch((err: Error) => send({ status: "error", message: err.message }));
+    await autoUpdater.checkForUpdates().catch((err: Error) => send({ status: "error", message: shortUpdateError(err.message) }));
   });
 
   if (!app.isPackaged) return;
@@ -45,7 +54,7 @@ export function setupUpdates(getWindow: () => BrowserWindow | null): void {
   );
   autoUpdater.on("update-downloaded", (info) => send({ status: "ready", version: info.version }));
   autoUpdater.on("update-not-available", () => send({ status: "latest" }));
-  autoUpdater.on("error", (err) => send({ status: "error", message: err?.message ?? String(err) }));
+  autoUpdater.on("error", (err) => send({ status: "error", message: shortUpdateError(err?.message ?? String(err)) }));
 
   const check = () => void autoUpdater.checkForUpdates().catch(() => {});
   setTimeout(check, 10_000);

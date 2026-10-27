@@ -83,7 +83,9 @@ export class BackdropRenderer {
     small.width = small.height = TEX_SIZE;
     const g = small.getContext("2d")!;
     g.filter = "blur(2px)";
-    const side = Math.min(source.width, source.height);
+    // only the middle of the cover: many covers have a white or black frame, and its edge
+    // pixels would otherwise be stretched along the sides of the window as bright lines
+    const side = Math.min(source.width, source.height) * 0.7;
     g.drawImage(source as CanvasImageSource, (source.width - side) / 2, (source.height - side) / 2, side, side, 0, 0, TEX_SIZE, TEX_SIZE);
     const gl = this.gl;
     const tex = gl.createTexture()!;

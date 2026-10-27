@@ -631,10 +631,12 @@ html[data-hidden] *, html[data-hidden] *::before, html[data-hidden] *::after { a
 
 /* ---------- mini player window: one slim bar ---------- */
 html.is-overlay, html.is-overlay body { background: transparent; }
-.overlay { height: 100%; padding: 5px; }
+/* the card fills the whole window: a transparent margin or a shadow would be cut off at the
+   window edge and show up as a dark square on Windows */
+.overlay { height: 100%; padding: 0; }
 .overlay-card {
   position: relative; height: 100%; display: flex; align-items: center; gap: 10px; padding: 0 8px 0 7px; border-radius: 16px; overflow: hidden;
-  background: rgba(8, 18, 20, 0.92); border: 1px solid rgba(238, 247, 244, 0.1); box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+  background: rgba(8, 18, 20, 0.94); border: 1px solid rgba(238, 247, 244, 0.12);
 }
 /* only the title area moves the window: buttons stay outside every drag region, so Windows never swallows their clicks */
 .overlay-text { -webkit-app-region: drag; cursor: grab; align-self: stretch; justify-content: center; }
