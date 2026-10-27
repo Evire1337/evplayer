@@ -66,8 +66,17 @@ export interface SettingsState {
   lyricsSize: "s" | "m" | "l";
   /** memory saver: no live backdrop, glow, blur or animations; the page unloads sooner when hidden */
   memorySaver: boolean;
-  /** keep no cache on disk (covers and service answers are downloaded again each time) */
+  // "don't keep" list (memory saver card): each one stops one kind of remembered data
+  /** covers and pictures: no browser disk cache (from the next start) */
   noCache: boolean;
+  /** answers of the services: recommendations, similar songs, lyrics are fetched each time */
+  noServiceCache: boolean;
+  /** remembered loudness of each song for "level the volume" */
+  noLoudnessMemory: boolean;
+  /** listening statistics: tops, charts and smart playlists stop growing */
+  noStats: boolean;
+  /** "Recently played" on the home page */
+  noHistory: boolean;
   /** the "Up next" panel on the now playing screen */
   showQueue: boolean;
   // library
@@ -124,6 +133,10 @@ const DEFAULTS = {
   showQueue: true,
   memorySaver: false,
   noCache: false,
+  noServiceCache: false,
+  noLoudnessMemory: false,
+  noStats: false,
+  noHistory: false,
   libraryView: "grid" as "grid" | "list",
   trackSort: { key: "custom", dir: "asc" } as { key: import("@/library/sort").SortKey; dir: import("@/library/sort").SortDir },
   closeToTray: true,
@@ -160,6 +173,12 @@ export const useSettings = create<SettingsState>()(
     { name: "evplayer.settings.v1", storage: createJSONStorage(() => localStorage), version: 1 },
   ),
 );
+
+/** is this kind of data kept, by the "don't keep" list */
+export function keeps(kind: "serviceCache" | "loudness" | "stats" | "history"): boolean {
+  const s = useSettings.getState();
+  return !{ serviceCache: s.noServiceCache, loudness: s.noLoudnessMemory, stats: s.noStats, history: s.noHistory }[kind];
+}
 
 export const discordAppId = (s: Pick<SettingsState, "discordAppId"> = useSettings.getState()) => s.discordAppId.trim() || DEFAULT_DISCORD_APP_ID;
 

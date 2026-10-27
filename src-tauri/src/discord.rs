@@ -63,10 +63,14 @@ fn text(value: &str) -> String {
 }
 
 pub fn activity_for(state: &PresenceState, plain: bool) -> Value {
+    let paused = state.paused.unwrap_or(false);
+    let artist = if state.artist.is_empty() { "EvPlayer" } else { &state.artist };
+    // paused: said in words, and no running clock (Discord would keep counting)
+    let line = if paused { format!("На паузе · {artist}") } else { artist.to_string() };
     let mut activity = json!({
         "type": 2,
         "details": text(&state.title),
-        "state": text(if state.artist.is_empty() { "EvPlayer" } else { &state.artist }),
+        "state": text(&line),
         "assets": { "large_text": text(&state.title) },
     });
     if !plain {
@@ -77,7 +81,7 @@ pub fn activity_for(state: &PresenceState, plain: bool) -> Value {
         };
         activity["status_display_type"] = json!(shows);
     }
-    if !state.paused.unwrap_or(false) {
+    if !paused {
         if let Some(start) = state.started_at {
             // Discord rejects the whole activity if a timestamp is not a whole number
             let mut ts = json!({ "start": start.round() as i64 });
@@ -160,6 +164,7 @@ impl Discord {
             let mut pipe: Option<Box<dyn Pipe>> = None;
             let mut plain = false;
             let mut nonce = 0u64;
+            let mut was_paused = false;
             let set = |s: &'static str, user: Option<DiscordUser>, error: Option<String>| {
                 *shared.lock().unwrap() = Status { status: s, user, error };
             };
@@ -199,6 +204,18 @@ impl Discord {
                 }
                 // send the current activity
                 if let Some(p) = pipe.as_mut() {
+                    // just paused: drop the playing activity first, so Discord starts the paused
+                    // one fresh instead of carrying on the playing one's clock
+                    let now_paused = state.as_ref().is_some_and(|s| s.paused.unwrap_or(false));
+                    if now_paused && !was_paused {
+                        nonce += 1;
+                        let clear = encode_frame(OP_FRAME, &json!({ "cmd": "SET_ACTIVITY", "args": { "pid": std::process::id(), "activity": null }, "nonce": nonce.to_string() }));
+                        if p.write_all(&clear).is_err() || read_frame(p.as_mut()).is_none() {
+                            pipe = None;
+                            continue;
+                        }
+                    }
+                    was_paused = now_paused;
                     let mut resend = true;
                     while resend {
                         resend = false;
@@ -316,5 +333,56 @@ mod tests {
         assert!(activity_for(&s, true).get("status_display_type").is_none());
         let paused = activity_for(&PresenceState { paused: Some(true), ..s }, false);
         assert!(paused.get("timestamps").is_none());
+    }
+}
+
+#[cfg(all(test, unix))]
+mod pipe_tests {
+    use super::*;
+    use std::io::{Read, Write};
+    use std::os::unix::net::UnixListener;
+
+    fn read(stream: &mut std::os::unix::net::UnixStream) -> (i32, Value) {
+        let mut h = [0u8; 8];
+        stream.read_exact(&mut h).unwrap();
+        let len = i32::from_le_bytes(h[4..8].try_into().unwrap()) as usize;
+        let mut body = vec![0u8; len];
+        stream.read_exact(&mut body).unwrap();
+        (i32::from_le_bytes(h[0..4].try_into().unwrap()), serde_json::from_slice(&body).unwrap())
+    }
+
+    /// a pretend Discord: the paused state must reach it without the running clock
+    #[test]
+    fn pause_reaches_discord_without_timestamps() {
+        let dir = std::env::temp_dir().join(format!("evplayer-discord-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        std::env::set_var("XDG_RUNTIME_DIR", &dir);
+        let listener = UnixListener::bind(dir.join("discord-ipc-0")).unwrap();
+        let discord = Discord::new();
+        discord.set_app_id(Some("1564485226267279360".into()));
+        let (mut s, _) = listener.accept().unwrap();
+        let (op, hello) = read(&mut s);
+        assert_eq!(op, OP_HANDSHAKE);
+        assert_eq!(hello["client_id"], "1564485226267279360");
+        s.write_all(&encode_frame(OP_FRAME, &json!({ "evt": "READY", "data": { "user": { "id": "1", "username": "u" } } }))).unwrap();
+        // first activity after READY (nothing playing yet)
+        let (_, first) = read(&mut s);
+        assert_eq!(first["cmd"], "SET_ACTIVITY");
+        s.write_all(&encode_frame(OP_FRAME, &json!({ "cmd": "SET_ACTIVITY", "data": {} }))).unwrap();
+        let playing = PresenceState { title: "Song".into(), artist: "Artist".into(), artwork: None, url: None, started_at: Some(1000.0), ends_at: Some(5000.0), paused: Some(false), status_shows: None };
+        discord.update(Some(playing.clone()));
+        let (_, a) = read(&mut s);
+        assert!(a["args"]["activity"]["timestamps"].is_object());
+        s.write_all(&encode_frame(OP_FRAME, &json!({ "cmd": "SET_ACTIVITY", "data": {} }))).unwrap();
+        discord.update(Some(PresenceState { paused: Some(true), ..playing }));
+        let (_, cleared) = read(&mut s);
+        assert!(cleared["args"]["activity"].is_null());
+        s.write_all(&encode_frame(OP_FRAME, &json!({ "cmd": "SET_ACTIVITY", "data": {} }))).unwrap();
+        let (_, b) = read(&mut s);
+        let act = &b["args"]["activity"];
+        assert!(act.get("timestamps").is_none(), "{act}");
+        assert!(act["state"].as_str().unwrap().contains("пауз"), "{act}");
+        discord.quit();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

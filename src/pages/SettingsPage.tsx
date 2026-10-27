@@ -93,6 +93,40 @@ function Sound() {
   );
 }
 
+const DONT_KEEP = [
+  { key: "noCache", title: "Обложки и картинки", hint: "Не копятся на диске — скачиваются заново. Включается полностью после перезапуска" },
+  { key: "noServiceCache", title: "Ответы сервисов", hint: "Рекомендации, похожие треки и тексты песен ищутся каждый раз заново" },
+  { key: "noLoudnessMemory", title: "Громкость треков", hint: "«Выравнивать громкость» не запоминает, насколько громкий каждый трек" },
+  { key: "noStats", title: "Статистика", hint: "Топы, графики и умные плейлисты перестают пополняться" },
+  { key: "noHistory", title: "История", hint: "«Недавно слушали» на главной больше не пополняется" },
+] as const;
+
+/** what EvPlayer should not remember; each ticked item frees disk or memory */
+function DontKeepList() {
+  const s = useSettings();
+  return (
+    <div className="dont-keep">
+      <span className="eyebrow">Не сохранять</span>
+      {DONT_KEEP.map((item) => (
+        <label key={item.key} className="check-row">
+          <input
+            type="checkbox"
+            checked={s[item.key]}
+            onChange={(e) => {
+              s.set({ [item.key]: e.target.checked });
+              if (e.target.checked && item.key === "noServiceCache") clearLyricsCache();
+            }}
+          />
+          <span className="check-text">
+            <span className="check-title">{item.title}</span>
+            <span className="muted small">{item.hint}</span>
+          </span>
+        </label>
+      ))}
+    </div>
+  );
+}
+
 function Appearance() {
   const s = useSettings();
   return (
@@ -105,6 +139,7 @@ function Appearance() {
           checked={s.memorySaver}
           onChange={(v) => s.set({ memorySaver: v })}
         />
+        <DontKeepList />
       </Card>
       <Card title="Фон и обложка">
         <SwitchRow title="Живой фон из обложки" hint="Медленно переливающийся фон в цветах трека. Выключите на слабом компьютере" checked={s.animatedBackdrop} onChange={(v) => s.set({ animatedBackdrop: v })} />
@@ -138,7 +173,6 @@ function sizeOf(text: string): string {
 
 function DataTab() {
   const clearHistory = useHistory((h) => h.clear);
-  const noCache = useSettings((s) => s.noCache);
   const [cache, setCache] = useState<number | null>(null);
   const [confirm, setConfirm] = useState<null | "stats" | "restore">(null);
   const [pending, setPending] = useState<ReturnType<typeof readBackup> | null>(null);
@@ -180,18 +214,6 @@ function DataTab() {
         </div>
       </Card>
       <Card title="Очистка">
-        <SwitchRow
-          title="Не хранить кэш"
-          hint="Обложки и ответы сервисов не копятся на диске, тексты песен не запоминаются. Полностью включается после перезапуска EvPlayer"
-          checked={noCache}
-          onChange={(v) => {
-            useSettings.getState().set({ noCache: v });
-            if (v) {
-              clearLyricsCache();
-              setCache(0);
-            }
-          }}
-        />
         <Row title="Кэш" hint="Обложки и ответы сервисов — скачаются заново, когда понадобятся">
           <button type="button" className="btn ghost" onClick={async () => { await window.evplayer?.clearCache(); clearLyricsCache(); setCache(0); toast("Кэш очищен"); }}>Очистить</button>
         </Row>

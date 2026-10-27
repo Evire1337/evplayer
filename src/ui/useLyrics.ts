@@ -3,7 +3,7 @@ import type { Track } from "@/types";
 import { findLyrics, readings } from "@/services/lyrics/lrclib";
 import { findGeniusLyrics } from "@/services/lyrics/genius";
 import { parseLrc, type LyricLine } from "@/services/lyrics/lrc";
-import { useSettings } from "@/settings/store";
+import { keeps, useSettings } from "@/settings/store";
 
 export type LyricsState =
   | { status: "idle" | "loading" | "missing" | "error" }
@@ -47,9 +47,8 @@ export function useLyrics(track: Track | undefined): LyricsState {
     setState({ status: "loading" });
     load(track, controller.signal)
       .then((next) => {
-        // "don't keep a cache": found lyrics live only until the app closes
-        if (!useSettings.getState().noCache) remember(track.id, next);
-        else cache.set(track.id, next);
+        // "don't keep service answers": lyrics are looked up again next time
+        if (keeps("serviceCache")) remember(track.id, next);
         if (!controller.signal.aborted) setState(next);
       })
       .catch(() => !controller.signal.aborted && setState({ status: "error" }));

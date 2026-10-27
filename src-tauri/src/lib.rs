@@ -70,6 +70,7 @@ pub fn show_main(app: &AppHandle) {
     }
     *app.state::<AppState>().minimized.lock().unwrap() = false;
     set_visible(app, true);
+    app.state::<Overlay>().hide_for_restore(app);
     tray::rebuild(app);
 }
 

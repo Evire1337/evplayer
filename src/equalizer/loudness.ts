@@ -1,3 +1,4 @@
+import { keeps } from "@/settings/store";
 // Volume levelling: SoundCloud uploads and YouTube videos are mastered at wildly different
 // levels. This follows how loud the current song is (a slow moving average of its power,
 // so single drum hits don't pump) and turns it up or down toward one target level. The
@@ -65,6 +66,7 @@ export function rememberedLoudness(trackId: string): number | undefined {
 }
 
 export function rememberLoudness(trackId: string, db: number): void {
+  if (!keeps("loudness")) return;
   const store = memory();
   delete store[trackId];
   store[trackId] = Math.round(db * 10) / 10;

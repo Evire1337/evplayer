@@ -114,7 +114,9 @@ impl Overlay {
     }
 
     pub fn toggle(&self, app: &AppHandle) {
-        if Self::is_visible(app) {
+        // by what the user asked for, not by what Windows says: a game may have covered or
+        // hidden the window, and then the key should still hide it, not show it again
+        if *self.wanted.lock().unwrap() {
             self.hide(app)
         } else {
             self.show(app)
@@ -129,8 +131,10 @@ impl Overlay {
         *self.auto_shown.lock().unwrap() = Self::is_visible(app) || *self.wanted.lock().unwrap();
     }
 
+    /// the main window came back (restored, opened from the tray or the mini player):
+    /// the mini player stands in for it, so it goes away
     pub fn hide_for_restore(&self, app: &AppHandle) {
-        if *self.auto_shown.lock().unwrap() {
+        if *self.auto_shown.lock().unwrap() || *self.wanted.lock().unwrap() {
             self.hide(app);
         }
     }
@@ -280,10 +284,15 @@ impl Overlay {
             .build()
             .ok()?;
         let app2 = app.clone();
-        win.on_window_event(move |event| {
-            if let tauri::WindowEvent::Moved(p) = event {
-                app2.state::<Overlay>().remember_position(p.x, p.y);
+        win.on_window_event(move |event| match event {
+            tauri::WindowEvent::Moved(p) => app2.state::<Overlay>().remember_position(p.x, p.y),
+            // Alt+F4 on the mini player hides it like its own key does; closing it outright
+            // would only make the watchdog bring it back
+            tauri::WindowEvent::CloseRequested { api, .. } => {
+                api.prevent_close();
+                app2.state::<Overlay>().hide(&app2);
             }
+            _ => {}
         });
         Some(win)
     }

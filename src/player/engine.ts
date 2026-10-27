@@ -7,7 +7,7 @@ import { createAudioGraph, type AudioGraph } from "@/audio/graph";
 import { setLevelingTrack } from "@/equalizer/eqAudio";
 import { effectsForNextTrack, useEffects, type EffectsState } from "./effects";
 import { similarTracks, songKey } from "./radio";
-import { useSettings } from "@/settings/store";
+import { keeps, useSettings } from "@/settings/store";
 import { HISTORY_AFTER_MS, useHistory } from "@/stats/history";
 import { recordListen } from "@/stats/listeningStats";
 
@@ -154,7 +154,7 @@ class PlayerEngine {
     const track = this.sessionTrack;
     if (track && !this.counted && this.heardMs >= HISTORY_AFTER_MS) {
       this.counted = true;
-      useHistory.getState().push(track);
+      if (keeps("history")) useHistory.getState().push(track);
       recordListen(track, this.session, this.heardMs);
     }
   }

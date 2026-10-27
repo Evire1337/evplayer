@@ -1,3 +1,4 @@
+import { keeps } from "@/settings/store";
 import type { Track } from "@/types";
 import { soundCloudUser } from "@/services/soundcloud/api";
 import { youTubeArtist } from "@/services/youtube/music";
@@ -42,6 +43,6 @@ export async function newFromArtists(likes: LikedTrack[], signal?: AbortSignal):
   // take turns so one busy artist does not fill the whole row
   const out: Track[] = [];
   for (let i = 0; i < PER_ARTIST; i++) for (const g of groups) if (g[i]) out.push(g[i]);
-  cached = { key, at: Date.now(), tracks: out };
+  if (keeps("serviceCache")) cached = { key, at: Date.now(), tracks: out };
   return out;
 }

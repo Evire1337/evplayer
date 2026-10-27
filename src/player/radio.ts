@@ -1,3 +1,4 @@
+import { keeps } from "@/settings/store";
 import type { Track } from "@/types";
 import { searchSoundCloud, soundCloudRelated } from "@/services/soundcloud/api";
 import { searchYouTubeMusic, youTubeRadio } from "@/services/youtube/music";
@@ -61,7 +62,7 @@ export async function similarTracks(seed: Track, exclude: Set<string> = new Set(
       ]);
       all = mix(y, s);
     }
-    if (all.length) cache.set(seed.id, { at: Date.now(), tracks: all });
+    if (all.length && keeps("serviceCache")) cache.set(seed.id, { at: Date.now(), tracks: all });
   }
   const skip = new Set([...exclude, seed.id, songKey(seed)]);
   return uniqueSongs(all, skip).slice(0, limit);

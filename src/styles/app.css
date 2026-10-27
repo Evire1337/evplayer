@@ -861,3 +861,14 @@ html.saver .popover { background: rgba(6, 18, 20, 0.98); }
 html.saver .lyric-line { filter: none !important; text-shadow: none !important; }
 html.saver .now-art { box-shadow: none !important; }
 html.saver .now-art::before, html.saver .now-art::after { display: none !important; }
+
+/* the "don't keep" list in the memory saver card */
+.dont-keep { display: flex; flex-direction: column; gap: 2px; padding-top: 8px; border-top: 1px solid var(--edge); margin-top: 6px; }
+.dont-keep .eyebrow { padding: 6px 0 4px; }
+.check-row { display: flex; align-items: flex-start; gap: 12px; padding: 8px 6px; border-radius: 12px; cursor: pointer; }
+.check-row:hover { background: var(--hover); }
+.check-row input { appearance: none; width: 18px; height: 18px; margin: 2px 0 0; flex-shrink: 0; border-radius: 6px; border: 1.5px solid var(--ink-3); display: grid; place-items: center; cursor: pointer; }
+.check-row input:checked { background: var(--accent); border-color: var(--accent); }
+.check-row input:checked::after { content: ""; width: 9px; height: 5px; border-left: 2px solid var(--ground); border-bottom: 2px solid var(--ground); transform: translateY(-1px) rotate(-45deg); }
+.check-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.check-title { font-weight: 600; }

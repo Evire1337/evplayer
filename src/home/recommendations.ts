@@ -1,3 +1,4 @@
+import { keeps } from "@/settings/store";
 import type { Track } from "@/types";
 import { similarTracks, songKey, uniqueSongs } from "@/player/radio";
 import { getTopTracks } from "@/stats/listeningStats";
@@ -49,6 +50,6 @@ export async function recommendations(likes: LikedTrack[], history: HistoryEntry
     .map((seed, i) => ({ seed, tracks: lists[i].filter((t) => !used.has(t.id)).slice(0, 14) }))
     .filter((b) => b.tracks.length >= 4);
   const value = { forYou, because };
-  if (forYou.length) cached = { key, at: Date.now(), value };
+  if (forYou.length && keeps("serviceCache")) cached = { key, at: Date.now(), value };
   return value;
 }

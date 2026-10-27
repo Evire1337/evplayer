@@ -1,3 +1,4 @@
+import { keeps } from "@/settings/store";
 import type { Track } from "@/types";
 
 // Per-track listening statistics kept on this computer. Stored compactly (plays and
@@ -87,7 +88,7 @@ function compact(record: TrackStatsRecord, now: Date): void {
  * extra listened time is added.
  */
 export function recordListen(track: Track, sessionId: string, playedMs: number, now = new Date()): void {
-  if (!track?.id) return;
+  if (!track?.id || !keeps("stats")) return;
   const data = load();
   const iso = now.toISOString();
   let record = data.tracks[track.id];
