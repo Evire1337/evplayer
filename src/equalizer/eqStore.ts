@@ -14,6 +14,12 @@ interface EqState {
   /** keep every song at about the same loudness */
   normalize: boolean;
   setNormalize: (normalize: boolean) => void;
+  /**
+   * clip protection: the level is pulled down by most of the boost and a limiter catches
+   * the rest. Off by default: boosts come through at full strength, loud ones may distort
+   */
+  protect: boolean;
+  setProtect: (protect: boolean) => void;
   /** extra output level in dB on top of the automatic clip protection */
   preamp: number;
   bands: EqBand[];
@@ -39,6 +45,8 @@ export const useEqualizerStore = create<EqState>()(
       enabled: false,
       normalize: true,
       setNormalize: (normalize) => set({ normalize }),
+      protect: false,
+      setProtect: (protect) => set({ protect }),
       preamp: 0,
       bands: defaultBands(),
       preset: "flat",

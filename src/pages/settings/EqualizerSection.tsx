@@ -151,7 +151,7 @@ function CustomPresets() {
 }
 
 export default function EqualizerSection() {
-  const { enabled, bands, preset, preamp, setEnabled, updateBand, applyPreset, reset, setPreamp, normalize, setNormalize } = useEqualizerStore();
+  const { enabled, bands, preset, preamp, setEnabled, updateBand, applyPreset, reset, setPreamp, normalize, setNormalize, protect, setProtect } = useEqualizerStore();
   const [selectedId, setSelectedId] = useState<string | null>(bands[0]?.id ?? null);
   const selectedIndex = bands.findIndex((b) => b.id === selectedId);
   const selected = selectedIndex >= 0 ? bands[selectedIndex] : null;
@@ -159,6 +159,12 @@ export default function EqualizerSection() {
   return (
     <div className="settings-group">
       <SwitchRow title="Эквалайзер" hint="Шесть полос: перетаскивайте точки на графике вверх-вниз (громкость) и влево-вправо (частота)" checked={enabled} onChange={setEnabled} />
+      <SwitchRow
+        title="Защита от хрипа"
+        hint="Приглушает общий уровень на величину усиления и срезает пики. Выключена: бас-буст и любое усиление звучат в полную силу, на громких треках возможен перегруз"
+        checked={protect}
+        onChange={setProtect}
+      />
       <SwitchRow title="Выравнивать громкость" hint="Тихие и громкие треки звучат примерно одинаково — без резких скачков между песнями" checked={normalize} onChange={setNormalize} />
       <div className="chip-row">
         {PRESET_IDS.map((id) => (
@@ -205,7 +211,7 @@ export default function EqualizerSection() {
           </div>
         </div>
       )}
-      <Row title="Предусиление" hint="Общий уровень после эквалайзера; от перегруза защищает лимитер">
+      <Row title="Предусиление" hint="Общий уровень после эквалайзера. Если звук хрипит — опустите его или включите защиту от хрипа">
         <input
           type="range"
           className="dial small-dial"

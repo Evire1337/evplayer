@@ -76,12 +76,15 @@ export function applyEqualizer(): void {
     const filter = bus!.filters[i];
     if (filter) applyBand(filter, band, enabled, now);
   });
-  // pull the level down by most of the boost so loud masters do not clip, then let the
-  // limiter catch whatever is left
-  const headroom = enabled ? -peakBoostDb(bands) * 0.75 + preamp : 0;
+  const { normalize, protect } = useEqualizerStore.getState();
+  // with clip protection: pull the level down by most of the boost so loud masters do not
+  // clip, then let the limiter catch whatever is left. Without it the boost comes through
+  // at full strength and only the preamp sets the level
+  const headroom = enabled ? (protect ? -peakBoostDb(bands) * 0.75 : 0) + preamp : 0;
   bus.preamp.gain.setTargetAtTime(Math.pow(10, headroom / 20), now, 0.02);
-  const { normalize } = useEqualizerStore.getState();
-  bus.limiter.threshold.setTargetAtTime(enabled || normalize ? -1 : 0, now, 0.02);
+  // a ratio of 1 makes the compressor do nothing at all
+  bus.limiter.ratio.setTargetAtTime(protect ? 20 : 1, now, 0.02);
+  bus.limiter.threshold.setTargetAtTime(protect && (enabled || normalize) ? -1 : 0, now, 0.02);
   if (!normalize) bus.level.gain.setTargetAtTime(1, now, 0.3);
 }
 
