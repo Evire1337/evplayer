@@ -7,7 +7,7 @@ import type { ShortcutAction } from "@/settings/shortcuts";
 // One place that knows what each command does: keys in the window, system-wide keys,
 // the tray menu and the mini player all end up here.
 
-export type Command = ShortcutAction | "togglePlay" | "seekTo";
+export type Command = ShortcutAction | "togglePlay" | "seekTo" | "prevTrack";
 
 export function runAction(action: Command, value?: number): void {
   const s = usePlayer.getState();
@@ -19,6 +19,8 @@ export function runAction(action: Command, value?: number): void {
       return player.next();
     case "prev":
       return player.prev();
+    case "prevTrack":
+      return player.prev(true);
     case "seekForward":
       return player.seek(Math.min(s.durationMs, s.positionMs + 5000));
     case "seekBackward":
@@ -49,6 +51,8 @@ export function runAction(action: Command, value?: number): void {
       return useNavigation.getState().go("now");
     case "toggleOverlay":
       return window.evplayer?.overlay.toggle();
+    case "hideOverlay":
+      return window.evplayer?.overlay.hide();
     case "showWindow":
       return window.evplayer?.showWindow();
   }

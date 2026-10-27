@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { IconClose, IconExpand, IconHeart, IconHeartFill, IconNext, IconPause, IconPlay, IconPrev } from "@/ui/components/Icons";
+import { IconExpand, IconHeart, IconHeartFill, IconNext, IconPause, IconPlay, IconPrev } from "@/ui/components/Icons";
 import { formatTime } from "@/ui/format";
+import { acceleratorFromEvent, actionFor } from "@/settings/shortcuts";
+import { useSettings } from "@/settings/store";
 
 // The mini player window. It has no player of its own: it shows what the main window
 // sends and passes button presses back.
@@ -32,6 +34,30 @@ export default function OverlayApp() {
     return off;
   }, []);
 
+  // keys while the mini player has focus (Settings → Keys → Mini player)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const acc = acceleratorFromEvent(e);
+      if (!acc) return;
+      const action = actionFor(useSettings.getState().shortcuts, "overlay", acc);
+      if (!action) return;
+      e.preventDefault();
+      if (action === "hideOverlay") api()?.hide();
+      else if (action === "prev") api()?.command("prevTrack");
+      else api()?.command(action);
+    };
+    // the main window changes the settings: pick them up
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === "evplayer.settings.v1") void useSettings.persist.rehydrate();
+    };
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("storage", onStorage);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("storage", onStorage);
+    };
+  }, []);
+
   // between updates the bar moves on by itself, so it stays smooth with few messages
   useEffect(() => {
     if (state?.status !== "playing") return;
@@ -59,7 +85,7 @@ export default function OverlayApp() {
           <button type="button" className={`overlay-btn${state?.liked ? " is-liked" : ""}`} aria-label="Нравится" onClick={() => cmd("like")} disabled={!track}>
             {state?.liked ? <IconHeartFill size={15} /> : <IconHeart size={15} />}
           </button>
-          <button type="button" className="overlay-btn" aria-label="Предыдущий" onClick={() => cmd("prev")} disabled={!track}>
+          <button type="button" className="overlay-btn" aria-label="Предыдущий" onClick={() => cmd("prevTrack")} disabled={!track}>
             <IconPrev size={15} />
           </button>
           <button type="button" className="overlay-btn is-main" aria-label={playing ? "Пауза" : "Играть"} onClick={() => cmd("togglePlay")} disabled={!track}>
@@ -80,9 +106,6 @@ export default function OverlayApp() {
         >
           <span style={{ width: `${progress * 100}%` }} />
         </div>
-        <button type="button" className="overlay-close" aria-label="Спрятать мини-плеер" onClick={() => api()?.hide()}>
-          <IconClose size={10} />
-        </button>
       </div>
     </div>
   );

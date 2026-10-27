@@ -2,7 +2,7 @@
 // ("Ctrl+Shift+L", "Space", "MediaPlayPause"), so the same text works for keys inside the
 // window and for system-wide keys registered by the main process.
 
-export type ShortcutScope = "app" | "global";
+export type ShortcutScope = "app" | "global" | "overlay";
 
 export type ShortcutAction =
   | "playPause"
@@ -20,7 +20,8 @@ export type ShortcutAction =
   | "settings"
   | "nowPlaying"
   | "toggleOverlay"
-  | "showWindow";
+  | "showWindow"
+  | "hideOverlay";
 
 export interface ShortcutDef {
   id: string;
@@ -55,6 +56,17 @@ export const SHORTCUTS: ShortcutDef[] = [
   { id: "global.volumeDown", action: "volumeDown", scope: "global", title: "Тише", hint: "Громкость EvPlayer, не системы", default: null },
   { id: "global.overlay", action: "toggleOverlay", scope: "global", title: "Мини-плеер", hint: "Показать или спрятать мини-плеер поверх окон", default: "Ctrl+Alt+M" },
   { id: "global.show", action: "showWindow", scope: "global", title: "Показать EvPlayer", hint: "Вывести окно на передний план", default: "Ctrl+Alt+E" },
+  { id: "overlay.playPause", action: "playPause", scope: "overlay", title: "Играть / пауза", hint: "Когда мини-плеер в фокусе (кликните по нему)", default: "Space" },
+  { id: "overlay.next", action: "next", scope: "overlay", title: "Следующий трек", hint: "Когда мини-плеер в фокусе", default: "Right" },
+  { id: "overlay.prev", action: "prev", scope: "overlay", title: "Предыдущий трек", hint: "Когда мини-плеер в фокусе", default: "Left" },
+  { id: "overlay.seekForward", action: "seekForward", scope: "overlay", title: "Вперёд на 5 секунд", hint: "Когда мини-плеер в фокусе", default: "Shift+Right" },
+  { id: "overlay.seekBackward", action: "seekBackward", scope: "overlay", title: "Назад на 5 секунд", hint: "Когда мини-плеер в фокусе", default: "Shift+Left" },
+  { id: "overlay.volumeUp", action: "volumeUp", scope: "overlay", title: "Громче", hint: "Когда мини-плеер в фокусе", default: "Up" },
+  { id: "overlay.volumeDown", action: "volumeDown", scope: "overlay", title: "Тише", hint: "Когда мини-плеер в фокусе", default: "Down" },
+  { id: "overlay.mute", action: "mute", scope: "overlay", title: "Без звука", hint: "Когда мини-плеер в фокусе", default: "M" },
+  { id: "overlay.like", action: "like", scope: "overlay", title: "Нравится", hint: "Когда мини-плеер в фокусе", default: "L" },
+  { id: "overlay.show", action: "showWindow", scope: "overlay", title: "Открыть EvPlayer", hint: "Развернуть основное окно", default: "Enter" },
+  { id: "overlay.hide", action: "hideOverlay", scope: "overlay", title: "Спрятать мини-плеер", hint: "Убрать мини-плеер с экрана", default: "Escape" },
 ];
 
 const CODE_NAMES: Record<string, string> = {
@@ -141,7 +153,9 @@ export function globalMap(overrides: Bindings): Record<string, ShortcutAction> {
   return out;
 }
 
-export function appAction(overrides: Bindings, acc: string): ShortcutAction | null {
-  for (const def of SHORTCUTS) if (def.scope === "app" && binding(overrides, def) === acc) return def.action;
+export function actionFor(overrides: Bindings, scope: ShortcutScope, acc: string): ShortcutAction | null {
+  for (const def of SHORTCUTS) if (def.scope === scope && binding(overrides, def) === acc) return def.action;
   return null;
 }
+
+export const appAction = (overrides: Bindings, acc: string) => actionFor(overrides, "app", acc);

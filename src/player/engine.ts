@@ -247,9 +247,9 @@ class PlayerEngine {
     this.advance(true);
   }
 
-  prev(): void {
+  prev(force = false): void {
     // like most players: a few seconds in, "previous" restarts the song
-    if (usePlayer.getState().positionMs > 4000) {
+    if (!force && usePlayer.getState().positionMs > 4000) {
       this.seek(0);
       return;
     }

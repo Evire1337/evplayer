@@ -631,12 +631,13 @@ html[data-hidden] *, html[data-hidden] *::before, html[data-hidden] *::after { a
 
 /* ---------- mini player window: one slim bar ---------- */
 html.is-overlay, html.is-overlay body { background: transparent; }
-.overlay { height: 100%; padding: 5px; -webkit-app-region: drag; }
+.overlay { height: 100%; padding: 5px; }
 .overlay-card {
   position: relative; height: 100%; display: flex; align-items: center; gap: 10px; padding: 0 8px 0 7px; border-radius: 16px; overflow: hidden;
   background: rgba(8, 18, 20, 0.92); border: 1px solid rgba(238, 247, 244, 0.1); box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
 }
-.overlay button { -webkit-app-region: no-drag; }
+/* only the title area moves the window: buttons stay outside every drag region, so Windows never swallows their clicks */
+.overlay-text { -webkit-app-region: drag; cursor: grab; align-self: stretch; justify-content: center; }
 .overlay-art { position: relative; width: 38px; height: 38px; border-radius: 10px; overflow: hidden; flex-shrink: 0; background: rgba(238, 247, 244, 0.08); }
 .overlay-art img { width: 100%; height: 100%; object-fit: cover; }
 .overlay-art-hover { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.5); opacity: 0; transition: opacity 120ms ease; }
@@ -650,12 +651,10 @@ html.is-overlay, html.is-overlay body { background: transparent; }
 .overlay-btn.is-liked { color: var(--accent); }
 .overlay-btn.is-main { width: 32px; height: 32px; margin: 0 2px; background: var(--ink); color: var(--ground); }
 .overlay-btn.is-main:hover:not(:disabled) { background: #fff; color: var(--ground); }
-.overlay-progress { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: rgba(238, 247, 244, 0.08); cursor: pointer; -webkit-app-region: no-drag; }
+.overlay-progress { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: rgba(238, 247, 244, 0.08); cursor: pointer; }
 .overlay-progress:hover { height: 5px; }
 .overlay-progress span { display: block; height: 100%; background: var(--accent); }
-.overlay-close { position: absolute; top: 3px; right: 3px; width: 14px; height: 14px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: var(--ink-3); background: rgba(8, 18, 20, 0.9); opacity: 0; transition: opacity 120ms ease; }
-.overlay-card:hover .overlay-close { opacity: 1; }
-.overlay-close:hover { color: var(--ink); }
+
 
 /* ---------- settings ---------- */
 .settings-layout { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 22px; align-items: start; }

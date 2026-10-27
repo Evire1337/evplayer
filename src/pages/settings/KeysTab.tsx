@@ -118,6 +118,7 @@ export default function KeysTab() {
             options={[
               { value: "app", label: "В окне EvPlayer" },
               { value: "global", label: "Везде в системе" },
+              { value: "overlay", label: "В мини-плеере" },
             ]}
           />
           <label className="keys-search">
@@ -125,6 +126,7 @@ export default function KeysTab() {
             <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Найти действие" />
           </label>
         </div>
+        {scope === "overlay" && <p className="muted small">Работают, когда мини-плеер в фокусе — кликните по нему один раз, например в игре в оконном режиме.</p>}
         {scope === "global" && (
           <SwitchRow
             title="Глобальные клавиши включены"

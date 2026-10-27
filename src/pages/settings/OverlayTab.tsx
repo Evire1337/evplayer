@@ -27,7 +27,7 @@ export default function OverlayTab() {
           </div>
           <div className="ov-hero-text">
             <span className="set-row-title">{visible ? "Мини-плеер открыт" : "Мини-плеер спрятан"}</span>
-            <span className="set-row-hint">Перетаскивайте его за любое место. Крестик в углу прячет его обратно.</span>
+            <span className="set-row-hint">Перетаскивайте его за название трека. Спрятать — клавишей, из трея или здесь.</span>
             <button type="button" className="btn primary" disabled={!o.overlayEnabled} onClick={() => window.evplayer?.overlay.toggle()}>
               {visible ? "Спрятать" : "Показать сейчас"}
             </button>
@@ -52,6 +52,7 @@ export default function OverlayTab() {
       <Card title="Клавиши">
         <Row title="В окне EvPlayer" hint={key("app.overlay")} />
         <Row title="Из любой программы" hint={key("global.overlay")} />
+        <Row title="Внутри мини-плеера" hint={`${key("overlay.playPause")} — пауза, ${key("overlay.prev")} / ${key("overlay.next")} — треки, ${key("overlay.like")} — нравится, ${key("overlay.hide")} — спрятать`} />
         <p className="muted small">Поменять — во вкладке «Клавиши». Ещё мини-плеер открывается из меню значка в трее.</p>
       </Card>
     </>
