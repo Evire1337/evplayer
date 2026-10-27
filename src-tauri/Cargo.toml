@@ -15,16 +15,13 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["tray-icon", "image-png"] }
-tauri-plugin-single-instance = "2"
+tauri = { version = "2", features = ["image-png"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"
-tauri-plugin-global-shortcut = "2"
-tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-reqwest = { version = "0.12", default-features = false, features = ["native-tls", "cookies", "gzip", "brotli", "deflate", "json", "blocking"] }
+reqwest = { version = "0.12", default-features = false, features = ["cookies", "gzip", "brotli", "deflate", "json", "blocking"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "fs", "io-util", "net"] }
 lofty = "0.22"
 notify = "8"
@@ -39,6 +36,19 @@ chrono = { version = "0.4", default-features = false, features = ["clock", "std"
 rusty-leveldb = "3"
 log = "0.4"
 tiny_http = "0.12"
+
+# desktop only: tray, one running copy, system-wide keys, installer updates
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
+tauri-plugin-single-instance = "2"
+tauri-plugin-global-shortcut = "2"
+tauri-plugin-updater = "2"
+# the system TLS on desktop (Windows: schannel)
+reqwest = { version = "0.12", default-features = false, features = ["native-tls"] }
+
+# phones: TLS in Rust, so no OpenSSL has to be built for Android
+[target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }

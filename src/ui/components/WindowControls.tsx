@@ -1,3 +1,4 @@
+import { isPhone } from "@/platform/device";
 import { useEffect, useState } from "react";
 
 // The window has no system frame (so the backdrop runs to the very top); these are its
@@ -6,8 +7,8 @@ import { useEffect, useState } from "react";
 export default function WindowControls() {
   const api = window.evplayer?.window;
   const [maximized, setMaximized] = useState(false);
-  useEffect(() => api?.onMaximized(setMaximized), [api]);
-  if (!api) return null;
+  useEffect(() => (isPhone ? undefined : api?.onMaximized(setMaximized)), [api]);
+  if (!api || isPhone) return null;
   return (
     <div className="win-controls">
       <button type="button" className="win-btn" aria-label="Свернуть" onClick={api.minimize}>

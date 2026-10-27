@@ -8,11 +8,19 @@ mod library;
 mod media_server;
 mod memory;
 mod migrate;
-mod overlay;
 mod proxy;
 mod services;
+// desktop: tray, mini player window, installer updates; phones get stand-ins
+#[cfg(desktop)]
+mod overlay;
+#[cfg(desktop)]
 mod tray;
+#[cfg(desktop)]
 mod updates;
+#[cfg(mobile)]
+mod mobile;
+#[cfg(mobile)]
+use mobile::{overlay, tray, updates};
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -21,6 +29,7 @@ use std::sync::{Arc, Mutex};
 use serde_json::Value;
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 use tauri_plugin_dialog::DialogExt;
+#[cfg(desktop)]
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 use tauri_plugin_opener::OpenerExt;
 
@@ -64,6 +73,7 @@ fn set_visible(app: &AppHandle, visible: bool) {
 
 pub fn show_main(app: &AppHandle) {
     if let Some(w) = app.get_webview_window(MAIN) {
+        #[cfg(desktop)]
         let _ = w.unminimize();
         let _ = w.show();
         let _ = w.set_focus();
@@ -202,7 +212,16 @@ fn add_paths(app: &AppHandle, paths: Vec<PathBuf>) -> AddResult {
 async fn local_pick(app: AppHandle, kind: String) -> Result<AddResult, String> {
     let dialog = app.dialog().file();
     let picked: Vec<PathBuf> = if kind == "folder" {
-        dialog.blocking_pick_folder().and_then(|p| p.into_path().ok()).into_iter().collect()
+        #[cfg(desktop)]
+        {
+            dialog.blocking_pick_folder().and_then(|p| p.into_path().ok()).into_iter().collect()
+        }
+        // phones have no folder picker here; files are picked one by one
+        #[cfg(mobile)]
+        {
+            let _ = dialog;
+            Vec::new()
+        }
     } else {
         dialog
             .add_filter("Audio", library::AUDIO_EXTENSIONS)
@@ -329,6 +348,18 @@ pub fn accelerator(text: &str) -> String {
 
 #[tauri::command]
 fn set_global_shortcuts(app: AppHandle, map: BTreeMap<String, String>) -> Vec<String> {
+    // phones have no system-wide keys
+    #[cfg(mobile)]
+    {
+        let _ = (app, map);
+        return Vec::new();
+    }
+    #[cfg(desktop)]
+    set_desktop_shortcuts(app, map)
+}
+
+#[cfg(desktop)]
+fn set_desktop_shortcuts(app: AppHandle, map: BTreeMap<String, String>) -> Vec<String> {
     let gs = app.global_shortcut();
     let _ = gs.unregister_all();
     let mut failed = Vec::new();
@@ -434,18 +465,20 @@ async fn migrate_electron(app: AppHandle, state: tauri::State<'_, AppState>) -> 
 // ---- start ----------------------------------------------------------------------------
 
 fn create_main(app: &AppHandle, media_base: &str) -> tauri::Result<()> {
-    let win = WebviewWindowBuilder::new(app, MAIN, WebviewUrl::App("index.html".into()))
+    let builder = WebviewWindowBuilder::new(app, MAIN, WebviewUrl::App("index.html".into()))
         // where the page gets songs from (see media_server.rs)
+        .initialization_script(format!("window.__EVPLAYER_MEDIA__ = {};", serde_json::to_string(media_base).unwrap_or_default()));
+    #[cfg(desktop)]
+    let builder = builder
         .additional_browser_args(&browser_args(app))
-        .initialization_script(format!("window.__EVPLAYER_MEDIA__ = {};", serde_json::to_string(media_base).unwrap_or_default()))
         .title("EvPlayer")
         .inner_size(1280.0, 800.0)
         .min_inner_size(900.0, 600.0)
         .decorations(false)
         .background_color(tauri::window::Color(6, 32, 29, 255))
         // music has to keep playing and counting while the window is hidden
-        .background_throttling(tauri::utils::config::BackgroundThrottlingPolicy::Disabled)
-        .build()?;
+        .background_throttling(tauri::utils::config::BackgroundThrottlingPolicy::Disabled);
+    let win = builder.build()?;
     let app2 = app.clone();
     win.on_window_event(move |event| match event {
         WindowEvent::CloseRequested { api, .. } => {
@@ -499,12 +532,16 @@ fn create_main(app: &AppHandle, media_base: &str) -> tauri::Result<()> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    // one copy of the app, system-wide keys and installer updates are desktop things
+    #[cfg(desktop)]
+    let builder = builder
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| show_main(app)))
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .plugin(tauri_plugin_updater::Builder::new().build());
+    builder
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
-        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .register_asynchronous_uri_scheme_protocol("evproxy", |_ctx, request, responder| {
             tauri::async_runtime::spawn(async move { responder.respond(proxy::handle(request).await) });

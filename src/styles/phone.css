@@ -1,0 +1,81 @@
+/* ---------- phone layout (html.is-phone, set in src/platform) ----------
+   The rail becomes a bar at the bottom, the player sits right above it, pages take the
+   whole width, "Now playing" is one column. Safe-area insets keep clear of the notch and
+   the gesture bar. */
+
+html.is-phone {
+  --nav-h: 62px;
+  --mini-h: 64px;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+html.is-phone body { font-size: 15px; }
+
+/* no window frame on a phone */
+html.is-phone .titlebar { height: 0; }
+html.is-phone .win-controls { display: none; }
+html.is-phone .back-btn { position: fixed; left: 10px; top: calc(var(--safe-top) + 8px); z-index: 4; background: var(--glass-strong); }
+
+/* the rail as a bottom bar */
+html.is-phone .rail {
+  left: 0; right: 0; top: auto; bottom: 0; transform: none;
+  flex-direction: row; justify-content: space-around; gap: 0;
+  height: calc(var(--nav-h) + var(--safe-bottom)); padding: 0 6px var(--safe-bottom);
+  border-radius: 22px 22px 0 0;
+}
+html.is-phone .rail-logo, html.is-phone .rail-tip, html.is-phone .rail-gap { display: none; }
+html.is-phone .rail-btn { width: 52px; height: 48px; border-radius: 16px; }
+
+/* pages */
+html.is-phone .content {
+  top: calc(var(--safe-top) + 6px); left: 12px; right: 12px;
+  bottom: calc(var(--nav-h) + var(--mini-h) + var(--safe-bottom) + 14px);
+}
+html.is-phone .page-now .content { bottom: calc(var(--nav-h) + var(--safe-bottom) + 8px); }
+html.is-phone .page { padding: 12px 0 20px; gap: 22px; }
+html.is-phone .display { font-size: 30px; }
+html.is-phone .pl-hero { gap: 16px; }
+html.is-phone .pl-cover { width: 120px; height: 120px; }
+
+/* the player above the bottom bar */
+html.is-phone .mini {
+  left: 8px; right: 8px; bottom: calc(var(--nav-h) + var(--safe-bottom) + 6px);
+  height: var(--mini-h); border-radius: 20px; padding: 0 8px;
+  grid-template-columns: minmax(0, 1fr) auto; gap: 8px;
+}
+html.is-phone .mini-art { width: 46px; height: 46px; border-radius: 12px; }
+html.is-phone .mini-side, html.is-phone .mini-center .progress { display: none; }
+/* in the small player only play and next; the rest is on "Now playing" */
+html.is-phone .mini-center .round-btn.ghost, html.is-phone .mini-center .round-btn[aria-label="Предыдущий"] { display: none; }
+html.is-phone .mini .like-btn { display: none; }
+
+/* now playing: one column, cover and controls first, lyrics below */
+html.is-phone .now { display: flex; flex-direction: column; gap: 18px; padding: calc(var(--safe-top) + 4px) 4px 0; overflow-y: auto; height: 100%; }
+html.is-phone .now-left { overflow: visible; justify-content: flex-start; }
+html.is-phone .now-art { width: min(100%, 360px); border-radius: 28px; }
+html.is-phone .now-title { font-size: 24px; }
+html.is-phone .now-lyrics { min-height: 60vh; flex-shrink: 0; --lyric-scale: 7; }
+html.is-phone .now .queue { display: none; }
+
+/* settings: tabs scroll sideways */
+html.is-phone .settings-layout { grid-template-columns: 1fr; }
+html.is-phone .settings-tabs { position: static; flex-direction: row; overflow-x: auto; flex-wrap: nowrap; scrollbar-width: none; }
+html.is-phone .settings-tab-group { flex-direction: row; flex-wrap: nowrap; }
+html.is-phone .settings-tab-group-title { display: none; }
+html.is-phone .settings-tabs button { white-space: nowrap; }
+
+/* rows: the date column does not fit */
+html.is-phone .track-row .track-date, html.is-phone .track-row .track-plays { display: none; }
+
+/* bigger touch targets; nothing waits for a hover that never comes */
+html.is-phone .row-icon { opacity: 1; }
+html.is-phone .track-card-play { opacity: 1; transform: none; }
+
+/* room for the back button above page titles */
+html.is-phone .page { padding-top: 40px; }
+html.is-phone .now { padding-top: calc(var(--safe-top) + 40px); }
+
+/* settings rows: wide controls (sliders, chip rows) go under the text */
+html.is-phone .set-row { flex-wrap: wrap; }
+html.is-phone .set-row-text { flex: 1 1 60%; }
+html.is-phone .set-row-control:has(input[type="range"]), html.is-phone .set-row-control:has(.chip-row), html.is-phone .set-row-control:has(.segmented) { flex: 1 1 100%; justify-content: flex-start; }

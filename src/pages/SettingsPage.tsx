@@ -1,3 +1,4 @@
+import { DESKTOP_ONLY_TABS, isPhone } from "@/platform/device";
 import { useEffect, useState, type ReactNode } from "react";
 import type { UpdateState } from "@/platform/api";
 import { useSettings } from "@/settings/store";
@@ -77,10 +78,10 @@ function Playback() {
         </Row>
         <SwitchRow title="Текст с Genius" hint="Если в LRCLIB нет текста, взять обычный (без синхронизации) с genius.com" checked={s.geniusFallback} onChange={(v) => s.set({ geniusFallback: v })} />
       </Card>
-      <Card title="Окно">
+      {!isPhone && <Card title="Окно">
         <SwitchRow title="Закрытие прячет в трей" hint="Крестик убирает окно к часам, музыка продолжает играть. Выйти — через меню значка" checked={s.closeToTray} onChange={(v) => s.set({ closeToTray: v })} />
         <SwitchRow title="Сворачивать в трей" hint="Свёрнутое окно не занимает место на панели задач" checked={s.minimizeToTray} onChange={(v) => s.set({ minimizeToTray: v })} />
-      </Card>
+      </Card>}
     </>
   );
 }
@@ -142,7 +143,8 @@ function DontKeepList() {
   return (
     <div className="dont-keep">
       <span className="eyebrow">Не сохранять</span>
-      {DONT_KEEP.map((item) => (
+      {/* on a phone caches are never kept: only statistics and history can be chosen */}
+      {DONT_KEEP.filter((item) => !isPhone || item.key === "noStats" || item.key === "noHistory").map((item) => (
         <label key={item.key} className="check-row">
           <input
             type="checkbox"
@@ -348,7 +350,8 @@ function About() {
 
 export default function SettingsPage() {
   const [tab, setTab] = useState<Tab>("playback");
-  const groups = [...new Set(TABS.map((t) => t.group))];
+  const tabs = isPhone ? TABS.filter((t) => !DESKTOP_ONLY_TABS.has(t.id)) : TABS;
+  const groups = [...new Set(tabs.map((t) => t.group))];
   return (
     <div className="page settings-page">
       <header className="page-head">
@@ -359,7 +362,7 @@ export default function SettingsPage() {
           {groups.map((g) => (
             <div key={g} className="settings-tab-group">
               <span className="settings-tab-group-title">{g}</span>
-              {TABS.filter((t) => t.group === g).map(({ id, label, icon: Icon }) => (
+              {tabs.filter((t) => t.group === g).map(({ id, label, icon: Icon }) => (
                 <button key={id} type="button" className={tab === id ? "is-active" : ""} aria-current={tab === id ? "page" : undefined} onClick={() => setTab(id)}>
                   <Icon size={17} />
                   <span>{label}</span>

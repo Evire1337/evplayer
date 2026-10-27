@@ -1,0 +1,70 @@
+name: Android
+
+# An APK from every push to the android branch, to put on a phone and try.
+# Signed with the release key from the repository secrets ANDROID_KEYSTORE (base64 of the
+# .jks file) and ANDROID_KEY_PASSWORD; without them the APK is signed with a throwaway
+# key, which installs fine but cannot be updated by a later properly signed APK.
+on:
+  push:
+    branches: [android]
+  workflow_dispatch:
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - run: pnpm install --frozen-lockfile
+      - name: Signing key
+        shell: bash
+        env:
+          KEYSTORE: ${{ secrets.ANDROID_KEYSTORE }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          KS="$RUNNER_TEMP/evplayer.jks"
+          if [ -n "$KEYSTORE" ]; then
+            echo "$KEYSTORE" | base64 -d > "$KS"
+            PW="$KEY_PASSWORD"
+          else
+            echo "::warning::No ANDROID_KEYSTORE secret: signing with a throwaway key"
+            PW=throwaway
+            keytool -genkeypair -keystore "$KS" -alias evplayer -keyalg RSA -keysize 2048 -validity 10000 -storepass "$PW" -keypass "$PW" -dname "CN=EvPlayer test"
+          fi
+          {
+            echo "storeFile=$KS"
+            echo "password=$PW"
+            echo "keyAlias=evplayer"
+          } > src-tauri/gen/android/keystore.properties
+      - name: Build the APK
+        env:
+          NDK_HOME: ${{ env.ANDROID_NDK_LATEST_HOME }}
+        run: pnpm tauri android build --apk --target aarch64 armv7
+      - name: Name it
+        shell: bash
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          APK=$(ls src-tauri/gen/android/app/build/outputs/apk/universal/release/*.apk | head -1)
+          mkdir -p out && cp "$APK" "out/EvPlayer-$VERSION.apk"
+          ls -la out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: EvPlayer-android
+          path: out/*.apk
+          retention-days: 14
