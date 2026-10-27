@@ -55,7 +55,7 @@ jobs:
           workspaces: src-tauri
       - run: pnpm install --frozen-lockfile
       - name: Build the installer (a test build, without the update signature)
-        run: pnpm tauri build --config "{\"bundle\":{\"createUpdaterArtifacts\":false}}"
+        run: pnpm tauri build --config src-tauri/test-build.conf.json
       - uses: actions/upload-artifact@v4
         with:
           name: EvPlayer-test-installer
