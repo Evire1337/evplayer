@@ -15,6 +15,15 @@ export interface PresenceState {
   startedAt?: number;
   endsAt?: number;
   paused?: boolean;
+  /** what Discord shows next to your name in the member list */
+  statusShows?: "app" | "artist" | "song";
+}
+
+export interface DiscordUser {
+  id: string;
+  username: string;
+  globalName?: string;
+  avatar?: string;
 }
 
 type Status = "off" | "connecting" | "connected" | "no-discord";
@@ -62,6 +71,8 @@ export function activityFor(state: PresenceState) {
   const text = (value: string) => (value.length < 2 ? `${value}  ` : value.slice(0, 127));
   return {
     type: 2, // "Listening to"
+    // 0: the application name, 1: the "state" line (artist), 2: the "details" line (song)
+    status_display_type: state.statusShows === "artist" ? 1 : state.statusShows === "app" ? 0 : 2,
     details: text(state.title),
     state: text(state.artist || "EvPlayer"),
     ...(state.paused || !state.startedAt ? {} : { timestamps: { start: state.startedAt, ...(state.endsAt ? { end: state.endsAt } : {}) } }),
@@ -81,9 +92,10 @@ export class DiscordPresence {
   private retry: ReturnType<typeof setTimeout> | null = null;
   private current: Status = "off";
   private nonce = 0;
+  private user: DiscordUser | null = null;
 
-  status(): Status {
-    return this.current;
+  status(): { status: Status; user: DiscordUser | null } {
+    return { status: this.current, user: this.current === "connected" ? this.user : null };
   }
 
   setAppId(appId: string | null): void {
@@ -126,8 +138,17 @@ export class DiscordPresence {
       const { frames, rest } = decodeFrames(Buffer.concat([buffer, chunk]));
       buffer = rest;
       for (const frame of frames) {
-        const data = frame.data as { evt?: string } | null;
+        const data = frame.data as { evt?: string; data?: { user?: { id?: string; username?: string; global_name?: string; avatar?: string } } } | null;
         if (frame.op === OP_FRAME && data?.evt === "READY") {
+          const u = data.data?.user;
+          this.user = u?.id
+            ? {
+                id: u.id,
+                username: u.username ?? "",
+                globalName: u.global_name || undefined,
+                avatar: u.avatar ? `https://cdn.discordapp.com/avatars/${u.id}/${u.avatar}.${u.avatar.startsWith("a_") ? "gif" : "png"}?size=128` : undefined,
+              }
+            : null;
           this.ready = true;
           this.current = "connected";
           this.send();

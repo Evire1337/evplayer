@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-export type Page = "now" | "home" | "search" | "library" | "playlist" | "files" | "settings" | "artist" | "smart";
+export type Page = "now" | "home" | "search" | "library" | "playlist" | "files" | "settings" | "artist" | "smart" | "collection";
 
 interface NavState {
   page: Page;

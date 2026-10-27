@@ -66,7 +66,7 @@ export default function Popover({
         className={`tool-btn${open || active ? " is-on" : ""}`}
         aria-label={label}
         aria-expanded={open}
-        title={label}
+        data-tip={open ? undefined : label}
         onClick={() => setOpen((v) => !v)}
       >
         {icon}

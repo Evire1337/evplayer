@@ -24,7 +24,7 @@ export default function MiniPlayer() {
       </div>
       <div className="mini-side">
         <Tools />
-        <button type="button" className="tool-btn" onClick={() => go("now")} aria-label="Во весь экран" title="Во весь экран" disabled={!track}>
+        <button type="button" className="tool-btn" onClick={() => go("now")} aria-label="Сейчас играет — во весь экран" data-tip="Сейчас играет — во весь экран" disabled={!track}>
           <IconExpand size={18} />
         </button>
       </div>

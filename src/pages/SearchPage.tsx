@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import type { ArtistSummary, Track } from "@/types";
-import { searchSoundCloud } from "@/services/soundcloud/api";
-import { searchYouTubeMusic } from "@/services/youtube/music";
+import type { ArtistSummary, CollectionSummary, Track } from "@/types";
+import { searchSoundCloud, searchSoundCloudCollections } from "@/services/soundcloud/api";
+import { searchYouTubeCollections, searchYouTubeMusic } from "@/services/youtube/music";
+import CollectionCard from "@/ui/components/CollectionCard";
 import TrackRow from "@/ui/components/TrackRow";
 import { IconClose, IconSearch } from "@/ui/components/Icons";
 import { Segmented } from "@/ui/components/Controls";
@@ -12,7 +13,17 @@ import { importFromLink, looksLikeLink } from "@/library/importLink";
 
 const DEBOUNCE_MS = 350;
 
-type Result = { tracks: Track[]; artists: ArtistSummary[]; failed: string[] };
+type Result = { tracks: Track[]; artists: ArtistSummary[]; albums: CollectionSummary[]; playlists: CollectionSummary[]; failed: string[] };
+type Kind = "all" | "tracks" | "artists" | "albums" | "playlists";
+
+function mix<T>(a: T[], b: T[]): T[] {
+  const out: T[] = [];
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    if (a[i]) out.push(a[i]);
+    if (b[i]) out.push(b[i]);
+  }
+  return out;
+}
 
 /** one list from both services: take turns so neither buries the other */
 export function interleave(a: Track[], b: Track[]): Track[] {
@@ -24,7 +35,19 @@ export function interleave(a: Track[], b: Track[]): Track[] {
   return out;
 }
 
-async function runSearch(q: string, source: SearchSource, signal: AbortSignal): Promise<Result> {
+async function collections(q: string, source: SearchSource, kind: "album" | "playlist", signal: AbortSignal): Promise<CollectionSummary[]> {
+  const [sc, yt] = await Promise.all([
+    source !== "youtube" ? searchSoundCloudCollections(q, kind, signal).catch(() => []) : Promise.resolve([]),
+    source !== "soundcloud" ? searchYouTubeCollections(q, kind, signal).catch(() => []) : Promise.resolve([]),
+  ]);
+  return mix(yt, sc);
+}
+
+async function runSearch(q: string, source: SearchSource, kind: Kind, signal: AbortSignal): Promise<Result> {
+  if (kind === "albums" || kind === "playlists") {
+    const list = await collections(q, source, kind === "albums" ? "album" : "playlist", signal);
+    return { tracks: [], artists: [], albums: kind === "albums" ? list : [], playlists: kind === "playlists" ? list : [], failed: [] };
+  }
   const failed: string[] = [];
   const sc = source !== "youtube"
     ? searchSoundCloud(q, signal).catch(() => (failed.push("SoundCloud"), { tracks: [], artists: [] }))
@@ -32,16 +55,17 @@ async function runSearch(q: string, source: SearchSource, signal: AbortSignal): 
   const yt = source !== "soundcloud"
     ? searchYouTubeMusic(q, signal).catch(() => (failed.push("YouTube Music"), [] as Track[]))
     : Promise.resolve([] as Track[]);
-  const [scRes, ytRes] = await Promise.all([sc, yt]);
-  return { tracks: interleave(scRes.tracks, ytRes), artists: scRes.artists, failed };
+  const albums = kind === "all" ? collections(q, source, "album", signal) : Promise.resolve([]);
+  const [scRes, ytRes, albumRes] = await Promise.all([sc, yt, albums]);
+  return { tracks: interleave(scRes.tracks, ytRes), artists: scRes.artists, albums: albumRes, playlists: [], failed };
 }
 
 export default function SearchPage() {
   const defaultSource = useSettings((s) => s.defaultSearchSource);
   const [query, setQuery] = useState("");
   const [source, setSource] = useState<SearchSource>(defaultSource);
-  const [kind, setKind] = useState<"all" | "tracks" | "artists">("all");
-  const [result, setResult] = useState<Result>({ tracks: [], artists: [], failed: [] });
+  const [kind, setKind] = useState<Kind>("all");
+  const [result, setResult] = useState<Result>({ tracks: [], artists: [], albums: [], playlists: [], failed: [] });
   const [state, setState] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const inputRef = useRef<HTMLInputElement>(null);
   const go = useNavigation((s) => s.go);
@@ -58,11 +82,11 @@ export default function SearchPage() {
     const controller = new AbortController();
     setState("loading");
     const timer = setTimeout(() => {
-      runSearch(q, source, controller.signal)
+      runSearch(q, source, kind, controller.signal)
         .then((res) => {
           if (controller.signal.aborted) return;
           setResult(res);
-          setState(res.tracks.length === 0 && res.failed.length ? "error" : "ready");
+          setState(res.tracks.length + res.albums.length + res.playlists.length === 0 && res.failed.length ? "error" : "ready");
         })
         .catch(() => !controller.signal.aborted && setState("error"));
     }, DEBOUNCE_MS);
@@ -70,11 +94,15 @@ export default function SearchPage() {
       clearTimeout(timer);
       controller.abort();
     };
-  }, [query, source]);
+  }, [query, source, kind]);
 
-  const { tracks, artists } = result;
-  const showArtists = kind !== "tracks" && artists.length > 0 && state !== "idle";
-  const showTracks = kind !== "artists" && tracks.length > 0 && state !== "idle";
+  const { tracks, artists, albums, playlists } = result;
+  const active = state !== "idle";
+  const showArtists = (kind === "all" || kind === "artists") && artists.length > 0 && active;
+  const showTracks = (kind === "all" || kind === "tracks") && tracks.length > 0 && active;
+  const shownAlbums = active && (kind === "all" || kind === "albums") ? albums : [];
+  const shownPlaylists = active && kind === "playlists" ? playlists : [];
+  const nothing = tracks.length + artists.length + albums.length + playlists.length === 0;
 
   return (
     <div className="page">
@@ -116,6 +144,8 @@ export default function SearchPage() {
             { value: "all", label: "Всё" },
             { value: "tracks", label: "Треки" },
             { value: "artists", label: "Исполнители" },
+            { value: "albums", label: "Альбомы" },
+            { value: "playlists", label: "Плейлисты" },
           ]}
         />
       </div>
@@ -129,7 +159,7 @@ export default function SearchPage() {
       {state === "idle" && !link && <p className="muted center">Ищите на SoundCloud и YouTube Music сразу — или вставьте ссылку на плейлист из Spotify, YouTube, SoundCloud или Deezer.</p>}
       {state === "error" && <p className="muted center">Не получилось найти. Проверьте интернет и попробуйте ещё раз.</p>}
       {state === "ready" && result.failed.length > 0 && <p className="muted small">{result.failed.join(" и ")} сейчас не отвечает — показаны остальные результаты.</p>}
-      {state === "ready" && tracks.length === 0 && artists.length === 0 && <p className="muted center">Ничего не нашлось.</p>}
+      {state === "ready" && nothing && <p className="muted center">Ничего не нашлось.</p>}
 
       {showArtists && (
         <section className="row">
@@ -142,6 +172,24 @@ export default function SearchPage() {
                 {a.followers !== undefined && <span className="muted small">{formatCount(a.followers)} подписчиков</span>}
               </button>
             ))}
+          </div>
+        </section>
+      )}
+
+      {shownAlbums.length > 0 && (
+        <section className="row">
+          <h2 className="row-title">Альбомы</h2>
+          <div className={kind === "albums" ? "card-grid" : "row-scroll"}>
+            {shownAlbums.map((a) => <CollectionCard key={a.id} item={a} />)}
+          </div>
+        </section>
+      )}
+
+      {shownPlaylists.length > 0 && (
+        <section className="row">
+          <h2 className="row-title">Плейлисты</h2>
+          <div className="card-grid">
+            {shownPlaylists.map((a) => <CollectionCard key={a.id} item={a} />)}
           </div>
         </section>
       )}

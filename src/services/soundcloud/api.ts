@@ -1,6 +1,6 @@
-import type { ArtistSummary, Track } from "@/types";
+import type { ArtistSummary, CollectionSummary, Track } from "@/types";
 import { useSettings } from "@/settings/store";
-import { mapScTrack, mapScUser, rankTranscodings, trackAuthorization, transcodingsOf } from "./mappers";
+import { mapScCollection, mapScTrack, mapScUser, rankTranscodings, trackAuthorization, transcodingsOf } from "./mappers";
 
 const API = "https://api-v2.soundcloud.com";
 
@@ -137,4 +137,54 @@ export async function resolveSoundCloudUrl(url: string, signal?: AbortSignal): P
     return { title: user.artist?.name ?? "SoundCloud", tracks: user.tracks };
   }
   throw new Error("Ссылка SoundCloud не похожа на трек или плейлист");
+}
+
+export async function searchSoundCloudCollections(query: string, kind: "album" | "playlist", signal?: AbortSignal): Promise<CollectionSummary[]> {
+  const body = await scGet<Collection>(kind === "album" ? "/search/albums" : "/search/playlists_without_albums", { q: query, limit: "20" }, signal);
+  return (body.collection ?? []).flatMap((c) => mapScCollection(c) ?? []);
+}
+
+export async function soundCloudCollection(id: string, signal?: AbortSignal): Promise<{ summary: CollectionSummary | null; tracks: Track[] }> {
+  const body = await scGet<Record<string, unknown>>(`/playlists/${id.replace(/^scp:/, "")}`, {}, signal);
+  const raw = Array.isArray(body.tracks) ? (body.tracks as Array<Record<string, unknown>>) : [];
+  const ids = raw.map((t) => Number(t.id)).filter(Number.isFinite);
+  return { summary: mapScCollection(body), tracks: await tracksByIds(ids, signal) };
+}
+
+/** public likes and playlists of a SoundCloud profile ("connect your account") */
+export async function soundCloudUserLikes(userId: string, signal?: AbortSignal, limit = 1000): Promise<Track[]> {
+  const id = userId.replace(/^scu?:/, "");
+  const out: Track[] = [];
+  let next: string | null = `/users/${id}/track_likes`;
+  let params: Record<string, string> = { limit: "200" };
+  while (next && out.length < limit) {
+    const body: { collection?: Array<{ track?: unknown }>; next_href?: string | null } = await scGet(next, params, signal);
+    for (const row of body.collection ?? []) {
+      const track = mapScTrack(row.track);
+      if (track) out.push(track);
+    }
+    next = body.next_href ?? null;
+    params = {};
+  }
+  return out.slice(0, limit);
+}
+
+export async function soundCloudUserPlaylists(userId: string, signal?: AbortSignal): Promise<CollectionSummary[]> {
+  const id = userId.replace(/^scu?:/, "");
+  const body = await scGet<Collection>(`/users/${id}/playlists_without_albums`, { limit: "50" }, signal).catch(() => scGet<Collection>(`/users/${id}/playlists`, { limit: "50" }, signal));
+  return (body.collection ?? []).flatMap((c) => mapScCollection(c) ?? []);
+}
+
+export async function resolveSoundCloudUser(input: string, signal?: AbortSignal): Promise<ArtistSummary & { permalink: string; likes?: number; tracks?: number }> {
+  const value = input.trim();
+  const url = /^https?:\/\//.test(value) ? value : `https://soundcloud.com/${value.replace(/^@/, "")}`;
+  const body = await scGet<Record<string, unknown>>("/resolve", { url }, signal);
+  const user = mapScUser(body);
+  if (!user) throw new Error("По этой ссылке нет профиля SoundCloud");
+  return {
+    ...user,
+    permalink: String(body.permalink_url ?? url),
+    likes: typeof body.likes_count === "number" ? body.likes_count : undefined,
+    tracks: typeof body.track_count === "number" ? body.track_count : undefined,
+  };
 }

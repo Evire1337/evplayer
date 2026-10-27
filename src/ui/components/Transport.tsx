@@ -22,7 +22,7 @@ export function Progress({ big = false }: { big?: boolean }) {
         max={1000}
         value={Math.round(progress * 1000)}
         disabled={!track}
-        aria-label="Позиция"
+        aria-label="Позиция" data-tip="Позиция"
         onChange={(e) => player.seek((Number(e.target.value) / 1000) * durationMs)}
         style={{ "--fill": `${progress * 100}%` } as React.CSSProperties}
       />
@@ -38,21 +38,22 @@ export function Transport({ big = false }: { big?: boolean }) {
   const { status, shuffle, repeat } = usePlayer(useShallow((s) => ({ status: s.status, shuffle: s.shuffle, repeat: s.repeat })));
   const track = usePlayer((s) => currentTrack(s));
   const playing = status === "playing";
+  const repeatLabel = `Повтор: ${repeat === "one" ? "трек" : repeat === "all" ? "вся очередь" : "выключен"}`;
   return (
     <div className={`transport${big ? " is-big" : ""}`}>
-      <button type="button" className={`round-btn ghost${shuffle ? " is-on" : ""}`} aria-label="Перемешать" aria-pressed={shuffle} onClick={() => player.toggleShuffle()}>
+      <button type="button" className={`round-btn ghost${shuffle ? " is-on" : ""}`} aria-label="Перемешать" data-tip="Перемешать" aria-pressed={shuffle} onClick={() => player.toggleShuffle()}>
         <IconShuffle size={19} />
       </button>
-      <button type="button" className="round-btn soft" aria-label="Предыдущий" disabled={!track} onClick={() => player.prev()}>
+      <button type="button" className="round-btn soft" aria-label="Предыдущий" data-tip="Предыдущий" disabled={!track} onClick={() => player.prev()}>
         <IconPrev size={big ? 22 : 18} />
       </button>
-      <button type="button" className="round-btn main" aria-label={playing ? "Пауза" : "Играть"} disabled={!track} onClick={() => player.toggle()}>
+      <button type="button" className="round-btn main" aria-label={playing ? "Пауза" : "Играть"} data-tip={playing ? "Пауза" : "Играть"} disabled={!track} onClick={() => player.toggle()}>
         {status === "loading" ? <span className="spinner" /> : playing ? <IconPause size={big ? 26 : 20} /> : <IconPlay size={big ? 26 : 20} />}
       </button>
-      <button type="button" className="round-btn soft" aria-label="Следующий" disabled={!track} onClick={() => player.next()}>
+      <button type="button" className="round-btn soft" aria-label="Следующий" data-tip="Следующий" disabled={!track} onClick={() => player.next()}>
         <IconNext size={big ? 22 : 18} />
       </button>
-      <button type="button" className={`round-btn ghost${repeat !== "off" ? " is-on" : ""}`} aria-label={`Повтор: ${repeat === "one" ? "трек" : repeat === "all" ? "очередь" : "выключен"}`} onClick={() => player.cycleRepeat()}>
+      <button type="button" className={`round-btn ghost${repeat !== "off" ? " is-on" : ""}`} aria-label={repeatLabel} data-tip={repeatLabel} onClick={() => player.cycleRepeat()}>
         <IconRepeat size={19} />
         {repeat === "one" && <span className="repeat-one">1</span>}
       </button>
@@ -66,7 +67,7 @@ export function Tools() {
   const { volume, muted } = usePlayer(useShallow((s) => ({ volume: s.volume, muted: s.muted })));
   return (
     <div className="tools">
-      <Popover label="Звук: скорость, тон, реверберация" icon={<IconSliders size={19} />} width={330} active={tuned}>
+      <Popover label="Звук, скорость и тон" icon={<IconSliders size={19} />} width={330} active={tuned}>
         <SoundPanel />
       </Popover>
       <Popover label="Громкость" icon={muted || volume === 0 ? <IconMute size={19} /> : <IconVolume size={19} />} width={76}>

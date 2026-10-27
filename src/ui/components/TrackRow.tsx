@@ -2,6 +2,7 @@ import type { Track } from "@/types";
 import { player } from "@/player/engine";
 import { currentTrack, usePlayer } from "@/player/store";
 import { useIsLiked, useLibrary } from "@/library/store";
+import { useSettings } from "@/settings/store";
 import { trackMenuItems, type TrackMenuContext } from "@/library/trackMenu";
 import { openMenu } from "../menu";
 import { artistLine, formatCount, formatTime } from "../format";
@@ -39,7 +40,16 @@ export default function TrackRow({ track, queue, index, addedAt, menu, number, d
       className={`track-row${isCurrent ? " is-current" : ""}${addedAt !== undefined ? " has-date" : ""}${dropHint ? ` drop-${dropHint}` : ""}`}
       role="button"
       tabIndex={0}
-      onClick={() => (isCurrent ? player.toggle() : void player.playQueue(queue, index))}
+      onClick={() => {
+        if (useSettings.getState().doubleClickToPlay) return;
+        if (isCurrent) player.toggle();
+        else void player.playQueue(queue, index);
+      }}
+      onDoubleClick={() => {
+        if (!useSettings.getState().doubleClickToPlay) return;
+        if (isCurrent) player.toggle();
+        else void player.playQueue(queue, index);
+      }}
       onKeyDown={(e) => {
         if (e.key === "Enter") isCurrent ? player.toggle() : void player.playQueue(queue, index);
       }}
@@ -82,12 +92,12 @@ export default function TrackRow({ track, queue, index, addedAt, menu, number, d
       {note !== undefined && addedAt === undefined ? (
         <span className="track-plays">{note}</span>
       ) : (
-        track.plays !== undefined && addedAt === undefined && <span className="track-plays" title="Прослушивания на сервисе">{formatCount(track.plays)}</span>
+        track.plays !== undefined && addedAt === undefined && <span className="track-plays" data-tip="Прослушивания на сервисе">{formatCount(track.plays)}</span>
       )}
       <button
         type="button"
         className={`row-icon${liked ? " is-liked" : ""}`}
-        aria-label={liked ? "Убрать из понравившихся" : "Нравится"}
+        aria-label={liked ? "Убрать из понравившихся" : "Нравится"} data-tip={liked ? "Убрать из понравившихся" : "Нравится"}
         onClick={(e) => {
           e.stopPropagation();
           useLibrary.getState().toggleLike(track);
@@ -99,7 +109,7 @@ export default function TrackRow({ track, queue, index, addedAt, menu, number, d
       <button
         type="button"
         className="row-icon"
-        aria-label="Ещё"
+        aria-label="Ещё" data-tip="Ещё"
         onClick={(e) => {
           const r = e.currentTarget.getBoundingClientRect();
           openMenu({ clientX: r.left, clientY: r.bottom + 4, preventDefault: () => e.preventDefault(), stopPropagation: () => e.stopPropagation() }, trackMenuItems(track, menu));

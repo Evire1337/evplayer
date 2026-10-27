@@ -24,3 +24,16 @@ export interface ArtistSummary {
   avatar?: string;
   followers?: number;
 }
+
+/** an album or a playlist on a service */
+export interface CollectionSummary {
+  /** "scp:123" for SoundCloud, "ytb:MPREb…" / "ytb:VLPL…" for YouTube Music */
+  id: string;
+  kind: "album" | "playlist";
+  title: string;
+  subtitle: string;
+  artwork?: string;
+  year?: number;
+  trackCount?: number;
+  artist?: { id: string; name: string };
+}

@@ -76,3 +76,24 @@ export function pickTranscoding(list: Transcoding[]): Transcoding | undefined {
 export function trackAuthorization(raw: unknown): string | undefined {
   return isObj(raw) ? str(raw.track_authorization) : undefined;
 }
+
+export function mapScCollection(raw: unknown): import("@/types").CollectionSummary | null {
+  if (!isObj(raw) || (raw.kind !== "playlist" && raw.kind !== "system-playlist")) return null;
+  const id = num(raw.id);
+  const title = str(raw.title);
+  if (id === undefined || !title) return null;
+  const user = isObj(raw.user) ? raw.user : undefined;
+  const album = raw.is_album === true || str(raw.set_type) === "album" || str(raw.set_type) === "ep";
+  const year = str(raw.release_date) ?? str(raw.published_at) ?? str(raw.created_at);
+  const userId = num(user?.id);
+  return {
+    id: `scp:${id}`,
+    kind: album ? "album" : "playlist",
+    title,
+    subtitle: str(user?.username) ?? "SoundCloud",
+    artwork: artworkUrl(raw.artwork_url) ?? artworkUrl(user?.avatar_url),
+    year: year ? new Date(year).getFullYear() : undefined,
+    trackCount: num(raw.track_count),
+    artist: userId !== undefined ? { id: `scu:${userId}`, name: str(user?.username) ?? "" } : undefined,
+  };
+}

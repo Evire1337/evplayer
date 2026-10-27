@@ -1,4 +1,4 @@
-import type { Track } from "@/types";
+import type { CollectionSummary, Track } from "@/types";
 
 // Search on YouTube Music: the same public search the music.youtube.com page uses.
 // Results become ordinary tracks with ids "yt:VIDEO_ID".
@@ -63,7 +63,7 @@ export function parseListItem(item: Json): Track | null {
     titleRuns.find((r) => r.navigationEndpoint?.watchEndpoint?.videoId)?.navigationEndpoint?.watchEndpoint?.videoId ??
     (item.playlistItemData as { videoId?: string } | undefined)?.videoId;
   if (!videoId || !titleRuns.length) return null;
-  const meta = runsOf(1);
+  const meta = [...runsOf(1), ...runsOf(2)];
   const artists = meta
     .filter((r) => {
       const page = r.navigationEndpoint?.browseEndpoint?.browseEndpointContextSupportedConfigs?.browseEndpointContextMusicConfig?.pageType;
@@ -123,25 +123,86 @@ export async function searchYouTubeMusic(query: string, signal?: AbortSignal): P
   return parseSearch(await call("search", { query, params: VIDEOS }, signal));
 }
 
-/** tracks of a YouTube / YouTube Music playlist (first pages, up to `limit`) */
-export async function youTubePlaylist(playlistId: string, signal?: AbortSignal, limit = 500): Promise<{ title: string; tracks: Track[] }> {
-  const id = playlistId.startsWith("VL") ? playlistId : `VL${playlistId}`;
-  let response = await call("browse", { browseId: id }, signal);
-  const title =
-    ([...findAll(response, "musicResponsiveHeaderRenderer")][0]?.title as { runs?: Run[] } | undefined)?.runs?.[0]?.text ??
-    ([...findAll(response, "musicDetailHeaderRenderer")][0]?.title as { runs?: Run[] } | undefined)?.runs?.[0]?.text ??
-    "YouTube";
-  const tracks = parseSearch(response);
+const ALBUMS = "EgWKAQIYAWoKEAkQAxAEEAkQBQ%3D%3D";
+const PLAYLISTS = "EgeKAQQoAEABagoQBBAFEBUQChAR";
+
+/** an album or playlist row in search results */
+export function parseCollectionItem(item: Json): CollectionSummary | null {
+  const browse = (item.navigationEndpoint as Run["navigationEndpoint"] | undefined)?.browseEndpoint;
+  const page = browse?.browseEndpointContextSupportedConfigs?.browseEndpointContextMusicConfig?.pageType;
+  if (!browse?.browseId || (page !== "MUSIC_PAGE_TYPE_ALBUM" && page !== "MUSIC_PAGE_TYPE_PLAYLIST")) return null;
+  const columns = (item.flexColumns as Json[] | undefined) ?? [];
+  const runsOf = (i: number): Run[] =>
+    ((columns[i]?.musicResponsiveListItemFlexColumnRenderer as Json | undefined)?.text as { runs?: Run[] } | undefined)?.runs ?? [];
+  const title = runsOf(0).map((r) => r.text).join("");
+  if (!title) return null;
+  const meta = runsOf(1);
+  const texts = meta.map((r) => r.text.trim()).filter((t) => t && t !== "•");
+  const artistRun = meta.find((r) => r.navigationEndpoint?.browseEndpoint?.browseId);
+  const year = texts.map(Number).find((n) => n > 1900 && n < 2100);
+  return {
+    id: `ytb:${browse.browseId}`,
+    kind: page === "MUSIC_PAGE_TYPE_ALBUM" ? "album" : "playlist",
+    title,
+    subtitle: texts.join(" · "),
+    artwork: bestThumb(item),
+    year,
+    artist: artistRun ? { id: `yta:${artistRun.navigationEndpoint!.browseEndpoint!.browseId}`, name: artistRun.text } : undefined,
+  };
+}
+
+export function parseCollections(response: unknown): CollectionSummary[] {
+  const out: CollectionSummary[] = [];
+  for (const item of findAll(response, "musicResponsiveListItemRenderer")) {
+    const c = parseCollectionItem(item);
+    if (c && !out.some((x) => x.id === c.id)) out.push(c);
+  }
+  return out;
+}
+
+export async function searchYouTubeCollections(query: string, kind: "album" | "playlist", signal?: AbortSignal): Promise<CollectionSummary[]> {
+  return parseCollections(await call("search", { query, params: kind === "album" ? ALBUMS : PLAYLISTS }, signal));
+}
+
+export interface YouTubeCollection {
+  title: string;
+  subtitle?: string;
+  artwork?: string;
+  artist?: { id: string; name: string };
+  tracks: Track[];
+}
+
+/** an album (MPREb…) or playlist (VL…) page with all its songs */
+export async function youTubeCollection(browseId: string, signal?: AbortSignal, limit = 500): Promise<YouTubeCollection> {
+  const id = browseId.replace(/^ytb:/, "");
+  let response = await call("browse", { browseId: /^(MPRE|VL|OLAK)/.test(id) ? id : `VL${id}` }, signal);
+  const header = ([...findAll(response, "musicResponsiveHeaderRenderer")][0] ?? [...findAll(response, "musicDetailHeaderRenderer")][0] ?? {}) as Json;
+  const title = (header.title as { runs?: Run[] } | undefined)?.runs?.map((r) => r.text).join("") ?? "YouTube";
+  const strap = (header.straplineTextOne as { runs?: Run[] } | undefined)?.runs ?? [];
+  const artistRun = strap.find((r) => r.navigationEndpoint?.browseEndpoint?.browseId);
+  const subtitle = ((header.subtitle as { runs?: Run[] } | undefined)?.runs ?? []).map((r) => r.text).join("");
+  const thumbs = [...findAll(header, "thumbnails")][0] as unknown as Array<{ url: string }> | undefined;
+  const artwork = thumbs?.[thumbs.length - 1]?.url?.replace(/=w\d+-h\d+/, "=w544-h544");
+  const artist = artistRun ? { id: `yta:${artistRun.navigationEndpoint!.browseEndpoint!.browseId}`, name: artistRun.text } : undefined;
+  const fill = (list: Track[]) =>
+    list.map((t) => ({ ...t, artwork: t.artwork ?? artwork, artists: t.artists.length ? t.artists : artist ? [artist] : [] }));
+  const tracks = fill(parseSearch(response));
   for (let page = 0; page < 20 && tracks.length < limit; page++) {
     const token = ([...findAll(response, "continuationCommand")][0] as { token?: string } | undefined)?.token
       ?? ([...findAll(response, "nextContinuationData")][0] as { continuation?: string } | undefined)?.continuation;
     if (!token) break;
     response = await call("browse", { continuation: token }, signal);
-    const more = parseSearch(response).filter((t) => !tracks.some((x) => x.id === t.id));
+    const more = fill(parseSearch(response)).filter((t) => !tracks.some((x) => x.id === t.id));
     if (!more.length) break;
     tracks.push(...more);
   }
-  return { title, tracks: tracks.slice(0, limit) };
+  return { title, subtitle, artwork, artist, tracks: tracks.slice(0, limit) };
+}
+
+/** tracks of a YouTube / YouTube Music playlist */
+export async function youTubePlaylist(playlistId: string, signal?: AbortSignal, limit = 500): Promise<{ title: string; tracks: Track[] }> {
+  const { title, tracks } = await youTubeCollection(playlistId.startsWith("VL") ? playlistId : `VL${playlistId}`, signal, limit);
+  return { title, tracks };
 }
 
 /** a "card" item (carousels on artist pages): a video or song with its views */

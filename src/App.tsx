@@ -13,9 +13,13 @@ import FilesPage from "@/pages/FilesPage";
 import SettingsPage from "@/pages/SettingsPage";
 import ArtistPage from "@/pages/ArtistPage";
 import SmartPage from "@/pages/SmartPage";
+import CollectionPage from "@/pages/CollectionPage";
 import ContextMenu from "@/ui/components/ContextMenu";
 import Toasts from "@/ui/components/Toasts";
 import ImportPill from "@/ui/components/ImportPill";
+import Tooltip from "@/ui/components/Tooltip";
+import LyricsTracker from "@/ui/components/LyricsTracker";
+import { useEffect, useState } from "react";
 import LibraryDialogs from "@/library/LibraryDialogs";
 import SpotifyExportDialog from "@/library/SpotifyExportDialog";
 import TrackStatsDialog from "@/stats/TrackStatsDialog";
@@ -32,6 +36,9 @@ export default function App() {
   const lyricsSize = useSettings((s) => s.lyricsSize);
   const lyricsBlur = useSettings((s) => s.lyricsBlur);
   const glow = useSettings((s) => s.coverGlow);
+  const overlayLyrics = useSettings((s) => s.overlayEnabled && s.overlayShowLyrics);
+  const [overlayOpen, setOverlayOpen] = useState(false);
+  useEffect(() => window.evplayer?.overlay.onVisible(setOverlayOpen), []);
   return (
     <div className={`app page-${page} lyrics-${lyricsSize}${lyricsBlur ? "" : " no-lyrics-blur"}${glow ? "" : " no-glow"}`}>
       <Backdrop image={artwork} playing={playing} />
@@ -53,12 +60,15 @@ export default function App() {
         {page === "settings" && <SettingsPage />}
         {page === "artist" && <ArtistPage />}
         {page === "smart" && <SmartPage />}
+        {page === "collection" && <CollectionPage />}
       </main>
       {page !== "now" && <MiniPlayer />}
       <UpdateToast />
       <ImportPill />
       <Toasts />
       <ContextMenu />
+      <Tooltip />
+      {overlayLyrics && overlayOpen && <LyricsTracker />}
       <LibraryDialogs />
       <SpotifyExportDialog />
       <TrackStatsDialog />

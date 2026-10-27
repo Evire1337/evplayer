@@ -11,7 +11,7 @@ export interface TrayOptions {
   locale?: string;
 }
 
-export type TrayAction = "prev" | "togglePlay" | "next";
+export type TrayAction = "prev" | "togglePlay" | "next" | "toggleOverlay";
 
 interface TrayTrack {
   title?: string;
@@ -23,8 +23,8 @@ const PLAYING = new Set(["playing", "loading", "buffering"]);
 function strings(locale: string) {
   const ru = /^(ru|uk|be)/i.test(locale);
   return ru
-    ? { show: "Показать EvPlayer", hide: "Скрыть в трей", play: "Играть", pause: "Пауза", next: "Следующий", prev: "Предыдущий", quit: "Выход", nothing: "Ничего не играет", balloonTitle: "EvPlayer работает в трее", balloon: "Музыка продолжает играть. Нажмите на значок, чтобы открыть окно." }
-    : { show: "Show EvPlayer", hide: "Hide to tray", play: "Play", pause: "Pause", next: "Next", prev: "Previous", quit: "Quit", nothing: "Nothing playing", balloonTitle: "EvPlayer is in the tray", balloon: "Music keeps playing. Click the icon to open the window." };
+    ? { show: "Показать EvPlayer", hide: "Скрыть в трей", play: "Играть", pause: "Пауза", overlay: "Мини-плеер", next: "Следующий", prev: "Предыдущий", quit: "Выход", nothing: "Ничего не играет", balloonTitle: "EvPlayer работает в трее", balloon: "Музыка продолжает играть. Нажмите на значок, чтобы открыть окно." }
+    : { show: "Show EvPlayer", hide: "Hide to tray", play: "Play", pause: "Pause", overlay: "Mini player", next: "Next", prev: "Previous", quit: "Quit", nothing: "Nothing playing", balloonTitle: "EvPlayer is in the tray", balloon: "Music keeps playing. Click the icon to open the window." };
 }
 
 export class TrayController {
@@ -128,6 +128,7 @@ export class TrayController {
         { label: this.playing ? t.pause : t.play, enabled: Boolean(this.track), click: () => this.send("togglePlay") },
         { label: t.next, enabled: Boolean(this.track), click: () => this.send("next") },
         { label: t.prev, enabled: Boolean(this.track), click: () => this.send("prev") },
+        { label: t.overlay, click: () => this.send("toggleOverlay") },
         { type: "separator" },
         visible ? { label: t.hide, click: () => this.hideWindow() } : { label: t.show, click: () => this.showWindow() },
         { label: t.quit, click: () => this.quit() },

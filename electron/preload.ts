@@ -1,8 +1,9 @@
 import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from "electron";
 import type { UpdateState } from "./updates";
 import type { LocalTrackEdit, LocalTrackRecord } from "./local-files";
-import type { TrayAction, TrayOptions } from "./tray";
-import type { PresenceState } from "./discord";
+import type { TrayOptions } from "./tray";
+import type { DiscordUser, PresenceState } from "./discord";
+import type { OverlayOptions } from "./overlay";
 
 function on<T>(channel: string, cb: (value: T) => void): () => void {
   const listener = (_e: IpcRendererEvent, value: T) => cb(value);
@@ -18,7 +19,12 @@ const api = {
   cacheSize: (): Promise<{ cache: number }> => ipcRenderer.invoke("app:data-size"),
   clearCache: (): Promise<void> => ipcRenderer.invoke("app:clear-cache"),
   openDataFolder: (): Promise<void> => ipcRenderer.invoke("app:open-data-folder"),
-  onPlayerCommand: (cb: (action: TrayAction) => void) => on("player:command", cb),
+  onPlayerCommand: (cb: (action: string, value?: number) => void) => {
+    const listener = (_e: IpcRendererEvent, action: string, value?: number) => cb(action, value);
+    ipcRenderer.on("player:command", listener);
+    return () => ipcRenderer.removeListener("player:command", listener);
+  },
+  showWindow: () => ipcRenderer.send("window:show"),
   onWindowVisible: (cb: (visible: boolean) => void) => on("window:visible", cb),
   updates: {
     get: (): Promise<UpdateState> => ipcRenderer.invoke("updates:get"),
@@ -47,14 +53,28 @@ const api = {
     setOptions: (options: Partial<TrayOptions>) => ipcRenderer.send("tray:set-options", options),
     update: (state: { status?: string; track?: { title?: string; artist?: string } | null }) => ipcRenderer.send("tray:update", state),
   },
-  setGlobalShortcuts: (enabled: boolean) => ipcRenderer.send("shortcuts:global", enabled),
+  /** accelerator -> command; resolves with the keys another program already holds */
+  setGlobalShortcuts: (map: Record<string, string>): Promise<string[]> => ipcRenderer.invoke("shortcuts:global", map),
+  overlay: {
+    setOptions: (options: Partial<OverlayOptions>) => ipcRenderer.send("overlay:set-options", options),
+    toggle: () => ipcRenderer.send("overlay:toggle"),
+    hide: () => ipcRenderer.send("overlay:hide"),
+    /** main window -> mini player */
+    send: (state: unknown) => ipcRenderer.send("overlay:state", state),
+    onVisible: (cb: (visible: boolean) => void) => on("overlay:visible", cb),
+    onReady: (cb: () => void) => on("overlay:ready", cb),
+    // used inside the mini player window
+    ready: () => ipcRenderer.send("overlay:ready"),
+    onState: (cb: (state: unknown) => void) => on("overlay:state", cb),
+    command: (action: string, value?: number) => ipcRenderer.send("overlay:command", action, value),
+  },
   discord: {
     setAppId: (appId: string | null) => ipcRenderer.send("discord:set", appId),
     update: (state: PresenceState | null) => ipcRenderer.send("discord:update", state),
-    status: (): Promise<"off" | "connecting" | "connected" | "no-discord"> => ipcRenderer.invoke("discord:status"),
+    status: (): Promise<{ status: "off" | "connecting" | "connected" | "no-discord"; user: DiscordUser | null }> => ipcRenderer.invoke("discord:status"),
   },
 };
 
 export type EvPlayerApi = typeof api;
-export type { LocalTrackRecord, LocalTrackEdit };
+export type { LocalTrackRecord, LocalTrackEdit, DiscordUser };
 contextBridge.exposeInMainWorld("evplayer", api);

@@ -8,6 +8,7 @@ import { setupUpdates } from "./updates.js";
 import { LOCAL_SCHEME, LocalLibrary, type LocalTrackEdit } from "./local-files.js";
 import { TrayController, type TrayAction, type TrayOptions } from "./tray.js";
 import { DiscordPresence, type PresenceState } from "./discord.js";
+import { OverlayController, type OverlayOptions } from "./overlay.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DIST = path.join(__dirname, "../dist");
@@ -40,6 +41,18 @@ function fromYouTubeFrame(referrer: string | undefined, frameUrl: string | undef
   return [referrer, frameUrl].some((u) => Boolean(u) && /^https:\/\/(www\.)?youtube(-nocookie)?\.com\//.test(u!));
 }
 
+function loadPage(win: BrowserWindow, hash = ""): void {
+  if (DEV_URL) void win.loadURL(`${DEV_URL}${hash ? `#${hash}` : ""}`);
+  else void win.loadFile(path.join(DIST, "index.html"), hash ? { hash } : undefined);
+}
+
+const overlay = new OverlayController(
+  (win) => loadPage(win, "overlay"),
+  path.join(__dirname, "preload.cjs"),
+  path.join(PUBLIC, "icon.png"),
+  (visible) => mainWindow?.webContents.send("overlay:visible", visible),
+);
+
 function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 1280,
@@ -70,6 +83,10 @@ function createWindow(): void {
   });
   mainWindow.on("minimize", () => {
     if (tray.getOptions().minimizeToTray) tray.hideWindow();
+    if (overlay.getOptions().onMinimize) overlay.show();
+  });
+  mainWindow.on("restore", () => {
+    if (overlay.getOptions().onMinimize) overlay.hide();
   });
   // the page pauses its animations while it cannot be seen
   const visible = (value: boolean) => () => mainWindow?.webContents.send("window:visible", value);
@@ -81,8 +98,7 @@ function createWindow(): void {
     if (/^https?:/i.test(url)) void shell.openExternal(url);
     return { action: "deny" };
   });
-  if (DEV_URL) void mainWindow.loadURL(DEV_URL);
-  else void mainWindow.loadFile(path.join(DIST, "index.html"));
+  loadPage(mainWindow);
 }
 
 function setupLocalFiles(): void {
@@ -131,25 +147,23 @@ function setupFileDialogs(): void {
   });
 }
 
-const GLOBAL_KEYS: Record<string, TrayAction> = {
-  "MediaPlayPause": "togglePlay",
-  "MediaNextTrack": "next",
-  "MediaPreviousTrack": "prev",
-  "Control+Alt+Space": "togglePlay",
-  "Control+Alt+Right": "next",
-  "Control+Alt+Left": "prev",
-};
-
-function setGlobalShortcuts(enabled: boolean): void {
+/** system-wide keys chosen in the settings: accelerator -> command for the page */
+function setGlobalShortcuts(map: Record<string, string>): string[] {
   globalShortcut.unregisterAll();
-  if (!enabled) return;
-  for (const [accelerator, action] of Object.entries(GLOBAL_KEYS)) {
+  const failed: string[] = [];
+  for (const [accelerator, action] of Object.entries(map ?? {})) {
     try {
-      globalShortcut.register(accelerator, () => mainWindow?.webContents.send("player:command", action));
+      const ok = globalShortcut.register(accelerator, () => {
+        if (action === "showWindow") tray.showWindow();
+        else if (action === "toggleOverlay") overlay.toggle();
+        else mainWindow?.webContents.send("player:command", action);
+      });
+      if (!ok) failed.push(accelerator);
     } catch {
-      // taken by another app
+      failed.push(accelerator);
     }
   }
+  return failed;
 }
 
 if (!app.requestSingleInstanceLock()) {
@@ -187,7 +201,20 @@ if (!app.requestSingleInstanceLock()) {
 
     ipcMain.on("tray:set-options", (_e, options: Partial<TrayOptions>) => tray.setOptions(options));
     ipcMain.on("tray:update", (_e, state: { status?: string; track?: { title?: string; artist?: string } | null }) => tray.update(state));
-    ipcMain.on("shortcuts:global", (_e, enabled: boolean) => setGlobalShortcuts(Boolean(enabled)));
+    ipcMain.handle("shortcuts:global", (_e, map: Record<string, string>) => setGlobalShortcuts(map));
+    ipcMain.on("window:show", () => tray.showWindow());
+    ipcMain.on("overlay:set-options", (_e, options: Partial<OverlayOptions>) => overlay.setOptions(options));
+    ipcMain.on("overlay:toggle", () => overlay.toggle());
+    ipcMain.on("overlay:hide", () => overlay.hide());
+    ipcMain.on("overlay:state", (_e, state: unknown) => overlay.send(state));
+    ipcMain.on("overlay:ready", () => {
+      overlay.resendState();
+      mainWindow?.webContents.send("overlay:ready");
+    });
+    ipcMain.on("overlay:command", (_e, action: string, value?: number) => {
+      if (action === "showWindow") tray.showWindow();
+      else mainWindow?.webContents.send("player:command", action, value);
+    });
     ipcMain.on("discord:set", (_e, appId: string | null) => discord.setAppId(typeof appId === "string" ? appId : null));
     ipcMain.on("discord:update", (_e, state: PresenceState | null) => discord.update(state));
     ipcMain.handle("discord:status", () => discord.status());
@@ -203,6 +230,7 @@ if (!app.requestSingleInstanceLock()) {
     quitting = true;
     localLibrary.stopWatching();
     discord.destroy();
+    overlay.destroy();
     tray.destroy();
   });
   app.on("will-quit", () => globalShortcut.unregisterAll());

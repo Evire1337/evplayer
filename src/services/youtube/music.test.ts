@@ -33,3 +33,15 @@ describe("youtube artist", () => {
     expect(a.tracks[0]).toMatchObject({ id: "yt:FGBhQbmPwH8", title: "One More Time", plays: 622e6 });
   });
 });
+
+import playlistsFixture from "./playlists.test.json";
+import { parseCollections } from "./music";
+
+describe("youtube collections", () => {
+  it("reads playlist rows", () => {
+    const list = parseCollections(playlistsFixture);
+    expect(list.length).toBe(2);
+    expect(list[0]).toMatchObject({ id: "ytb:VLPLRVVwMYsRVWw", kind: "playlist", title: "DAFT PUNK DISCOVERY" });
+    expect(list[0].subtitle).toContain("Dowita 2610");
+  });
+});

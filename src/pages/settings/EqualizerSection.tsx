@@ -3,7 +3,7 @@ import { BAND_COLORS, formatFrequency, MAX_Q, MIN_Q, PRESET_IDS, type BandType, 
 import { useEqualizerStore } from "@/equalizer/eqStore";
 import EqualizerGraph from "@/equalizer/EqualizerGraph";
 import { decodePresetCode, encodePresetCode } from "@/equalizer/presetCode";
-import { SettingRow, Toggle } from "@/ui/components/Controls";
+import { Row, SwitchRow } from "./parts";
 import { IconMore } from "@/ui/components/Icons";
 import { openMenu } from "@/ui/menu";
 import { toast } from "@/ui/toasts";
@@ -128,8 +128,8 @@ export default function EqualizerSection() {
 
   return (
     <div className="settings-group">
-      <Toggle id="eq-on" title="Эквалайзер" hint="Шесть полос: перетаскивайте точки на графике вверх-вниз (громкость) и влево-вправо (частота)" checked={enabled} onChange={setEnabled} />
-      <Toggle id="eq-norm" title="Выравнивать громкость" hint="Тихие и громкие треки звучат примерно одинаково — без резких скачков между песнями" checked={normalize} onChange={setNormalize} />
+      <SwitchRow title="Эквалайзер" hint="Шесть полос: перетаскивайте точки на графике вверх-вниз (громкость) и влево-вправо (частота)" checked={enabled} onChange={setEnabled} />
+      <SwitchRow title="Выравнивать громкость" hint="Тихие и громкие треки звучат примерно одинаково — без резких скачков между песнями" checked={normalize} onChange={setNormalize} />
       <div className="chip-row">
         {PRESET_IDS.map((id) => (
           <button key={id} type="button" className={`chip${preset === id ? " is-on" : ""}`} onClick={() => applyPreset(id)}>
@@ -175,7 +175,7 @@ export default function EqualizerSection() {
           </div>
         </div>
       )}
-      <SettingRow title="Предусиление" hint="Общий уровень после эквалайзера; от перегруза защищает лимитер">
+      <Row title="Предусиление" hint="Общий уровень после эквалайзера; от перегруза защищает лимитер">
         <input
           type="range"
           className="dial small-dial"
@@ -187,7 +187,7 @@ export default function EqualizerSection() {
           style={{ "--fill": `${((preamp + 12) / 18) * 100}%` } as React.CSSProperties}
         />
         <span className="muted small tabular">{preamp > 0 ? "+" : ""}{preamp.toFixed(1)} дБ</span>
-      </SettingRow>
+      </Row>
     </div>
   );
 }

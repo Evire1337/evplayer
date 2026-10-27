@@ -26,14 +26,18 @@ export interface Playlist {
   createdAt: string;
   updatedAt: string;
   items: PlaylistItem[];
+  /** where it was imported from ("scp:123", a link): importing again updates it */
+  source?: string;
 }
 
 interface LibraryState {
   likes: LikedTrack[];
   playlists: Playlist[];
   toggleLike: (track: Track) => void;
+  /** like many at once (an import); returns how many were new */
+  addLikes: (tracks: Track[]) => number;
   moveLike: (trackId: string, toIndex: number) => void;
-  createPlaylist: (title: string, description?: string) => Playlist;
+  createPlaylist: (title: string, description?: string, source?: string) => Playlist;
   updatePlaylist: (id: string, patch: Partial<Pick<Playlist, "title" | "description" | "icon">>) => void;
   deletePlaylist: (id: string) => void;
   addToPlaylist: (playlistId: string, tracks: Track[]) => number;
@@ -65,10 +69,18 @@ export const useLibrary = create<LibraryState>()(
             : { likes: [{ track, addedAt: now() }, ...s.likes] },
         ),
 
+      addLikes: (tracks) => {
+        const have = new Set(get().likes.map((l) => l.track.id));
+        const stamp = now();
+        const fresh = tracks.filter((t) => !have.has(t.id) && (have.add(t.id), true));
+        if (fresh.length) set((s) => ({ likes: [...fresh.map((track) => ({ track, addedAt: stamp })), ...s.likes] }));
+        return fresh.length;
+      },
+
       moveLike: (trackId, toIndex) =>
         set((s) => ({ likes: moveItem(s.likes, s.likes.findIndex((l) => l.track.id === trackId), toIndex) })),
 
-      createPlaylist: (title, description) => {
+      createPlaylist: (title, description, source) => {
         const stamp = now();
         const playlist: Playlist = {
           id: newId("pl"),
@@ -77,6 +89,7 @@ export const useLibrary = create<LibraryState>()(
           createdAt: stamp,
           updatedAt: stamp,
           items: [],
+          ...(source ? { source } : {}),
         };
         set((s) => ({ playlists: [playlist, ...s.playlists] }));
         return playlist;

@@ -34,6 +34,8 @@ class PlayerEngine {
   private lastPos = -1;
   private counted = false;
   private radioBusy = false;
+  /** a restored session starts at this position */
+  private resumeAt = 0;
 
   constructor() {
     this.audio = new Audio();
@@ -139,6 +141,7 @@ class PlayerEngine {
 
   async playQueue(tracks: Track[], startIndex = 0): Promise<void> {
     if (tracks.length === 0) return;
+    this.resumeAt = 0;
     const { shuffle } = usePlayer.getState();
     const start = tracks[startIndex] ?? tracks[0];
     const queue = shuffle ? shuffledQueue(tracks, start.id) : tracks;
@@ -147,9 +150,18 @@ class PlayerEngine {
     await this.load(queue[index]);
   }
 
+  /** last session's queue, shown paused until play is pressed */
+  restore(queue: Track[], index: number, positionMs: number): void {
+    const track = queue[index];
+    usePlayer.setState({ queue, index, status: "idle", positionMs, durationMs: track.durationMs });
+    this.resumeAt = positionMs > 3000 ? positionMs : 0;
+    this.updateMetadata(track);
+  }
+
   async playIndex(index: number): Promise<void> {
     const track = usePlayer.getState().queue[index];
     if (!track) return;
+    this.resumeAt = 0;
     usePlayer.setState({ index });
     await this.load(track);
   }
@@ -332,6 +344,7 @@ class PlayerEngine {
         usePlayer.setState({ route: "embed" });
         const { volume, muted } = usePlayer.getState();
         await this.embed.load(stream.videoId, volume, muted);
+        this.applyResume();
         return;
       }
       this.mode = "audio";
@@ -350,10 +363,18 @@ class PlayerEngine {
       }
       this.applyEffects();
       await this.audio.play();
+      this.applyResume();
     } catch (error) {
       if (token !== this.loadToken || controller.signal.aborted) return;
       usePlayer.setState({ status: "error", error: error instanceof Error ? error.message : String(error) });
     }
+  }
+
+  private applyResume(): void {
+    if (!this.resumeAt) return;
+    const at = this.resumeAt;
+    this.resumeAt = 0;
+    this.seek(at);
   }
 
   private detachHls(): void {
