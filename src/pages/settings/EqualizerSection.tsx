@@ -8,6 +8,7 @@ import { IconMore } from "@/ui/components/Icons";
 import { openMenu } from "@/ui/menu";
 import { toast } from "@/ui/toasts";
 import Dialog from "@/ui/components/Dialog";
+import { useReorder } from "@/ui/useReorder";
 
 const PRESET_LABEL: Record<PresetId, string> = { flat: "Ровно", rich: "Насыщенно", bass: "Бас", vocal: "Вокал", warm: "Тепло", bright: "Ярко" };
 const TYPE_LABEL: Record<BandType, string> = { lowshelf: "Низы (полка)", peaking: "Пик", highshelf: "Верха (полка)" };
@@ -92,14 +93,16 @@ function NameDialog({ title, initial, open, onClose, onSubmit, multiline }: { ti
 }
 
 function CustomPresets() {
-  const { customPresets, preset, savePreset, applyCustomPreset, overwritePreset, renamePreset, deletePreset, importPreset } = useEqualizerStore();
+  const { customPresets, preset, savePreset, applyCustomPreset, overwritePreset, renamePreset, deletePreset, importPreset, movePreset } = useEqualizerStore();
+  // drag a preset left or right to change the order
+  const reorder = useReorder(movePreset, "x");
   const [dialog, setDialog] = useState<{ kind: "save" | "rename" | "import"; id?: string; initial: string } | null>(null);
   return (
     <div className="custom-presets">
       <span className="eyebrow">Свои пресеты</span>
       <div className="chip-row">
-        {customPresets.map((p) => (
-          <span key={p.id} className={`chip${preset === p.id ? " is-on" : ""}`}>
+        {customPresets.map((p, i) => (
+          <span key={p.id} className={`chip is-draggable${preset === p.id ? " is-on" : ""}${reorder.hint(i) ? ` drop-${reorder.hint(i)}` : ""}`} {...reorder.rowProps(i)}>
             <button type="button" onClick={() => applyCustomPreset(p.id)}>{p.name}</button>
             <button
               type="button"
@@ -151,14 +154,22 @@ function CustomPresets() {
 }
 
 export default function EqualizerSection() {
-  const { enabled, bands, preset, preamp, setEnabled, updateBand, applyPreset, reset, setPreamp, normalize, setNormalize, protect, setProtect } = useEqualizerStore();
+  const { enabled, bands, preset, preamp, setEnabled, updateBand, applyPreset, reset, setPreamp, normalize, setNormalize, protect, setProtect, mode, setMode } = useEqualizerStore();
   const [selectedId, setSelectedId] = useState<string | null>(bands[0]?.id ?? null);
-  const selectedIndex = bands.findIndex((b) => b.id === selectedId);
+  const found = bands.findIndex((b) => b.id === selectedId);
+  // after switching modes the old band is gone: show the first one
+  const selectedIndex = found >= 0 ? found : bands.length ? 0 : -1;
   const selected = selectedIndex >= 0 ? bands[selectedIndex] : null;
 
   return (
     <div className="settings-group">
-      <SwitchRow title="Эквалайзер" hint="Шесть полос: перетаскивайте точки на графике вверх-вниз (громкость) и влево-вправо (частота)" checked={enabled} onChange={setEnabled} />
+      <SwitchRow title="Эквалайзер" hint={`${bands.length} полос: перетаскивайте точки на графике вверх-вниз (громкость) и влево-вправо (частота)`} checked={enabled} onChange={setEnabled} />
+      <Row title="Режим" hint={mode === "simple" ? "Шесть полос, каждую можно поставить на любую частоту" : "Десять полос на классических частотах — от 31 Гц до 16 кГц"}>
+        <div className="chip-row">
+          <button type="button" className={`chip${mode === "simple" ? " is-on" : ""}`} onClick={() => setMode("simple")}>Обычный</button>
+          <button type="button" className={`chip${mode === "advanced" ? " is-on" : ""}`} onClick={() => setMode("advanced")}>Продвинутый</button>
+        </div>
+      </Row>
       <SwitchRow
         title="Защита от хрипа"
         hint="Приглушает общий уровень на величину усиления и срезает пики. Выключена: бас-буст и любое усиление звучат в полную силу, на громких треках возможен перегруз"
@@ -204,7 +215,8 @@ export default function EqualizerSection() {
               </button>
             ))}
           </div>
-          <div className="band-fields">
+          {/* keyed by band: text typed for one band never lands on the next one */}
+          <div className="band-fields" key={selected.id}>
             <NumberField label="Частота" value={selected.frequency} suffix="Гц" step={1} min={20} max={20000} onChange={(v) => updateBand(selected.id, { frequency: v })} />
             <NumberField label="Усиление" value={selected.gain} suffix="дБ" step={0.5} min={-MAX_GAIN} max={MAX_GAIN} onChange={(v) => updateBand(selected.id, { gain: v })} />
             <NumberField label="Ширина (Q)" value={selected.q} step={0.1} min={MIN_Q} max={MAX_Q} onChange={(v) => updateBand(selected.id, { q: v })} />

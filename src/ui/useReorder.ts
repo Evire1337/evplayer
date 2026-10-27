@@ -20,7 +20,8 @@ export function finalIndex(from: number, over: number, before: boolean): number 
   return from < to ? to - 1 : to;
 }
 
-export function useReorder(onMove: (from: number, to: number) => void) {
+/** `axis: "x"` for items in a row (chips), "y" for lists */
+export function useReorder(onMove: (from: number, to: number) => void, axis: "x" | "y" = "y") {
   const [drag, setDrag] = useState<ReorderState | null>(null);
   const press = useRef<{ from: number; x: number; y: number; started: boolean } | null>(null);
   const current = useRef<ReorderState | null>(null);
@@ -43,7 +44,8 @@ export function useReorder(onMove: (from: number, to: number) => void) {
       const row = document.elementFromPoint(ev.clientX, ev.clientY)?.closest<HTMLElement>("[data-reorder]");
       if (!row) return;
       const r = row.getBoundingClientRect();
-      const next = { from: p.from, over: Number(row.dataset.reorder), before: ev.clientY < r.top + r.height / 2 };
+      const before = axis === "x" ? ev.clientX < r.left + r.width / 2 : ev.clientY < r.top + r.height / 2;
+      const next = { from: p.from, over: Number(row.dataset.reorder), before };
       const c = current.current;
       if (!c || c.over !== next.over || c.before !== next.before) {
         current.current = next;
@@ -85,7 +87,7 @@ export function useReorder(onMove: (from: number, to: number) => void) {
     window.addEventListener("pointerup", up);
     window.addEventListener("pointercancel", finish);
     window.addEventListener("keydown", cancel);
-  }, []);
+  }, [axis]);
 
   return {
     dragging: drag !== null,

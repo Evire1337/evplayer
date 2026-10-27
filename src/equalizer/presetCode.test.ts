@@ -17,3 +17,13 @@ describe("preset codes", () => {
     expect(() => decodePresetCode("hello")).toThrow();
   });
 });
+
+describe("advanced presets", () => {
+  it("keep all ten bands through a code", async () => {
+    const { advancedBands } = await import("./eqModel");
+    const bands = advancedBands().map((b, i) => ({ ...b, gain: i - 4 }));
+    const back = decodePresetCode(encodePresetCode({ name: "ten", preamp: -2, bands }));
+    expect(back.bands).toHaveLength(10);
+    expect(back.bands.map((b) => b.gain)).toEqual(bands.map((b) => b.gain));
+  });
+});

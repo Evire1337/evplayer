@@ -27,3 +27,13 @@ describe("eq model", () => {
     expect(xToFreq(freqToX(1234, 600), 600)).toBeCloseTo(1234, 3);
   });
 });
+
+describe("advanced mode", () => {
+  it("turns a six-band preset into ten bands with the same shape", async () => {
+    const { presetBands } = await import("./eqModel");
+    const ten = presetBands("bass", "advanced");
+    expect(ten).toHaveLength(10);
+    expect(ten[0].gain).toBeGreaterThan(4);
+    expect(Math.abs(ten[9].gain)).toBeLessThan(1);
+  });
+});

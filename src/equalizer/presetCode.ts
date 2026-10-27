@@ -1,4 +1,4 @@
-import { clamp, defaultBands, MAX_FREQ, MAX_GAIN, MAX_PREAMP, MIN_PREAMP, MAX_Q, MIN_FREQ, MIN_Q, type BandType, type EqBand } from "./eqModel";
+import { bandsForMode, clamp, MAX_FREQ, MAX_GAIN, MAX_PREAMP, MIN_PREAMP, MAX_Q, MIN_FREQ, MIN_Q, type BandType, type EqBand } from "./eqModel";
 import type { CustomPreset } from "./eqStore";
 
 // EVQ1.<base64url json>: an equalizer preset that can be pasted to a friend
@@ -32,7 +32,8 @@ export function decodePresetCode(code: string): Omit<CustomPreset, "id"> {
   if (!match) throw new Error("not a preset code");
   const wire = JSON.parse(fromBase64Url(match[1])) as { v: number; n: string; p: number; b: number[][] };
   if (wire.v !== 1 || !Array.isArray(wire.b)) throw new Error("unknown preset format");
-  const base = defaultBands();
+  // ten rows: a preset from the advanced mode
+  const base = bandsForMode(wire.b.length > 6 ? "advanced" : "simple");
   const bands: EqBand[] = base.map((band, i) => {
     const row = wire.b[i];
     if (!Array.isArray(row)) return band;

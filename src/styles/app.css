@@ -873,3 +873,8 @@ html.saver .now-art::before, html.saver .now-art::after { display: none !importa
 .check-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
 .check-size { flex-shrink: 0; margin-left: 12px; padding-top: 1px; font-size: 13px; font-weight: 600; color: var(--ink-2); font-variant-numeric: tabular-nums; }
 .check-title { font-weight: 600; }
+
+/* saved equalizer presets can be dragged into a new order */
+.chip.is-draggable { touch-action: none; }
+.chip.drop-before { box-shadow: inset 3px 0 0 var(--accent); }
+.chip.drop-after { box-shadow: inset -3px 0 0 var(--accent); }

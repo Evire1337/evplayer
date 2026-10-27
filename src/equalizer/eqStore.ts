@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
-import { clamp, defaultBands, MAX_FREQ, MAX_GAIN, MAX_PREAMP, MIN_PREAMP, MAX_Q, MIN_FREQ, MIN_Q, presetBands, type EqBand, type PresetId } from "./eqModel";
+import { bandsForMode, clamp, MAX_FREQ, MAX_GAIN, MAX_PREAMP, MIN_PREAMP, MAX_Q, MIN_FREQ, MIN_Q, modeOf, presetBands, type EqBand, type EqMode, type PresetId } from "./eqModel";
 
 export interface CustomPreset {
   id: string;
@@ -22,6 +22,11 @@ interface EqState {
   setProtect: (protect: boolean) => void;
   /** extra output level in dB on top of the automatic clip protection */
   preamp: number;
+  /** six movable bands, or ten on the classic octaves */
+  mode: EqMode;
+  setMode: (mode: EqMode) => void;
+  /** the bands of the mode not in use, kept for switching back */
+  otherBands: EqBand[];
   bands: EqBand[];
   /** built-in preset id, "custom" for unsaved changes, or the id of a saved preset */
   preset: PresetId | "custom" | string;
@@ -30,6 +35,8 @@ interface EqState {
   overwritePreset: (id: string) => void;
   renamePreset: (id: string, name: string) => void;
   deletePreset: (id: string) => void;
+  /** reorder the saved presets */
+  movePreset: (from: number, to: number) => void;
   applyCustomPreset: (id: string) => void;
   importPreset: (preset: Omit<CustomPreset, "id">) => CustomPreset;
   setEnabled: (enabled: boolean) => void;
@@ -48,7 +55,17 @@ export const useEqualizerStore = create<EqState>()(
       protect: false,
       setProtect: (protect) => set({ protect }),
       preamp: 0,
-      bands: defaultBands(),
+      mode: "simple",
+      otherBands: bandsForMode("advanced"),
+      setMode: (mode) =>
+        set((state) => {
+          if (mode === state.mode) return {};
+          const builtIn = state.preset !== "custom" && !state.customPresets.some((p) => p.id === state.preset);
+          // a built-in preset follows into the other mode; your own settings are kept per mode
+          const bands = builtIn ? presetBands(state.preset as PresetId, mode) : state.otherBands.length ? state.otherBands : bandsForMode(mode);
+          return { mode, bands, otherBands: state.bands, preset: builtIn ? state.preset : "custom" };
+        }),
+      bands: bandsForMode("simple"),
       preset: "flat",
       customPresets: [],
       savePreset: (name) => {
@@ -73,6 +90,14 @@ export const useEqualizerStore = create<EqState>()(
         set((state) => ({
           customPresets: state.customPresets.map((p) => (p.id === id ? { ...p, name: name.trim().slice(0, 32) || p.name } : p)),
         })),
+      movePreset: (from, to) =>
+        set((state) => {
+          const list = [...state.customPresets];
+          const [item] = list.splice(from, 1);
+          if (!item) return {};
+          list.splice(Math.max(0, Math.min(list.length, to)), 0, item);
+          return { customPresets: list };
+        }),
       deletePreset: (id) =>
         set((state) => ({
           customPresets: state.customPresets.filter((p) => p.id !== id),
@@ -81,19 +106,30 @@ export const useEqualizerStore = create<EqState>()(
       applyCustomPreset: (id) =>
         set((state) => {
           const found = state.customPresets.find((p) => p.id === id);
-          return found
-            ? { bands: found.bands.map((band) => ({ ...band })), preamp: found.preamp, preset: id, enabled: true }
-            : {};
+          if (!found) return {};
+          const mode = modeOf(found.bands);
+          return {
+            bands: found.bands.map((band) => ({ ...band })),
+            preamp: found.preamp,
+            preset: id,
+            enabled: true,
+            // a preset saved in the other mode switches the mode with it
+            ...(mode !== state.mode ? { mode, otherBands: state.bands } : {}),
+          };
         }),
       importPreset: (preset) => {
         const created: CustomPreset = { ...preset, id: `cp_${Date.now().toString(36)}` };
-        set((state) => ({
-          customPresets: [...state.customPresets, created],
-          bands: created.bands.map((band) => ({ ...band })),
-          preamp: created.preamp,
-          preset: created.id,
-          enabled: true,
-        }));
+        set((state) => {
+          const mode = modeOf(created.bands);
+          return {
+            customPresets: [...state.customPresets, created],
+            bands: created.bands.map((band) => ({ ...band })),
+            preamp: created.preamp,
+            preset: created.id,
+            enabled: true,
+            ...(mode !== state.mode ? { mode, otherBands: state.bands } : {}),
+          };
+        });
         return created;
       },
       setEnabled: (enabled) => set({ enabled }),
@@ -113,13 +149,23 @@ export const useEqualizerStore = create<EqState>()(
                 },
           ),
         })),
-      applyPreset: (id) => set({ bands: presetBands(id), preset: id, enabled: true }),
-      reset: () => set({ bands: defaultBands(), preset: "flat", preamp: 0 }),
+      applyPreset: (id) => set((state) => ({ bands: presetBands(id, state.mode), preset: id, enabled: true })),
+      reset: () => set((state) => ({ bands: bandsForMode(state.mode), preset: "flat", preamp: 0 })),
     }),
     {
       name: "evplayer.equalizer.v1",
       storage: createJSONStorage(() => localStorage),
-      partialize: (state) => ({ enabled: state.enabled, normalize: state.normalize, preamp: state.preamp, bands: state.bands, preset: state.preset, customPresets: state.customPresets }),
+      partialize: (state) => ({
+        enabled: state.enabled,
+        normalize: state.normalize,
+        protect: state.protect,
+        preamp: state.preamp,
+        mode: state.mode,
+        otherBands: state.otherBands,
+        bands: state.bands,
+        preset: state.preset,
+        customPresets: state.customPresets,
+      }),
     },
   ),
 );

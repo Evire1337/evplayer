@@ -22,7 +22,33 @@ export const MAX_PREAMP = 6;
 export const MIN_Q = 0.3;
 export const MAX_Q = 8;
 
-export const BAND_COLORS = ["#f5c242", "#ff8a4c", "#38bdf8", "#a78bfa", "#f472b6", "#34d399"];
+export const BAND_COLORS = ["#f5c242", "#ff8a4c", "#38bdf8", "#a78bfa", "#f472b6", "#34d399", "#facc15", "#60a5fa", "#fb7185", "#2dd4bf"];
+
+/** "simple": six bands you can move anywhere; "advanced": ten bands on the classic octaves */
+export type EqMode = "simple" | "advanced";
+/** the most bands any mode has: the sound graph always holds this many filters */
+export const MAX_BANDS = 10;
+export const ADVANCED_FREQS = [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
+
+export function advancedBands(): EqBand[] {
+  return ADVANCED_FREQS.map((frequency, i) => ({
+    id: `a${i + 1}`,
+    type: i === 0 ? "lowshelf" : i === ADVANCED_FREQS.length - 1 ? "highshelf" : "peaking",
+    frequency,
+    gain: 0,
+    q: i === 0 || i === ADVANCED_FREQS.length - 1 ? 0.71 : 1.4,
+    enabled: true,
+  }));
+}
+
+export function bandsForMode(mode: EqMode): EqBand[] {
+  return mode === "advanced" ? advancedBands() : defaultBands();
+}
+
+/** which mode a saved set of bands belongs to */
+export function modeOf(bands: EqBand[]): EqMode {
+  return bands.length > 6 ? "advanced" : "simple";
+}
 
 export function defaultBands(): EqBand[] {
   return [
@@ -50,8 +76,12 @@ const PRESET_GAINS: Record<PresetId, number[]> = {
 
 export const PRESET_IDS = Object.keys(PRESET_GAINS) as PresetId[];
 
-export function presetBands(id: PresetId): EqBand[] {
-  return defaultBands().map((band, i) => ({ ...band, gain: PRESET_GAINS[id][i] ?? 0 }));
+export function presetBands(id: PresetId, mode: EqMode = "simple"): EqBand[] {
+  const simple = defaultBands().map((band, i) => ({ ...band, gain: PRESET_GAINS[id][i] ?? 0 }));
+  if (mode === "simple") return simple;
+  // the ten-band version of a preset: each band takes the level the six-band curve has at
+  // its frequency, so both sound about the same
+  return advancedBands().map((band) => ({ ...band, gain: Math.round(totalResponseDb(simple, band.frequency) * 2) / 2 }));
 }
 
 export const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));

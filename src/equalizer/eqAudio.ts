@@ -1,4 +1,4 @@
-import { peakBoostDb, type EqBand } from "./eqModel";
+import { MAX_BANDS, peakBoostDb, type EqBand } from "./eqModel";
 import { useEqualizerStore } from "./eqStore";
 import { LoudnessLeveler, rememberedLoudness, rememberLoudness } from "./loudness";
 
@@ -32,7 +32,9 @@ export function createEqBus(ctx: AudioContext): EqBus {
   meter.fftSize = 2048;
   const preamp = ctx.createGain();
   level.connect(preamp);
-  const filters = useEqualizerStore.getState().bands.map(() => ctx.createBiquadFilter());
+  // always the most bands any mode has, so switching modes never rewires the graph; the
+  // ones a mode does not use stay at 0 dB, which lets the sound through untouched
+  const filters = Array.from({ length: MAX_BANDS }, () => ctx.createBiquadFilter());
   const limiter = ctx.createDynamicsCompressor();
   limiter.knee.value = 0;
   limiter.ratio.value = 20;
@@ -61,34 +63,51 @@ export function createEqBus(ctx: AudioContext): EqBus {
   return bus;
 }
 
-function applyBand(filter: BiquadFilterNode, band: EqBand, enabled: boolean, now: number): void {
-  filter.type = band.type;
-  filter.frequency.setTargetAtTime(band.frequency, now, 0.01);
-  filter.Q.setTargetAtTime(band.q, now, 0.01);
-  filter.gain.setTargetAtTime(enabled && band.enabled ? band.gain : 0, now, 0.015);
+/**
+ * How fast changes are heard: dragging a point follows the hand at once; switching to
+ * another preset (or turning the equalizer on or off) glides over about a second, so
+ * presets blend into each other instead of jumping.
+ */
+const QUICK = 0.015;
+const GLIDE = 0.3;
+
+function applyBand(filter: BiquadFilterNode, band: EqBand, enabled: boolean, now: number, tau: number): void {
+  // the filter kind cannot glide; while it switches, the levels still do
+  if (filter.type !== band.type) filter.type = band.type;
+  filter.frequency.setTargetAtTime(band.frequency, now, tau);
+  filter.Q.setTargetAtTime(band.q, now, tau);
+  filter.gain.setTargetAtTime(enabled && band.enabled ? band.gain : 0, now, tau);
 }
 
-export function applyEqualizer(): void {
+export function applyEqualizer(tau = QUICK): void {
   if (!bus) return;
   const { enabled, bands, preamp } = useEqualizerStore.getState();
   const now = bus.context.currentTime;
-  bands.forEach((band, i) => {
-    const filter = bus!.filters[i];
-    if (filter) applyBand(filter, band, enabled, now);
+  bus.filters.forEach((filter, i) => {
+    const band = bands[i];
+    if (band) applyBand(filter, band, enabled, now, tau);
+    else {
+      // a new filter starts as a low-pass: make it a flat peak so it changes nothing
+      filter.type = "peaking";
+      filter.gain.setTargetAtTime(0, now, tau);
+    }
   });
   const { normalize, protect } = useEqualizerStore.getState();
   // with clip protection: pull the level down by most of the boost so loud masters do not
   // clip, then let the limiter catch whatever is left. Without it the boost comes through
   // at full strength and only the preamp sets the level
   const headroom = enabled ? (protect ? -peakBoostDb(bands) * 0.75 : 0) + preamp : 0;
-  bus.preamp.gain.setTargetAtTime(Math.pow(10, headroom / 20), now, 0.02);
+  bus.preamp.gain.setTargetAtTime(Math.pow(10, headroom / 20), now, Math.max(tau, 0.02));
   // a ratio of 1 makes the compressor do nothing at all
   bus.limiter.ratio.setTargetAtTime(protect ? 20 : 1, now, 0.02);
   bus.limiter.threshold.setTargetAtTime(protect && (enabled || normalize) ? -1 : 0, now, 0.02);
   if (!normalize) bus.level.gain.setTargetAtTime(1, now, 0.3);
 }
 
-useEqualizerStore.subscribe(() => applyEqualizer());
+useEqualizerStore.subscribe((s, prev) => {
+  const switched = s.preset !== prev.preset && s.preset !== "custom";
+  applyEqualizer(switched || s.enabled !== prev.enabled || s.mode !== prev.mode ? GLIDE : QUICK);
+});
 
 // ---- volume levelling ---------------------------------------------------------------
 
