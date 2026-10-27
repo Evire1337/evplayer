@@ -8,6 +8,13 @@ import { createEqBus } from "@/equalizer/eqAudio";
 //   deck B -> gain ┴-> pitch shifter -> dry ─────────────┐
 //                            └-> reverb -> wet ──┴-> equalizer (levelling, bands, limiter) -> speakers
 // It is built on the first play (the browser needs a click before it may make sound).
+//
+// Saving work: the pitch shifter and the reverb are only wired in while they are used (a
+// connected node keeps computing even when it changes nothing; the reverb is the costliest
+// part of the whole graph), and the whole graph is suspended after a while on pause.
+
+/** how long a paused player keeps its sound graph running before suspending it */
+const SUSPEND_AFTER_MS = 8000;
 
 export interface EffectSettings {
   pitchSemitones: number;
@@ -18,6 +25,15 @@ export interface EffectSettings {
 class AudioGraph {
   private ctx: AudioContext | null = null;
   private shifter: AudioWorkletNode | null = null;
+  /** the decks meet here; goes through the shifter only while the pitch is changed */
+  private mix: GainNode | null = null;
+  /** after the shifter: feeds the dry path and, while reverb is on, the reverb */
+  private post: GainNode | null = null;
+  private reverbIn: BiquadFilterNode | null = null;
+  private shifterOn = false;
+  private reverbOn = false;
+  private reverbOffTimer: ReturnType<typeof setTimeout> | null = null;
+  private suspendTimer: ReturnType<typeof setTimeout> | null = null;
   private dry: GainNode | null = null;
   private wet: GainNode | null = null;
   private building: Promise<void> | null = null;
@@ -47,17 +63,26 @@ class AudioGraph {
       highpass.frequency.value = 160;
       const eq = createEqBus(ctx);
 
+      const mix = ctx.createGain();
+      const post = ctx.createGain();
       for (const audio of this.decks) {
         const gain = ctx.createGain();
         gain.gain.value = this.pendingGain.get(audio) ?? 1;
-        ctx.createMediaElementSource(audio).connect(gain).connect(shifter);
+        ctx.createMediaElementSource(audio).connect(gain).connect(mix);
         this.gains.set(audio, gain);
+        audio.addEventListener("play", this.onPlay);
+        audio.addEventListener("pause", this.onPause);
+        audio.addEventListener("ended", this.onPause);
       }
-      shifter.connect(dry).connect(eq.input);
-      shifter.connect(highpass).connect(convolver).connect(wet).connect(eq.input);
+      mix.connect(post);
+      post.connect(dry).connect(eq.input);
+      highpass.connect(convolver).connect(wet).connect(eq.input);
       eq.output.connect(ctx.destination);
 
       this.ctx = ctx;
+      this.mix = mix;
+      this.post = post;
+      this.reverbIn = highpass;
       this.shifter = shifter;
       this.dry = dry;
       this.wet = wet;
@@ -69,11 +94,59 @@ class AudioGraph {
   private write(fx: EffectSettings): void {
     if (!this.ctx) return;
     const now = this.ctx.currentTime;
-    this.shifter!.parameters.get("ratio")!.setTargetAtTime(semitonesToRatio(fx.pitchSemitones), now, 0.02);
+    const ratio = semitonesToRatio(fx.pitchSemitones);
+    this.shifter!.parameters.get("ratio")!.setTargetAtTime(ratio, now, 0.02);
+    this.wireShifter(Math.abs(ratio - 1) > 1e-4);
     const amount = fx.reverb ? Math.min(1, Math.max(0, fx.reverbAmount)) : 0;
+    this.wireReverb(amount > 0);
     this.wet!.gain.setTargetAtTime(amount * 0.9, now, 0.05);
     this.dry!.gain.setTargetAtTime(1 - amount * 0.35, now, 0.05);
   }
+
+  private wireShifter(on: boolean): void {
+    if (on === this.shifterOn || !this.mix || !this.post || !this.shifter) return;
+    this.shifterOn = on;
+    if (on) {
+      this.mix.connect(this.shifter).connect(this.post);
+      this.mix.disconnect(this.post);
+    } else {
+      this.mix.connect(this.post);
+      this.mix.disconnect(this.shifter);
+      this.shifter.disconnect();
+    }
+  }
+
+  private wireReverb(on: boolean): void {
+    if (!this.post || !this.reverbIn) return;
+    if (on) {
+      if (this.reverbOffTimer) clearTimeout(this.reverbOffTimer);
+      this.reverbOffTimer = null;
+      if (!this.reverbOn) this.post.connect(this.reverbIn);
+      this.reverbOn = true;
+    } else if (this.reverbOn && !this.reverbOffTimer) {
+      // let the tail fade out before cutting the reverb off
+      this.reverbOffTimer = setTimeout(() => {
+        this.reverbOffTimer = null;
+        this.reverbOn = false;
+        this.post?.disconnect(this.reverbIn!);
+      }, 2500);
+    }
+  }
+
+  private onPlay = (): void => {
+    if (this.suspendTimer) clearTimeout(this.suspendTimer);
+    this.suspendTimer = null;
+    if (this.ctx?.state === "suspended") void this.ctx.resume();
+  };
+
+  private onPause = (): void => {
+    if (this.decks.some((d) => !d.paused)) return;
+    if (this.suspendTimer) clearTimeout(this.suspendTimer);
+    this.suspendTimer = setTimeout(() => {
+      this.suspendTimer = null;
+      if (this.decks.every((d) => d.paused) && this.ctx?.state === "running") void this.ctx.suspend();
+    }, SUSPEND_AFTER_MS);
+  };
 
   /** can decks be faded against each other right now */
   get canFade(): boolean {

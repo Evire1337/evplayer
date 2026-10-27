@@ -32,7 +32,7 @@ export default function Lyrics({ track }: { track: Track | undefined }) {
       <div className="lyrics-pad" />
       {lyrics.lines.map((line, i) => {
         const distance = active < 0 ? 3 : Math.abs(i - active);
-        const cls = !synced ? "" : i === active ? " is-active" : i < active ? " is-past" : distance === 1 ? " is-near" : "";
+        const cls = !synced ? "" : i === active ? " is-active" : i < active ? " is-past" : distance === 1 ? " is-near" : distance > 8 ? " is-far" : "";
         return synced ? (
           <button key={i} type="button" data-line={i} className={`lyric-line${cls}`} onClick={() => player.seek(line.timeMs)}>
             {line.text || "♪"}

@@ -71,6 +71,7 @@ function createWindow(): void {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      spellcheck: false,
       // music has to keep playing and counting while the window is minimized
       backgroundThrottling: false,
     },
@@ -84,10 +85,10 @@ function createWindow(): void {
   });
   mainWindow.on("minimize", () => {
     if (tray.getOptions().minimizeToTray) tray.hideWindow();
-    if (overlay.getOptions().onMinimize) overlay.show();
+    if (overlay.getOptions().onMinimize) overlay.showForMinimize();
   });
   mainWindow.on("restore", () => {
-    if (overlay.getOptions().onMinimize) overlay.hide();
+    overlay.hideForRestore();
   });
   // the page pauses its animations while it cannot be seen
   const visible = (value: boolean) => () => mainWindow?.webContents.send("window:visible", value);
