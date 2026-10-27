@@ -134,5 +134,5 @@ export function xToFreq(x: number, width: number): number {
 }
 
 export function formatFrequency(frequency: number): string {
-  return frequency >= 1000 ? `${(frequency / 1000).toFixed(frequency >= 10000 ? 0 : 1)} kHz` : `${Math.round(frequency)} Hz`;
+  return frequency >= 1000 ? `${(frequency / 1000).toFixed(frequency >= 10000 ? 0 : 1)} кГц` : `${Math.round(frequency)} Гц`;
 }

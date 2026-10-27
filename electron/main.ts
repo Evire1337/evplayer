@@ -94,6 +94,15 @@ function createWindow(): void {
   mainWindow.on("minimize", visible(false));
   mainWindow.on("show", visible(true));
   mainWindow.on("restore", visible(true));
+  // F12 or Ctrl+Shift+I: developer tools, for looking into problems
+  mainWindow.webContents.on("before-input-event", (event, input) => {
+    if (input.type !== "keyDown") return;
+    const devtools = input.key === "F12" || (input.control && input.shift && input.key.toLowerCase() === "i");
+    if (devtools) {
+      event.preventDefault();
+      mainWindow?.webContents.toggleDevTools();
+    }
+  });
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:/i.test(url)) void shell.openExternal(url);
     return { action: "deny" };
