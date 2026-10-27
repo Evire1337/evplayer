@@ -36,8 +36,8 @@ interface EqState {
   overwritePreset: (id: string) => void;
   renamePreset: (id: string, name: string) => void;
   deletePreset: (id: string) => void;
-  /** reorder the saved presets */
-  movePreset: (from: number, to: number) => void;
+  /** reorder the saved presets of one mode (positions within that mode's list) */
+  movePreset: (from: number, to: number, mode: EqMode) => void;
   applyCustomPreset: (id: string) => void;
   importPreset: (preset: Omit<CustomPreset, "id">) => CustomPreset;
   setEnabled: (enabled: boolean) => void;
@@ -91,12 +91,16 @@ export const useEqualizerStore = create<EqState>()(
         set((state) => ({
           customPresets: state.customPresets.map((p) => (p.id === id ? { ...p, name: name.trim().slice(0, 32) || p.name } : p)),
         })),
-      movePreset: (from, to) =>
+      movePreset: (from, to, mode) =>
         set((state) => {
-          const list = [...state.customPresets];
-          const [item] = list.splice(from, 1);
+          // reorder this mode's presets among themselves; the other mode's keep their places
+          const slots = state.customPresets.map((p, i) => (modeOf(p.bands) === mode ? i : -1)).filter((i) => i >= 0);
+          const own = slots.map((i) => state.customPresets[i]);
+          const [item] = own.splice(from, 1);
           if (!item) return {};
-          list.splice(Math.max(0, Math.min(list.length, to)), 0, item);
+          own.splice(Math.max(0, Math.min(own.length, to)), 0, item);
+          const list = [...state.customPresets];
+          slots.forEach((slot, k) => (list[slot] = own[k]));
           return { customPresets: list };
         }),
       deletePreset: (id) =>

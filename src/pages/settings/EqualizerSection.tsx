@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { BAND_COLORS, formatFrequency, MAX_GAIN, MAX_PREAMP, MIN_PREAMP, MAX_Q, MIN_Q, PRESET_IDS, type BandType, type PresetId } from "@/equalizer/eqModel";
+import { BAND_COLORS, modeOf, formatFrequency, MAX_GAIN, MAX_PREAMP, MIN_PREAMP, MAX_Q, MIN_Q, PRESET_IDS, type BandType, type PresetId } from "@/equalizer/eqModel";
 import { useEqualizerStore } from "@/equalizer/eqStore";
 import EqualizerGraph from "@/equalizer/EqualizerGraph";
 import { decodePresetCode, encodePresetCode } from "@/equalizer/presetCode";
@@ -93,13 +93,15 @@ function NameDialog({ title, initial, open, onClose, onSubmit, multiline }: { ti
 }
 
 function CustomPresets() {
-  const { customPresets, preset, savePreset, applyCustomPreset, overwritePreset, renamePreset, deletePreset, importPreset, movePreset } = useEqualizerStore();
+  const { customPresets: allPresets, preset, savePreset, applyCustomPreset, overwritePreset, renamePreset, deletePreset, importPreset, movePreset, mode } = useEqualizerStore();
+  // each mode shows only the presets made in it (six bands or ten)
+  const customPresets = allPresets.filter((p) => modeOf(p.bands) === mode);
   // drag a preset left or right to change the order
-  const reorder = useReorder(movePreset, "x");
+  const reorder = useReorder((from, to) => movePreset(from, to, mode), "x");
   const [dialog, setDialog] = useState<{ kind: "save" | "rename" | "import"; id?: string; initial: string } | null>(null);
   return (
     <div className="custom-presets">
-      <span className="eyebrow">Свои пресеты</span>
+      <span className="eyebrow">Свои пресеты · {mode === "simple" ? "обычный режим" : "продвинутый режим"}</span>
       <div className="chip-row">
         {customPresets.map((p, i) => (
           <span key={p.id} className={`chip is-draggable${preset === p.id ? " is-on" : ""}${reorder.hint(i) ? ` drop-${reorder.hint(i)}` : ""}`} {...reorder.rowProps(i)}>

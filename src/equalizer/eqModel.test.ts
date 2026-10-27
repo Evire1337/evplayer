@@ -53,3 +53,20 @@ describe("modes keep their own preset", () => {
     expect(useEqualizerStore.getState().bands).toHaveLength(10);
   });
 });
+
+describe("own presets per mode", () => {
+  it("reorders a mode's presets without touching the other mode's", async () => {
+    const { useEqualizerStore } = await import("./eqStore");
+    const { defaultBands, advancedBands } = await import("./eqModel");
+    useEqualizerStore.setState({
+      customPresets: [
+        { id: "s1", name: "s1", bands: defaultBands(), preamp: 0 },
+        { id: "a1", name: "a1", bands: advancedBands(), preamp: 0 },
+        { id: "s2", name: "s2", bands: defaultBands(), preamp: 0 },
+        { id: "a2", name: "a2", bands: advancedBands(), preamp: 0 },
+      ],
+    });
+    useEqualizerStore.getState().movePreset(1, 0, "simple");
+    expect(useEqualizerStore.getState().customPresets.map((p) => p.id)).toEqual(["s2", "a1", "s1", "a2"]);
+  });
+});
