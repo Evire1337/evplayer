@@ -1,7 +1,7 @@
 {
   "name": "evplayer",
   "productName": "EvPlayer",
-  "version": "0.4.2",
+  "version": "0.5.0",
   "description": "Music player for SoundCloud, YouTube Music and your own files",
   "author": "Evire1337",
   "license": "MIT",

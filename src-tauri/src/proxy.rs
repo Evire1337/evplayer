@@ -27,6 +27,7 @@ const OPEN_HOSTS: &[&str] = &[
     "accounts.spotify.com",
     "api.spotify.com",
     "api.music.yandex.net",
+    "api.github.com",
 ];
 
 /// a media file is handed over in pieces of this size, so playback starts without

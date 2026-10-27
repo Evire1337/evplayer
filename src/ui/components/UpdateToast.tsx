@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { UpdateState } from "@/platform/api";
+import { isPhone } from "@/platform/device";
 
 // "A new version is ready" with a restart button; nothing shows until there is one
 export default function UpdateToast() {
@@ -15,10 +16,10 @@ export default function UpdateToast() {
   return (
     <div className="toast glass" role="status">
       <span>
-        Вышла версия <b>{state.version}</b>. Она установится при перезапуске.
+        Вышла версия <b>{state.version}</b>. {isPhone ? "Скачайте её — она встанет поверх, всё сохранится." : "Она установится при перезапуске."}
       </span>
       <button type="button" className="toast-primary" onClick={() => void window.evplayer?.updates.install()}>
-        Перезапустить
+        {isPhone ? "Скачать" : "Перезапустить"}
       </button>
       <button type="button" className="toast-secondary" onClick={() => setDismissed(true)}>
         Позже

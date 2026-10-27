@@ -19,6 +19,8 @@ const OPEN_HOSTS = [
   /^accounts\.spotify\.com$/,
   /^api\.spotify\.com$/,
   /^api\.music\.yandex\.net$/,
+  // the phone version looks for a newer APK
+  /^api\.github\.com$/,
 ];
 
 export function isOpenHost(url: string): boolean {

@@ -51,7 +51,9 @@ html.is-phone .mini-left { gap: 2px; }
 
 /* now playing: one column, cover and controls first, lyrics below */
 html.is-phone .now { display: flex; flex-direction: column; gap: 18px; padding: calc(var(--safe-top) + 4px) 4px 0; overflow-y: auto; height: 100%; }
-html.is-phone .now-left { overflow: visible; justify-content: flex-start; }
+/* the cover and controls keep their full height: shrunk, they spilled under the lyrics,
+   which then covered the buttons (sound and speed could not be opened) */
+html.is-phone .now-left { overflow: visible; justify-content: flex-start; flex: 0 0 auto; min-height: auto; }
 html.is-phone .now-art { width: min(100%, 360px); border-radius: 28px; }
 html.is-phone .now-title { font-size: 24px; }
 html.is-phone .now-lyrics { min-height: 60vh; flex-shrink: 0; --lyric-scale: 7; }

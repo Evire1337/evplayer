@@ -334,7 +334,7 @@ function About() {
       <Card>
         <Row title="Обновления" hint={status} icon={<IconRefresh size={16} />}>
           {update.status === "ready" ? (
-            <button type="button" className="btn primary" onClick={() => void window.evplayer?.updates.install()}>Перезапустить</button>
+            <button type="button" className="btn primary" onClick={() => void window.evplayer?.updates.install()}>{isPhone ? "Скачать" : "Перезапустить"}</button>
           ) : (
             <button type="button" className="btn ghost" disabled={update.status === "checking" || update.status === "downloading"} onClick={() => void window.evplayer?.updates.check()}>Проверить</button>
           )}

@@ -4,6 +4,8 @@ import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import type { EvPlayerApi, UpdateState } from "./api";
 import { installProxy, schemeBase } from "./net";
 import { onPhoneCommand, onPhoneVisible } from "./androidMedia";
+import { isPhone } from "./device";
+import { phoneUpdates } from "./phoneUpdates";
 
 // `window.evplayer` on top of Tauri: every call is a command in src-tauri/src/lib.rs, every
 // subscription an event the Rust side sends to this window.
@@ -64,12 +66,15 @@ export function createTauriApi(): EvPlayerApi {
         return () => off?.();
       },
     },
-    updates: {
-      get: () => invoke<UpdateState>("updates_get"),
-      check: () => invoke("updates_check"),
-      install: () => invoke("updates_install"),
-      onState: (cb) => on<UpdateState>("updates:state", cb),
-    },
+    // phones download the new APK; computers install through the Rust updater
+    updates: isPhone
+      ? phoneUpdates(getVersion, (url) => invoke("open_url", { url }))
+      : {
+          get: () => invoke<UpdateState>("updates_get"),
+          check: () => invoke("updates_check"),
+          install: () => invoke("updates_install"),
+          onState: (cb) => on<UpdateState>("updates:state", cb),
+        },
     localFiles: {
       list: () => invoke("local_list"),
       pick: (kind) => invoke("local_pick", { kind }),

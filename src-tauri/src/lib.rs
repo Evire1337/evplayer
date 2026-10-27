@@ -187,6 +187,15 @@ fn open_data_folder(app: AppHandle, state: tauri::State<'_, AppState>) {
     let _ = app.opener().open_path(state.data_dir.to_string_lossy(), None::<&str>);
 }
 
+/// a web page in the system browser (the phone downloads a new APK this way)
+#[tauri::command]
+fn open_url(app: AppHandle, url: String) -> Result<(), String> {
+    if !url.starts_with("https://github.com/Evire1337/evplayer/") {
+        return Err("only EvPlayer's own releases".into());
+    }
+    app.opener().open_url(url, None::<&str>).map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 fn show_window(app: AppHandle) {
     show_main(&app);
@@ -560,6 +569,7 @@ pub fn run() {
             set_no_cache,
             open_data_folder,
             show_window,
+            open_url,
             local_list,
             local_pick,
             local_add_paths,
