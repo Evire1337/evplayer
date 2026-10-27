@@ -47,6 +47,9 @@ export interface SettingsState {
   coverGlow: boolean;
   lyricsBlur: boolean;
   lyricsSize: "s" | "m" | "l";
+  // library
+  libraryView: "grid" | "list";
+  trackSort: { key: import("@/library/sort").SortKey; dir: import("@/library/sort").SortDir };
   // lyrics
   geniusFallback: boolean;
   // window
@@ -93,6 +96,8 @@ const DEFAULTS = {
   lyricsBlur: true,
   lyricsSize: "m" as const,
   geniusFallback: true,
+  libraryView: "grid" as "grid" | "list",
+  trackSort: { key: "custom", dir: "asc" } as { key: import("@/library/sort").SortKey; dir: import("@/library/sort").SortDir },
   closeToTray: true,
   minimizeToTray: false,
   globalShortcuts: true,

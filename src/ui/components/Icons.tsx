@@ -61,3 +61,6 @@ export const IconInfo = (p: P) => <Svg {...p}><circle cx="12" cy="12" r="8.5" />
 export const IconCheck = (p: P) => <Svg {...p}><path d="M5 12.5l4.5 4.5L19 7.5" /></Svg>;
 export const IconRefresh = (p: P) => <Svg {...p}><path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3" /><path d="M19.5 4.5v4h-4" /></Svg>;
 export const IconUndo = (p: P) => <Svg {...p}><path d="M9 7L5 11l4 4" /><path d="M5 11h9a5 5 0 0 1 0 10h-2" /></Svg>;
+export const IconSort = (p: P) => <Svg {...p}><path d="M7 4v16M4 17l3 3 3-3" /><path d="M13 6h8M13 11h6M13 16h3" /></Svg>;
+export const IconGridView = (p: P) => <Svg {...p}><rect x="4" y="4" width="7" height="7" rx="1.5" /><rect x="13" y="4" width="7" height="7" rx="1.5" /><rect x="4" y="13" width="7" height="7" rx="1.5" /><rect x="13" y="13" width="7" height="7" rx="1.5" /></Svg>;
+export const IconListView = (p: P) => <Svg {...p}><rect x="4" y="5" width="4" height="4" rx="1" /><rect x="4" y="15" width="4" height="4" rx="1" /><path d="M11 7h9M11 17h9" /></Svg>;

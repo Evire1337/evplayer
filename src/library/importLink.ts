@@ -1,6 +1,6 @@
 import type { Track } from "@/types";
 import { resolveSoundCloudUrl } from "@/services/soundcloud/api";
-import { youTubePlaylist } from "@/services/youtube/music";
+import { youTubeCollection } from "@/services/youtube/music";
 import { decodePlaylistCode, looksLikePlaylistCode } from "./playlistCode";
 import { matchTracks, type NamedTrack } from "./matchTracks";
 import { useLibrary } from "./store";
@@ -41,6 +41,8 @@ interface Fetched {
   description?: string;
   tracks?: Track[];
   named?: NamedTrack[];
+  /** the playlist's picture on the service */
+  artwork?: string;
   /** the source showed only part of the list */
   truncated?: boolean;
 }
@@ -48,8 +50,8 @@ interface Fetched {
 async function youtube(url: URL, signal: AbortSignal): Promise<Fetched> {
   const list = url.searchParams.get("list");
   if (list) {
-    const { title, tracks } = await youTubePlaylist(list, signal);
-    return { title, tracks, description: "Импортировано из YouTube" };
+    const c = await youTubeCollection(list.startsWith("VL") ? list : `VL${list}`, signal);
+    return { title: c.title, tracks: c.tracks, artwork: c.artwork, description: "Импортировано из YouTube" };
   }
   const id = url.hostname === "youtu.be" ? url.pathname.slice(1) : url.searchParams.get("v");
   if (!id) throw new Error("В ссылке нет видео или плейлиста");
@@ -87,7 +89,7 @@ async function spotify(url: URL, signal: AbortSignal): Promise<Fetched> {
   const json = /<script id="__NEXT_DATA__" type="application\/json">(.+?)<\/script>/s.exec(html)?.[1];
   if (!json) throw new Error("Spotify не показал список треков");
   const entity = JSON.parse(json)?.props?.pageProps?.state?.data?.entity as
-    | { name?: string; title?: string; subtitle?: string; duration?: number; trackList?: Array<{ title: string; subtitle: string; duration?: number }> }
+    | { name?: string; title?: string; subtitle?: string; duration?: number; coverArt?: { sources?: Array<{ url: string; width?: number }> }; trackList?: Array<{ title: string; subtitle: string; duration?: number }> }
     | undefined;
   if (!entity) throw new Error("Spotify не показал список треков");
   const list = entity.trackList?.length
@@ -98,7 +100,9 @@ async function spotify(url: URL, signal: AbortSignal): Promise<Fetched> {
     .map((t) => ({ title: t.title, artists: t.subtitle.split(/,\s*/).filter(Boolean), durationMs: t.duration }));
   // the embed page stops at 100 songs: a longer playlist needs the official API
   const cut = m[1] === "playlist" && list.length >= 100;
-  return { title: entity.name ?? entity.title ?? "Spotify", named, description: "Импортировано из Spotify", truncated: cut };
+  const covers = entity.coverArt?.sources ?? [];
+  const artwork = [...covers].sort((a, b) => (b.width ?? 0) - (a.width ?? 0))[0]?.url;
+  return { title: entity.name ?? entity.title ?? "Spotify", named, artwork, description: "Импортировано из Spotify", truncated: cut };
 }
 
 async function deezer(url: URL, signal: AbortSignal): Promise<Fetched> {
@@ -115,12 +119,15 @@ async function deezer(url: URL, signal: AbortSignal): Promise<Fetched> {
     error?: { message?: string };
     duration?: number;
     artist?: { name: string };
+    picture_xl?: string;
+    cover_xl?: string;
     tracks?: { data?: Array<{ title: string; duration: number; artist?: { name: string } }> };
   };
   if (body.error) throw new Error(body.error.message ?? "Deezer не нашёл ссылку");
   const rows = m[1] === "track" ? [{ title: body.title ?? "", duration: body.duration ?? 0, artist: body.artist }] : (body.tracks?.data ?? []);
   return {
     title: body.title ?? "Deezer",
+    artwork: body.picture_xl ?? body.cover_xl,
     description: "Импортировано из Deezer",
     named: rows.map((t) => ({ title: t.title, artists: t.artist ? [t.artist.name] : [], durationMs: t.duration * 1000 })),
   };
@@ -135,8 +142,8 @@ async function fetchLink(text: string, signal: AbortSignal): Promise<Fetched> {
   const url = new URL(text.trim());
   switch (kind) {
     case "soundcloud": {
-      const { title, tracks } = await resolveSoundCloudUrl(url.toString(), signal);
-      return { title, tracks, description: "Импортировано из SoundCloud" };
+      const { title, tracks, artwork } = await resolveSoundCloudUrl(url.toString(), signal);
+      return { title, tracks, artwork, description: "Импортировано из SoundCloud" };
     }
     case "youtube":
       return youtube(url, signal);
@@ -180,6 +187,7 @@ export async function importFromLink(text: string): Promise<void> {
     if (!tracks.length) throw new Error("В ссылке не нашлось треков, которые можно слушать");
     const lib = useLibrary.getState();
     const playlist = lib.createPlaylist(fetched.title, fetched.description);
+    if (fetched.artwork && /^https:/.test(fetched.artwork)) lib.updatePlaylist(playlist.id, { icon: fetched.artwork });
     lib.addToPlaylist(playlist.id, tracks);
     const missed = fetched.named ? fetched.named.length - tracks.length : 0;
     toast(missed > 0 ? `Плейлист «${fetched.title}»: ${tracks.length} треков, ${missed} не нашлось` : `Плейлист «${fetched.title}» добавлен`);

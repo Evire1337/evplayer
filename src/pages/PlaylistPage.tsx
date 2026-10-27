@@ -14,6 +14,10 @@ import TrackRow from "@/ui/components/TrackRow";
 import Dialog from "@/ui/components/Dialog";
 import { IconImage, IconMore, IconPencil, IconPlay, IconShare, IconShuffle, IconTrash } from "@/ui/components/Icons";
 import { songs } from "./LibraryPage";
+import { useSettings } from "@/settings/store";
+import { DEFAULT_DIR, SORT_LABEL, sortRows, type SortDir, type SortKey } from "@/library/sort";
+import { getTrackStats } from "@/stats/listeningStats";
+import { IconCheck, IconSort } from "@/ui/components/Icons";
 
 interface Row {
   key: string;
@@ -38,13 +42,20 @@ export default function PlaylistPage() {
     return (playlist?.items ?? []).map((i) => ({ key: i.id, track: i.track, addedAt: i.addedAt, itemId: i.id }));
   }, [isLikes, likes, playlist]);
 
+  const sort = useSettings((s) => s.trackSort);
   const shown = useMemo(() => {
     const q = filter.trim().toLowerCase();
-    if (!q) return rows;
-    return rows.filter((r) => `${r.track.title} ${r.track.artists.map((a) => a.name).join(" ")}`.toLowerCase().includes(q));
-  }, [rows, filter]);
+    const filtered = q ? rows.filter((r) => `${r.track.title} ${r.track.artists.map((a) => a.name).join(" ")}`.toLowerCase().includes(q)) : rows;
+    return sortRows(filtered, sort.key, sort.dir, (id) => getTrackStats(id).all.n);
+  }, [rows, filter, sort]);
   const tracks = shown.map((r) => r.track);
-  const canReorder = !filter.trim();
+  const canReorder = !filter.trim() && sort.key === "custom" && sort.dir === "asc";
+  const setSort = (key: SortKey) => {
+    const cur = useSettings.getState().trackSort;
+    const dir: SortDir = cur.key === key ? (cur.dir === "asc" ? "desc" : "asc") : DEFAULT_DIR[key];
+    useSettings.getState().set({ trackSort: { key, dir } });
+  };
+  const arrow = (key: SortKey) => (sort.key === key ? (sort.dir === "asc" ? " ↑" : " ↓") : "");
 
   if (!isLikes && !playlist) {
     return (
@@ -146,15 +157,33 @@ export default function PlaylistPage() {
 
       <div className="pl-tools">
         <input id="pl-filter" className="filter-input" value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Найти в плейлисте" />
+        <button
+          type="button"
+          className="btn ghost sort-btn"
+          onClick={(e) => {
+            const r = e.currentTarget.getBoundingClientRect();
+            openMenu(
+              { clientX: r.left, clientY: r.bottom + 6 },
+              (Object.keys(SORT_LABEL) as SortKey[]).map((key) => ({
+                label: `${SORT_LABEL[key]}${arrow(key)}`,
+                icon: sort.key === key ? <IconCheck size={16} /> : undefined,
+                onSelect: () => setSort(key),
+              })),
+            );
+          }}
+        >
+          <IconSort size={16} /> {SORT_LABEL[sort.key]}{arrow(sort.key) || ""}
+        </button>
         {canReorder && rows.length > 1 && <span className="muted small">Перетаскивайте треки, чтобы поменять порядок</span>}
+        {!canReorder && sort.key !== "custom" && <button type="button" className="reset-btn" onClick={() => useSettings.getState().set({ trackSort: { key: "custom", dir: "asc" } })}>Вернуть свой порядок</button>}
       </div>
 
       <div className="track-list" onDragEnd={() => setDrag(null)}>
-        <div className="track-head" aria-hidden="true">
-          <span>Трек</span>
-          <span>Добавлен</span>
+        <div className="track-head">
+          <button type="button" className="head-sort" onClick={() => setSort("title")}>Трек{arrow("title")}</button>
+          <button type="button" className="head-sort" onClick={() => setSort("added")}>Добавлен{arrow("added")}</button>
           <span />
-          <span>Время</span>
+          <button type="button" className="head-sort" onClick={() => setSort("duration")}>Время{arrow("duration")}</button>
           <span />
         </div>
         {shown.map((r, i) => (

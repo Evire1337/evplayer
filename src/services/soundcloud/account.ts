@@ -50,14 +50,17 @@ export async function importSoundCloudPlaylists(onProgress?: (done: number, tota
   for (let i = 0; i < lists.length; i++) {
     onProgress?.(i, lists.length);
     const summary = lists[i];
-    const { tracks } = await soundCloudCollection(summary.id, signal);
+    const { summary: full, tracks } = await soundCloudCollection(summary.id, signal);
+    const icon = full?.artwork ?? summary.artwork ?? tracks.find((t) => t.artwork)?.artwork;
     const lib = useLibrary.getState();
     const existing = lib.playlists.find((p) => p.source === summary.id);
     if (existing) {
       if (lib.addToPlaylist(existing.id, tracks) > 0) updated++;
+      // the cover follows SoundCloud unless you set your own picture (a data: url)
+      if (icon && !existing.icon?.startsWith("data:") && existing.icon !== icon) lib.updatePlaylist(existing.id, { icon });
     } else if (tracks.length) {
       const p = lib.createPlaylist(summary.title, "Из вашего SoundCloud", summary.id);
-      if (summary.artwork) lib.updatePlaylist(p.id, { icon: summary.artwork });
+      if (icon) lib.updatePlaylist(p.id, { icon });
       lib.addToPlaylist(p.id, tracks);
       created++;
     }

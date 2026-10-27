@@ -10,6 +10,8 @@ import { getSmartPlaylist, SMART_PLAYLISTS } from "@/stats/listeningStats";
 import { SMART_INFO } from "@/stats/smart";
 import { useStatsVersion } from "@/stats/useStats";
 import { useEffect, useMemo } from "react";
+import { useSettings } from "@/settings/store";
+import { IconGridView, IconListView } from "@/ui/components/Icons";
 
 function songs(n: number): string {
   const mod10 = n % 10;
@@ -23,6 +25,7 @@ export { songs };
 export default function LibraryPage() {
   const { likes, playlists } = useLibrary();
   const go = useNavigation((s) => s.go);
+  const view = useSettings((s) => s.libraryView);
   const files = useLocalFiles((s) => s.records.length);
   const version = useStatsVersion();
   useEffect(() => void useLocalFiles.getState().refresh(), []);
@@ -45,10 +48,18 @@ export default function LibraryPage() {
           <button type="button" className="btn ghost" onClick={openSpotifyExport}>
             Из Spotify
           </button>
+          <div className="view-toggle" role="radiogroup" aria-label="Вид">
+            <button type="button" role="radio" aria-checked={view === "grid"} className={view === "grid" ? "is-on" : ""} aria-label="Крупные значки" data-tip="Крупные значки" onClick={() => useSettings.getState().set({ libraryView: "grid" })}>
+              <IconGridView size={17} />
+            </button>
+            <button type="button" role="radio" aria-checked={view === "list"} className={view === "list" ? "is-on" : ""} aria-label="Списком" data-tip="Списком" onClick={() => useSettings.getState().set({ libraryView: "list" })}>
+              <IconListView size={17} />
+            </button>
+          </div>
         </div>
       </header>
 
-      <div className="pl-grid">
+      <div className={view === "list" ? "pl-list" : "pl-grid"}>
         <button type="button" className="pl-card" onClick={() => go("playlist", "likes")}>
           <PlaylistCover liked />
           <span className="pl-card-title">Понравившиеся</span>

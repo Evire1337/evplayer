@@ -121,7 +121,7 @@ async function tracksByIds(ids: number[], signal?: AbortSignal): Promise<Track[]
 }
 
 /** a soundcloud.com link: a track, a playlist/album or a profile */
-export async function resolveSoundCloudUrl(url: string, signal?: AbortSignal): Promise<{ title: string; tracks: Track[] }> {
+export async function resolveSoundCloudUrl(url: string, signal?: AbortSignal): Promise<{ title: string; tracks: Track[]; artwork?: string }> {
   const body = await scGet<Record<string, unknown>>("/resolve", { url }, signal);
   if (body.kind === "track") {
     const track = mapScTrack(body);
@@ -130,7 +130,8 @@ export async function resolveSoundCloudUrl(url: string, signal?: AbortSignal): P
   if (body.kind === "playlist" || body.kind === "system-playlist") {
     const raw = Array.isArray(body.tracks) ? (body.tracks as Array<Record<string, unknown>>) : [];
     const ids = raw.map((t) => Number(t.id)).filter(Number.isFinite);
-    return { title: String(body.title ?? "SoundCloud"), tracks: await tracksByIds(ids, signal) };
+    const tracks = await tracksByIds(ids, signal);
+    return { title: String(body.title ?? "SoundCloud"), tracks, artwork: mapScCollection(body)?.artwork ?? tracks.find((t) => t.artwork)?.artwork };
   }
   if (body.kind === "user") {
     const user = await soundCloudUser(String(body.id), signal);

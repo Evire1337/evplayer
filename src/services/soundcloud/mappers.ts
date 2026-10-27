@@ -77,6 +77,12 @@ export function trackAuthorization(raw: unknown): string | undefined {
   return isObj(raw) ? str(raw.track_authorization) : undefined;
 }
 
+function firstTrackArtwork(tracks: unknown): string | undefined {
+  if (!Array.isArray(tracks)) return undefined;
+  for (const t of tracks) if (isObj(t) && t.artwork_url) return artworkUrl(t.artwork_url);
+  return undefined;
+}
+
 export function mapScCollection(raw: unknown): import("@/types").CollectionSummary | null {
   if (!isObj(raw) || (raw.kind !== "playlist" && raw.kind !== "system-playlist")) return null;
   const id = num(raw.id);
@@ -91,7 +97,8 @@ export function mapScCollection(raw: unknown): import("@/types").CollectionSumma
     kind: album ? "album" : "playlist",
     title,
     subtitle: str(user?.username) ?? "SoundCloud",
-    artwork: artworkUrl(raw.artwork_url) ?? artworkUrl(user?.avatar_url),
+    // a playlist without its own picture shows its first song's cover on SoundCloud
+    artwork: artworkUrl(raw.artwork_url) ?? firstTrackArtwork(raw.tracks),
     year: year ? new Date(year).getFullYear() : undefined,
     trackCount: num(raw.track_count),
     artist: userId !== undefined ? { id: `scu:${userId}`, name: str(user?.username) ?? "" } : undefined,
