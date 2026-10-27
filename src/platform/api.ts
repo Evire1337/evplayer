@@ -88,6 +88,8 @@ export interface EvPlayerApi {
   soundcloudClientId: (force?: boolean) => Promise<string>;
   cacheSize: () => Promise<{ cache: number }>;
   clearCache: () => Promise<void>;
+  /** keep no cache on disk (takes full effect after a restart) */
+  setNoCache: (on: boolean) => Promise<void>;
   openDataFolder: () => Promise<void>;
   onPlayerCommand: (cb: (action: string, value?: number) => void) => Off;
   showWindow: () => void;

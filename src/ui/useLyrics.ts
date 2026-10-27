@@ -47,7 +47,9 @@ export function useLyrics(track: Track | undefined): LyricsState {
     setState({ status: "loading" });
     load(track, controller.signal)
       .then((next) => {
-        remember(track.id, next);
+        // "don't keep a cache": found lyrics live only until the app closes
+        if (!useSettings.getState().noCache) remember(track.id, next);
+        else cache.set(track.id, next);
         if (!controller.signal.aborted) setState(next);
       })
       .catch(() => !controller.signal.aborted && setState({ status: "error" }));

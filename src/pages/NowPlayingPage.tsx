@@ -6,6 +6,7 @@ import { Progress, Tools, Transport } from "@/ui/components/Transport";
 import { useNavigation } from "@/ui/navigation";
 import { useSettings } from "@/settings/store";
 import { IconQueue } from "@/ui/components/Icons";
+import LikeButton from "@/ui/components/LikeButton";
 
 const SOURCE = { soundcloud: "SoundCloud", youtube: "YouTube Music", local: "Мои файлы" } as const;
 
@@ -45,6 +46,7 @@ export default function NowPlayingPage() {
         <Progress big />
         <Transport big />
         <div className="now-tools">
+          <LikeButton track={track} size={19} />
           <Tools />
           <button
             type="button"

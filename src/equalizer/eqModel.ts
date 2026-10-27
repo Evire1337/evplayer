@@ -15,7 +15,10 @@ export interface EqBand {
 
 export const MIN_FREQ = 20;
 export const MAX_FREQ = 20000;
-export const MAX_GAIN = 12;
+/** how far a band can boost or cut; big enough for a real bass boost */
+export const MAX_GAIN = 24;
+export const MIN_PREAMP = -24;
+export const MAX_PREAMP = 6;
 export const MIN_Q = 0.3;
 export const MAX_Q = 8;
 

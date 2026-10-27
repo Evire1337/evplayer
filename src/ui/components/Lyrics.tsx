@@ -1,3 +1,4 @@
+import { useSettings } from "@/settings/store";
 import { useEffect, useRef } from "react";
 import type { Track } from "@/types";
 import { player } from "@/player/engine";
@@ -20,7 +21,7 @@ export default function Lyrics({ track }: { track: Track | undefined }) {
     if (!box || active < 0) return;
     const el = box.querySelector<HTMLElement>(`[data-line="${active}"]`);
     if (!el) return;
-    box.scrollTo({ top: el.offsetTop - box.clientHeight / 2 + el.clientHeight / 2, behavior: "smooth" });
+    box.scrollTo({ top: el.offsetTop - box.clientHeight / 2 + el.clientHeight / 2, behavior: useSettings.getState().memorySaver ? "auto" : "smooth" });
   }, [active]);
 
   if (!track) return <div className="lyrics-empty">Включите трек, и здесь появится его текст.</div>;

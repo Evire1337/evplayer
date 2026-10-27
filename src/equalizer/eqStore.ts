@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
-import { clamp, defaultBands, MAX_FREQ, MAX_GAIN, MAX_Q, MIN_FREQ, MIN_Q, presetBands, type EqBand, type PresetId } from "./eqModel";
+import { clamp, defaultBands, MAX_FREQ, MAX_GAIN, MAX_PREAMP, MIN_PREAMP, MAX_Q, MIN_FREQ, MIN_Q, presetBands, type EqBand, type PresetId } from "./eqModel";
 
 export interface CustomPreset {
   id: string;
@@ -89,7 +89,7 @@ export const useEqualizerStore = create<EqState>()(
         return created;
       },
       setEnabled: (enabled) => set({ enabled }),
-      setPreamp: (db) => set({ preamp: clamp(db, -12, 6) }),
+      setPreamp: (db) => set({ preamp: clamp(db, MIN_PREAMP, MAX_PREAMP) }),
       updateBand: (id, patch) =>
         set((state) => ({
           preset: "custom",

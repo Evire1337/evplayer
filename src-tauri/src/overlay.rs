@@ -276,6 +276,7 @@ impl Overlay {
             .focused(false)
             .always_on_top(on_top)
             .visible_on_all_workspaces(true)
+            .additional_browser_args(&crate::browser_args(app))
             .build()
             .ok()?;
         let app2 = app.clone();

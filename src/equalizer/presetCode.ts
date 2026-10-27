@@ -1,4 +1,4 @@
-import { clamp, defaultBands, MAX_FREQ, MAX_GAIN, MAX_Q, MIN_FREQ, MIN_Q, type BandType, type EqBand } from "./eqModel";
+import { clamp, defaultBands, MAX_FREQ, MAX_GAIN, MAX_PREAMP, MIN_PREAMP, MAX_Q, MIN_FREQ, MIN_Q, type BandType, type EqBand } from "./eqModel";
 import type { CustomPreset } from "./eqStore";
 
 // EVQ1.<base64url json>: an equalizer preset that can be pasted to a friend
@@ -45,5 +45,5 @@ export function decodePresetCode(code: string): Omit<CustomPreset, "id"> {
       enabled: row[4] !== 0,
     };
   });
-  return { name: String(wire.n || "Preset").slice(0, 32), preamp: clamp(Number(wire.p) || 0, -12, 6), bands };
+  return { name: String(wire.n || "Preset").slice(0, 32), preamp: clamp(Number(wire.p) || 0, MIN_PREAMP, MAX_PREAMP), bands };
 }

@@ -32,6 +32,7 @@ export function createTauriApi(): EvPlayerApi {
     soundcloudClientId: (force = false) => invoke("soundcloud_client_id", { force }),
     cacheSize: () => invoke("cache_size"),
     clearCache: () => invoke("clear_cache"),
+    setNoCache: (on) => invoke("set_no_cache", { on }),
     openDataFolder: () => invoke("open_data_folder"),
     onPlayerCommand: (cb) => on<{ action: string; value?: number | null }>("player:command", (p) => cb(p.action, p.value ?? undefined)),
     showWindow: () => fire("show_window"),

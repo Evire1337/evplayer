@@ -64,6 +64,10 @@ export interface SettingsState {
   coverGlow: boolean;
   lyricsBlur: boolean;
   lyricsSize: "s" | "m" | "l";
+  /** memory saver: no live backdrop, glow, blur or animations; the page unloads sooner when hidden */
+  memorySaver: boolean;
+  /** keep no cache on disk (covers and service answers are downloaded again each time) */
+  noCache: boolean;
   /** the "Up next" panel on the now playing screen */
   showQueue: boolean;
   // library
@@ -118,6 +122,8 @@ const DEFAULTS = {
   lyricsSize: "m" as const,
   geniusFallback: true,
   showQueue: true,
+  memorySaver: false,
+  noCache: false,
   libraryView: "grid" as "grid" | "list",
   trackSort: { key: "custom", dir: "asc" } as { key: import("@/library/sort").SortKey; dir: import("@/library/sort").SortDir },
   closeToTray: true,

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { BAND_COLORS, formatFrequency, MAX_Q, MIN_Q, PRESET_IDS, type BandType, type PresetId } from "@/equalizer/eqModel";
+import { BAND_COLORS, formatFrequency, MAX_GAIN, MAX_PREAMP, MIN_PREAMP, MAX_Q, MIN_Q, PRESET_IDS, type BandType, type PresetId } from "@/equalizer/eqModel";
 import { useEqualizerStore } from "@/equalizer/eqStore";
 import EqualizerGraph from "@/equalizer/EqualizerGraph";
 import { decodePresetCode, encodePresetCode } from "@/equalizer/presetCode";
@@ -12,20 +12,50 @@ import Dialog from "@/ui/components/Dialog";
 const PRESET_LABEL: Record<PresetId, string> = { flat: "Ровно", rich: "Насыщенно", bass: "Бас", vocal: "Вокал", warm: "Тепло", bright: "Ярко" };
 const TYPE_LABEL: Record<BandType, string> = { lowshelf: "Низы (полка)", peaking: "Пик", highshelf: "Верха (полка)" };
 
+/**
+ * A number box that lets you type freely: while typing, a value outside the range (the "2"
+ * on the way to "27") is just text; it is applied once it fits, and corrected into the
+ * range when you leave the box or press Enter.
+ */
 function NumberField({ label, value, suffix, step, min, max, onChange }: { label: string; value: number; suffix?: string; step: number; min: number; max: number; onChange: (v: number) => void }) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const shown = String(Number(value.toFixed(step < 1 ? 2 : 0)));
+  const commit = () => {
+    if (draft === null) return;
+    const next = parseFloat(draft.replace(",", "."));
+    if (Number.isFinite(next)) onChange(Math.min(max, Math.max(min, next)));
+    setDraft(null);
+  };
   return (
     <label className="num-field">
       <span>{label}</span>
       <span className="num-field-box">
         <input
-          type="number"
-          value={Number(value.toFixed(step < 1 ? 2 : 0))}
-          step={step}
-          min={min}
-          max={max}
+          type="text"
+          inputMode="decimal"
+          value={draft ?? shown}
+          onFocus={(e) => e.currentTarget.select()}
           onChange={(e) => {
-            const next = parseFloat(e.target.value);
-            if (Number.isFinite(next)) onChange(next);
+            const text = e.target.value.replace(/[^\d.,-]/g, "");
+            setDraft(text);
+            const next = parseFloat(text.replace(",", "."));
+            if (Number.isFinite(next) && next >= min && next <= max) onChange(next);
+          }}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") e.currentTarget.blur();
+            if (e.key === "Escape") {
+              setDraft(null);
+              e.currentTarget.blur();
+            }
+            // arrows step the value like a spin box
+            if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+              e.preventDefault();
+              const base = draft !== null && Number.isFinite(parseFloat(draft)) ? parseFloat(draft) : value;
+              const next = Math.min(max, Math.max(min, base + (e.key === "ArrowUp" ? step : -step) * (e.shiftKey ? 10 : 1)));
+              setDraft(null);
+              onChange(next);
+            }
           }}
         />
         {suffix && <span className="muted small">{suffix}</span>}
@@ -170,7 +200,7 @@ export default function EqualizerSection() {
           </div>
           <div className="band-fields">
             <NumberField label="Частота" value={selected.frequency} suffix="Гц" step={1} min={20} max={20000} onChange={(v) => updateBand(selected.id, { frequency: v })} />
-            <NumberField label="Усиление" value={selected.gain} suffix="дБ" step={0.5} min={-12} max={12} onChange={(v) => updateBand(selected.id, { gain: v })} />
+            <NumberField label="Усиление" value={selected.gain} suffix="дБ" step={0.5} min={-MAX_GAIN} max={MAX_GAIN} onChange={(v) => updateBand(selected.id, { gain: v })} />
             <NumberField label="Ширина (Q)" value={selected.q} step={0.1} min={MIN_Q} max={MAX_Q} onChange={(v) => updateBand(selected.id, { q: v })} />
           </div>
         </div>
@@ -179,12 +209,12 @@ export default function EqualizerSection() {
         <input
           type="range"
           className="dial small-dial"
-          min={-12}
-          max={6}
+          min={MIN_PREAMP}
+          max={MAX_PREAMP}
           step={0.5}
           value={preamp}
           onChange={(e) => setPreamp(parseFloat(e.target.value))}
-          style={{ "--fill": `${((preamp + 12) / 18) * 100}%` } as React.CSSProperties}
+          style={{ "--fill": `${((preamp - MIN_PREAMP) / (MAX_PREAMP - MIN_PREAMP)) * 100}%` } as React.CSSProperties}
         />
         <span className="muted small tabular">{preamp > 0 ? "+" : ""}{preamp.toFixed(1)} дБ</span>
       </Row>

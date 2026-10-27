@@ -108,6 +108,45 @@ fn dir_size(path: &std::path::Path) -> u64 {
         .unwrap_or(0)
 }
 
+/// the "don't keep a cache" setting, as a file so it is known before any window starts
+fn no_cache_flag(app: &AppHandle) -> PathBuf {
+    data_dir(app).join("no-cache")
+}
+
+/// options for the browser engine; every window must get the same ones (WebView2 refuses a
+/// second window with different options)
+pub fn browser_args(app: &AppHandle) -> String {
+    // the first two are what Tauri passes by default; autoplay lets media keys and global
+    // hotkeys start the music while the window is hidden, before any click in it
+    let mut args = String::from("--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --autoplay-policy=no-user-gesture-required");
+    if no_cache_flag(app).exists() {
+        args.push_str(" --disk-cache-size=1");
+    }
+    args
+}
+
+fn clear_cache_dirs(app: &AppHandle) {
+    // files the browser engine holds open stay; everything else goes
+    for d in cache_dirs(app) {
+        if let Ok(rd) = std::fs::read_dir(&d) {
+            for e in rd.flatten() {
+                let p = e.path();
+                let _ = if p.is_dir() { std::fs::remove_dir_all(&p) } else { std::fs::remove_file(&p) };
+            }
+        }
+    }
+}
+
+#[tauri::command]
+fn set_no_cache(app: AppHandle, on: bool) {
+    let flag = no_cache_flag(&app);
+    let _ = std::fs::create_dir_all(data_dir(&app));
+    let _ = if on { std::fs::write(&flag, b"1") } else { std::fs::remove_file(&flag) };
+    if on {
+        clear_cache_dirs(&app);
+    }
+}
+
 fn cache_dirs(app: &AppHandle) -> Vec<PathBuf> {
     let mut out = Vec::new();
     if let Ok(local) = app.path().app_local_data_dir() {
@@ -129,15 +168,7 @@ fn cache_size(app: AppHandle) -> Value {
 
 #[tauri::command]
 fn clear_cache(app: AppHandle) {
-    // files the browser engine holds open stay; everything else goes
-    for d in cache_dirs(&app) {
-        if let Ok(rd) = std::fs::read_dir(&d) {
-            for e in rd.flatten() {
-                let p = e.path();
-                let _ = if p.is_dir() { std::fs::remove_dir_all(&p) } else { std::fs::remove_file(&p) };
-            }
-        }
-    }
+    clear_cache_dirs(&app);
 }
 
 #[tauri::command]
@@ -404,6 +435,7 @@ async fn migrate_electron(app: AppHandle, state: tauri::State<'_, AppState>) -> 
 fn create_main(app: &AppHandle, media_base: &str) -> tauri::Result<()> {
     let win = WebviewWindowBuilder::new(app, MAIN, WebviewUrl::App("index.html".into()))
         // where the page gets songs from (see media_server.rs)
+        .additional_browser_args(&browser_args(app))
         .initialization_script(format!("window.__EVPLAYER_MEDIA__ = {};", serde_json::to_string(media_base).unwrap_or_default()))
         .title("EvPlayer")
         .inner_size(1280.0, 800.0)
@@ -487,6 +519,7 @@ pub fn run() {
             soundcloud_client_id,
             cache_size,
             clear_cache,
+            set_no_cache,
             open_data_folder,
             show_window,
             local_list,
@@ -530,6 +563,10 @@ pub fn run() {
                 minimized: Mutex::new(false),
                 quitting: Mutex::new(false),
             });
+            // "don't keep a cache": what the last run left behind goes before anything starts
+            if no_cache_flag(&handle).exists() {
+                clear_cache_dirs(&handle);
+            }
             let media = media_server::MediaServer::start(library.clone()).map(|m| m.base).unwrap_or_default();
             create_main(&handle, &media)?;
             tray::create(&handle)?;

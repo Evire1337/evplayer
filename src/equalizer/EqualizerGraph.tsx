@@ -1,3 +1,4 @@
+import { useSettings } from "@/settings/store";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   BAND_COLORS,
@@ -15,9 +16,9 @@ import { getEqBus } from "./eqAudio";
 
 const HEIGHT = 260;
 const PAD_Y = 14;
-const RANGE_DB = 15; // the view shows a bit more than the +-12 dB the bands can reach
+const RANGE_DB = 27; // the view shows a bit more than the +-24 dB the bands can reach
 const GRID_FREQS = [30, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000];
-const GRID_DB = [-12, -6, 0, 6, 12];
+const GRID_DB = [-24, -12, 0, 12, 24];
 const POINTS = 220;
 
 const dbToY = (db: number) => PAD_Y + ((RANGE_DB - db) / (2 * RANGE_DB)) * (HEIGHT - 2 * PAD_Y);
@@ -57,6 +58,8 @@ export default function EqualizerGraph({ bands, enabled, selectedId, onSelect, o
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     let raf = 0;
     let data: Uint8Array<ArrayBuffer> | null = null;
+    // memory saver: no live spectrum behind the curve
+    if (useSettings.getState().memorySaver) return;
     const draw = () => {
       ctx.clearRect(0, 0, width, HEIGHT);
       const bus = getEqBus();

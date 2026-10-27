@@ -29,20 +29,22 @@ import { IconBack } from "@/ui/components/Icons";
 import WindowControls from "@/ui/components/WindowControls";
 import { useVisible } from "@/app/visibility";
 
-/** after this long out of sight the window lets go of its pages */
+/** after this long out of sight the window lets go of its pages (sooner with memory saver) */
 const SLEEP_AFTER_MS = 20_000;
+const SAVER_SLEEP_AFTER_MS = 4_000;
 
 function useAsleep(): boolean {
   const visible = useVisible((s) => s.visible);
+  const saver = useSettings((s) => s.memorySaver);
   const [asleep, setAsleep] = useState(false);
   useEffect(() => {
     if (visible) {
       setAsleep(false);
       return;
     }
-    const timer = setTimeout(() => setAsleep(true), SLEEP_AFTER_MS);
+    const timer = setTimeout(() => setAsleep(true), saver ? SAVER_SLEEP_AFTER_MS : SLEEP_AFTER_MS);
     return () => clearTimeout(timer);
-  }, [visible]);
+  }, [visible, saver]);
   return asleep;
 }
 
@@ -59,12 +61,17 @@ export default function App() {
   const [overlayOpen, setOverlayOpen] = useState(false);
   useEffect(() => window.evplayer?.overlay.onVisible(setOverlayOpen), []);
   const asleep = useAsleep();
+  const saver = useSettings((s) => s.memorySaver);
+  useEffect(() => {
+    document.documentElement.classList.toggle("saver", saver);
+  }, [saver]);
   // hidden in the tray or minimized for a while: the pages, pictures and the backdrop are
   // taken off the page so their memory can go back to the system; the player keeps playing
   if (asleep) return overlayLyrics && overlayOpen ? <LyricsTracker /> : null;
   return (
     <div className={`app page-${page} lyrics-${lyricsSize}${lyricsBlur ? "" : " no-lyrics-blur"}${glow ? "" : " no-glow"}`}>
-      <Backdrop image={artwork} playing={playing} />
+      {/* memory saver: no WebGL backdrop at all, a still gradient instead */}
+      {saver ? <div className="backdrop backdrop-still" aria-hidden="true" /> : <Backdrop image={artwork} playing={playing} />}
       <div className="titlebar" data-tauri-drag-region>
         {canGoBack && page !== "now" && (
           <button type="button" className="back-btn" aria-label="Назад" onClick={goBack}>

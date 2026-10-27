@@ -30,7 +30,10 @@ export function startBridge(): void {
     const discordKeys: Array<keyof typeof s> = ["discordEnabled", "discordShowArtwork", "discordShowPaused", "discordShowTimeline", "discordShowButton", "discordStatusShows"];
     if (discordKeys.some((k) => s[k] !== prev[k])) pushPresence(true);
     if (s.overlayShowLyrics !== prev.overlayShowLyrics) pushOverlay();
+    if (s.noCache !== prev.noCache) void api.setNoCache(s.noCache);
   });
+  // the flag file can be missing (a fresh install restored from a backup): write it again
+  if (useSettings.getState().noCache) void api.setNoCache(true);
 
   api.onPlayerCommand((action, value) => runAction(action as Command, value));
 

@@ -6,7 +6,7 @@ void main() { vUv = aPos * 0.5 + 0.5; gl_Position = vec4(aPos, 0.0, 1.0); }
 
 // Value noise and fbm drive a slow domain warp. The cover comes in as a tiny texture, so
 // it is already soft; two warped samples are blended for depth, then colour is enriched,
-// vignetted and given a fine grain against banding.
+// vignetted and given a still dither against banding.
 export const FRAGMENT = `
 precision highp float;
 varying vec2 vUv;
@@ -54,7 +54,8 @@ void main() {
   col *= (0.78 + uPulse * 0.06) * uDim;
   float vig = smoothstep(1.15, 0.25, length(vUv - vec2(0.5, 0.45)));
   col *= mix(0.55, 1.0, vig);
-  col += (hash(gl_FragCoord.xy + fract(uTime) * 91.0) - 0.5) * 0.035;
+  // a still, one-step dither against banding: invisible, unlike moving film grain
+  col += (hash(gl_FragCoord.xy) - 0.5) / 255.0;
   gl_FragColor = vec4(clamp(col, 0.0, 1.0), 1.0);
 }
 `;

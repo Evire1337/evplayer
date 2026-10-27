@@ -98,6 +98,14 @@ function Appearance() {
   return (
     <>
       <TabHeader icon={<IconPalette size={22} />} hue={300} title="Внешний вид" description="Фон, свечение и текст песен." />
+      <Card title="Экономия ресурсов">
+        <SwitchRow
+          title="Режим экономии памяти"
+          hint="Без живого фона, свечения, размытия и анимаций; спрятанное окно освобождает память через 4 секунды. Поиск, плейлисты, музыка и мини-плеер работают как обычно"
+          checked={s.memorySaver}
+          onChange={(v) => s.set({ memorySaver: v })}
+        />
+      </Card>
       <Card title="Фон и обложка">
         <SwitchRow title="Живой фон из обложки" hint="Медленно переливающийся фон в цветах трека. Выключите на слабом компьютере" checked={s.animatedBackdrop} onChange={(v) => s.set({ animatedBackdrop: v })} />
         <SwitchRow title="Панель «Далее»" hint="Очередь справа на экране «Сейчас играет». Можно скрыть, если не хотите знать, что будет дальше" checked={s.showQueue} onChange={(v) => s.set({ showQueue: v })} />
@@ -130,6 +138,7 @@ function sizeOf(text: string): string {
 
 function DataTab() {
   const clearHistory = useHistory((h) => h.clear);
+  const noCache = useSettings((s) => s.noCache);
   const [cache, setCache] = useState<number | null>(null);
   const [confirm, setConfirm] = useState<null | "stats" | "restore">(null);
   const [pending, setPending] = useState<ReturnType<typeof readBackup> | null>(null);
@@ -171,6 +180,18 @@ function DataTab() {
         </div>
       </Card>
       <Card title="Очистка">
+        <SwitchRow
+          title="Не хранить кэш"
+          hint="Обложки и ответы сервисов не копятся на диске, тексты песен не запоминаются. Полностью включается после перезапуска EvPlayer"
+          checked={noCache}
+          onChange={(v) => {
+            useSettings.getState().set({ noCache: v });
+            if (v) {
+              clearLyricsCache();
+              setCache(0);
+            }
+          }}
+        />
         <Row title="Кэш" hint="Обложки и ответы сервисов — скачаются заново, когда понадобятся">
           <button type="button" className="btn ghost" onClick={async () => { await window.evplayer?.clearCache(); clearLyricsCache(); setCache(0); toast("Кэш очищен"); }}>Очистить</button>
         </Row>
