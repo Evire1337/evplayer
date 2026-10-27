@@ -19,7 +19,7 @@ export default function Rail() {
         <button
           key={id}
           type="button"
-          className={`rail-btn${page === id ? " is-active" : ""}`}
+          className={`rail-btn${page === id || (id === "library" && page === "playlist") ? " is-active" : ""}`}
           aria-label={label}
           aria-current={page === id ? "page" : undefined}
           onClick={() => go(id)}

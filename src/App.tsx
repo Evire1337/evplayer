@@ -8,6 +8,10 @@ import HomePage from "@/pages/HomePage";
 import SearchPage from "@/pages/SearchPage";
 import LibraryPage from "@/pages/LibraryPage";
 import NowPlayingPage from "@/pages/NowPlayingPage";
+import PlaylistPage from "@/pages/PlaylistPage";
+import ContextMenu from "@/ui/components/ContextMenu";
+import Toasts from "@/ui/components/Toasts";
+import LibraryDialogs from "@/library/LibraryDialogs";
 
 export default function App() {
   const page = useNavigation((s) => s.page);
@@ -23,9 +27,13 @@ export default function App() {
         {page === "home" && <HomePage />}
         {page === "search" && <SearchPage />}
         {page === "library" && <LibraryPage />}
+        {page === "playlist" && <PlaylistPage />}
       </main>
       {page !== "now" && <MiniPlayer />}
       <UpdateToast />
+      <Toasts />
+      <ContextMenu />
+      <LibraryDialogs />
     </div>
   );
 }

@@ -29,3 +29,13 @@ export const IconQueue = (p: P) => <Svg {...p}><path d="M4 6h12M4 11h12M4 16h7" 
 export const IconMinus = (p: P) => <Svg {...p}><path d="M6 12h12" /></Svg>;
 export const IconPlus = (p: P) => <Svg {...p}><path d="M12 6v12M6 12h12" /></Svg>;
 export const IconExpand = (p: P) => <Svg {...p}><path d="M9 4H4v5M15 4h5v5M9 20H4v-5M15 20h5v-5" /></Svg>;
+export const IconHeart = (p: P) => <Svg {...p}><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z" /></Svg>;
+export const IconHeartFill = (p: P) => <Svg {...p}><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z" fill="currentColor" /></Svg>;
+export const IconListPlus = (p: P) => <Svg {...p}><path d="M4 6h11M4 11h11M4 16h7M17 14v6M14 17h6" /></Svg>;
+export const IconTrash = (p: P) => <Svg {...p}><path d="M5 7h14M10 7V5h4v2M7 7l1 12h8l1-12" /></Svg>;
+export const IconMore = (p: P) => <Svg {...p}><circle cx="6" cy="12" r="1.4" fill="currentColor" /><circle cx="12" cy="12" r="1.4" fill="currentColor" /><circle cx="18" cy="12" r="1.4" fill="currentColor" /></Svg>;
+export const IconShare = (p: P) => <Svg {...p}><path d="M12 15V4M8 8l4-4 4 4" /><path d="M5 13v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5" /></Svg>;
+export const IconImage = (p: P) => <Svg {...p}><rect x="4" y="5" width="16" height="14" rx="2" /><circle cx="9" cy="10" r="1.6" /><path d="M20 16l-5-5-8 8" /></Svg>;
+export const IconPencil = (p: P) => <Svg {...p}><path d="M4 20l4-1 11-11-3-3L5 16z" /></Svg>;
+export const IconGrip = (p: P) => <Svg {...p}><circle cx="9" cy="7" r="1.2" fill="currentColor" /><circle cx="15" cy="7" r="1.2" fill="currentColor" /><circle cx="9" cy="12" r="1.2" fill="currentColor" /><circle cx="15" cy="12" r="1.2" fill="currentColor" /><circle cx="9" cy="17" r="1.2" fill="currentColor" /><circle cx="15" cy="17" r="1.2" fill="currentColor" /></Svg>;
+export const IconCode = (p: P) => <Svg {...p}><path d="M8 8l-4 4 4 4M16 8l4 4-4 4" /></Svg>;

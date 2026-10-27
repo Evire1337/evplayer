@@ -1,29 +1,99 @@
 import type { Track } from "@/types";
 import { player } from "@/player/engine";
 import { currentTrack, usePlayer } from "@/player/store";
+import { useIsLiked, useLibrary } from "@/library/store";
+import { trackMenuItems, type TrackMenuContext } from "@/library/trackMenu";
+import { openMenu } from "../menu";
 import { artistLine, formatCount, formatTime } from "../format";
-import { IconPause, IconPlay } from "./Icons";
+import { formatAddedAt } from "../dates";
+import { IconGrip, IconHeart, IconHeartFill, IconMore, IconPause, IconPlay } from "./Icons";
 
-export default function TrackRow({ track, queue, index }: { track: Track; queue: Track[]; index: number }) {
+export interface TrackRowProps {
+  track: Track;
+  queue: Track[];
+  index: number;
+  addedAt?: string;
+  menu?: TrackMenuContext;
+  number?: number;
+  /** drag to reorder */
+  draggable?: boolean;
+  onDragStart?: () => void;
+  onDragOverRow?: (before: boolean) => void;
+  onDrop?: () => void;
+  dropHint?: "before" | "after" | null;
+}
+
+export default function TrackRow({ track, queue, index, addedAt, menu, number, draggable, onDragStart, onDragOverRow, onDrop, dropHint }: TrackRowProps) {
   const isCurrent = usePlayer((s) => currentTrack(s)?.id === track.id);
   const playing = usePlayer((s) => s.status === "playing");
+  const liked = useIsLiked(track.id);
   const active = isCurrent && playing;
   return (
-    <button
-      type="button"
-      className={`track-row${isCurrent ? " is-current" : ""}`}
+    <div
+      className={`track-row${isCurrent ? " is-current" : ""}${addedAt !== undefined ? " has-date" : ""}${dropHint ? ` drop-${dropHint}` : ""}`}
+      role="button"
+      tabIndex={0}
       onClick={() => (isCurrent ? player.toggle() : void player.playQueue(queue, index))}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") isCurrent ? player.toggle() : void player.playQueue(queue, index);
+      }}
+      onContextMenu={(e) => openMenu(e, trackMenuItems(track, menu))}
+      draggable={draggable}
+      onDragStart={(e) => {
+        e.dataTransfer.effectAllowed = "move";
+        onDragStart?.();
+      }}
+      onDragOver={(e) => {
+        if (!onDragOverRow) return;
+        e.preventDefault();
+        const r = e.currentTarget.getBoundingClientRect();
+        onDragOverRow(e.clientY < r.top + r.height / 2);
+      }}
+      onDrop={(e) => {
+        e.preventDefault();
+        onDrop?.();
+      }}
     >
-      <span className="track-art">
-        {track.artwork ? <img src={track.artwork} alt="" loading="lazy" /> : null}
-        <span className="track-art-overlay">{active ? <IconPause size={16} /> : <IconPlay size={16} />}</span>
+      <span className="track-lead">
+        {draggable ? (
+          <span className="track-grip" aria-hidden="true"><IconGrip size={16} /></span>
+        ) : number !== undefined ? (
+          <span className="track-num">{number}</span>
+        ) : null}
+        <span className="track-art">
+          {track.artwork ? <img src={track.artwork} alt="" loading="lazy" draggable={false} /> : null}
+          <span className="track-art-overlay">{active ? <IconPause size={16} /> : <IconPlay size={16} />}</span>
+        </span>
       </span>
       <span className="track-text">
         <span className="track-title">{track.title}</span>
         <span className="track-artist">{artistLine(track.artists)}</span>
       </span>
-      {track.plays !== undefined && <span className="track-plays">{formatCount(track.plays)}</span>}
+      {addedAt !== undefined && <span className="track-date">{formatAddedAt(addedAt)}</span>}
+      {track.plays !== undefined && addedAt === undefined && <span className="track-plays">{formatCount(track.plays)}</span>}
+      <button
+        type="button"
+        className={`row-icon${liked ? " is-liked" : ""}`}
+        aria-label={liked ? "Убрать из понравившихся" : "Нравится"}
+        onClick={(e) => {
+          e.stopPropagation();
+          useLibrary.getState().toggleLike(track);
+        }}
+      >
+        {liked ? <IconHeartFill size={17} /> : <IconHeart size={17} />}
+      </button>
       <span className="track-time">{formatTime(track.durationMs)}</span>
-    </button>
+      <button
+        type="button"
+        className="row-icon"
+        aria-label="Ещё"
+        onClick={(e) => {
+          const r = e.currentTarget.getBoundingClientRect();
+          openMenu({ clientX: r.left, clientY: r.bottom + 4, preventDefault: () => e.preventDefault(), stopPropagation: () => e.stopPropagation() }, trackMenuItems(track, menu));
+        }}
+      >
+        <IconMore size={18} />
+      </button>
+    </div>
   );
 }

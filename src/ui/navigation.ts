@@ -1,8 +1,15 @@
 import { create } from "zustand";
 
-export type Page = "now" | "home" | "search" | "library";
+export type Page = "now" | "home" | "search" | "library" | "playlist";
 
-export const useNavigation = create<{ page: Page; go: (page: Page) => void }>((set) => ({
+interface NavState {
+  page: Page;
+  /** for "playlist": a playlist id, or "likes" */
+  playlistId?: string;
+  go: (page: Page, playlistId?: string) => void;
+}
+
+export const useNavigation = create<NavState>((set) => ({
   page: "home",
-  go: (page) => set({ page }),
+  go: (page, playlistId) => set({ page, playlistId }),
 }));

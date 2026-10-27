@@ -2,10 +2,12 @@ import type { Track } from "@/types";
 import { player } from "@/player/engine";
 import { artistLine } from "../format";
 import { IconPlay } from "./Icons";
+import { openMenu } from "../menu";
+import { trackMenuItems } from "@/library/trackMenu";
 
 export default function TrackCard({ track, queue, index, rank }: { track: Track; queue: Track[]; index: number; rank?: number }) {
   return (
-    <button type="button" className="track-card" onClick={() => void player.playQueue(queue, index)}>
+    <button type="button" className="track-card" onClick={() => void player.playQueue(queue, index)} onContextMenu={(e) => openMenu(e, trackMenuItems(track))}>
       <span className="track-card-art">
         {track.artwork ? <img src={track.artwork} alt="" loading="lazy" /> : null}
         {rank !== undefined && <span className="track-card-rank">{rank}</span>}

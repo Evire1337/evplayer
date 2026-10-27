@@ -78,6 +78,27 @@ class PlayerEngine {
     await this.load(track);
   }
 
+  /** put a track right after the current one */
+  playNext(track: Track): void {
+    const s = usePlayer.getState();
+    if (s.queue.length === 0) {
+      void this.playQueue([track]);
+      return;
+    }
+    const queue = [...s.queue];
+    queue.splice(s.index + 1, 0, track);
+    usePlayer.setState({ queue });
+  }
+
+  addToQueue(track: Track): void {
+    const s = usePlayer.getState();
+    if (s.queue.length === 0) {
+      void this.playQueue([track]);
+      return;
+    }
+    usePlayer.setState({ queue: [...s.queue, track] });
+  }
+
   toggle(): void {
     const { status } = usePlayer.getState();
     if (status === "playing") this.audio.pause();
