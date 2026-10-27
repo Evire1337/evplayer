@@ -9,7 +9,8 @@ const rows = [row("a", "Яблоко", "Б", 200, "2026-01-02"), row("b", "apple
 
 describe("sortRows", () => {
   it("sorts by each key", () => {
-    expect(sortRows(rows, "title", "asc").map((r) => r.track.id)).toEqual(["b", "c", "a"]);
+    // Russian order: Cyrillic names first, then Latin
+    expect(sortRows(rows, "title", "asc").map((r) => r.track.id)).toEqual(["c", "a", "b"]);
     expect(sortRows(rows, "duration", "desc").map((r) => r.track.id)).toEqual(["c", "a", "b"]);
     expect(sortRows(rows, "added", "desc").map((r) => r.track.id)).toEqual(["b", "a", "c"]);
     expect(sortRows(rows, "artist", "asc").map((r) => r.track.id)).toEqual(["b", "a", "c"]);
