@@ -12,6 +12,9 @@ import { SMART_INFO } from "@/stats/smart";
 import { formatListenTime, playsWord } from "@/stats/format";
 import { useLibrary } from "@/library/store";
 import { newFromArtists } from "@/home/newFromArtists";
+import { recommendations, type Recommendations } from "@/home/recommendations";
+import { player } from "@/player/engine";
+import { IconRadio } from "@/ui/components/Icons";
 import { useNavigation } from "@/ui/navigation";
 
 function greeting(date = new Date()): string {
@@ -150,6 +153,55 @@ function Tops({ version }: { version: number }) {
   );
 }
 
+function ForYou() {
+  const likes = useLibrary((s) => s.likes);
+  const history = useHistory((s) => s.entries);
+  const [data, setData] = useState<Recommendations | null>(null);
+  const [state, setState] = useState<"loading" | "ready">("loading");
+  // recompute when the seeds could have changed, not on every play
+  const key = `${likes.length}|${history[0]?.track.id ?? ""}`;
+  useEffect(() => {
+    if (!likes.length && !history.length) {
+      setState("ready");
+      return;
+    }
+    const controller = new AbortController();
+    recommendations(likes, history, controller.signal)
+      .then((r) => {
+        if (controller.signal.aborted) return;
+        setData(r);
+        setState("ready");
+      })
+      .catch(() => setState("ready"));
+    return () => controller.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+  if (state === "ready" && !data?.forYou.length) return null;
+  return (
+    <>
+      <section className="row">
+        <div className="row-head">
+          <h2 className="row-title">Рекомендации для вас</h2>
+          {data?.forYou.length ? (
+            <button type="button" className="btn ghost" onClick={() => void player.playQueue(data.forYou)}>
+              <IconRadio size={16} /> Слушать подборку
+            </button>
+          ) : null}
+        </div>
+        <p className="muted small row-hint">По тому, что вы слушаете и лайкаете</p>
+        <div className="row-scroll">
+          {state === "loading"
+            ? Array.from({ length: 8 }, (_, i) => <span key={i} className="track-card skeleton" />)
+            : data!.forYou.map((t, i) => <TrackCard key={t.id} track={t} queue={data!.forYou} index={i} />)}
+        </div>
+      </section>
+      {data?.because.map((b) => (
+        <Row key={b.seed.id} title={`Похоже на «${b.seed.title}»`} tracks={b.tracks} state="ready" />
+      ))}
+    </>
+  );
+}
+
 function NewFromArtists() {
   const likes = useLibrary((s) => s.likes);
   const [tracks, setTracks] = useState<Track[]>([]);
@@ -183,6 +235,7 @@ export default function HomePage() {
         )}
       </header>
       <Recent />
+      <ForYou />
       <SmartRow version={version} />
       <Tops version={version} />
       <NewFromArtists />

@@ -62,7 +62,9 @@ export function nextIndex(state: PlayerState, manual: boolean): number {
   if (queue.length === 0) return -1;
   if (repeat === "one" && !manual) return index;
   if (index + 1 < queue.length) return index + 1;
-  return repeat === "all" || manual ? 0 : -1;
+  // at the end: start over only with "repeat all"; otherwise the player decides
+  // (similar songs when autoplay is on)
+  return repeat === "all" ? 0 : -1;
 }
 
 export function prevIndex(state: PlayerState): number {

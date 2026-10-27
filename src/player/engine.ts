@@ -6,7 +6,7 @@ import { createAudioGraph, type AudioGraph } from "@/audio/graph";
 import { setLevelingTrack } from "@/equalizer/eqAudio";
 import { effectsForNextTrack, useEffects, type EffectsState } from "./effects";
 import { YouTubeEmbed } from "./youtubeEmbed";
-import { similarTracks } from "./radio";
+import { similarTracks, songKey } from "./radio";
 import { useSettings } from "@/settings/store";
 import { HISTORY_AFTER_MS, useHistory } from "@/stats/history";
 import { recordListen } from "@/stats/listeningStats";
@@ -34,6 +34,7 @@ class PlayerEngine {
   private lastPos = -1;
   private counted = false;
   private radioBusy = false;
+  private playWhenExtended = false;
   /** a restored session starts at this position */
   private resumeAt = 0;
 
@@ -290,7 +291,8 @@ class PlayerEngine {
     const state = usePlayer.getState();
     const i = nextIndex(state, manual);
     if (i < 0) {
-      if (useSettings.getState().autoplay) void this.extendWithSimilar();
+      if (useSettings.getState().autoplay) void this.extendWithSimilar(true);
+      else if (manual && state.queue.length > 1) void this.playIndex(0);
       else usePlayer.setState({ status: "paused" });
       return;
     }
@@ -302,24 +304,37 @@ class PlayerEngine {
     void this.playIndex(i);
   }
 
-  private async extendWithSimilar(): Promise<void> {
+  /**
+   * Add similar songs after the queue. With `play`, jump to the first of them (the queue
+   * ran out); without, it is a quiet top-up while the last song is still playing, so
+   * "next" never has to wait.
+   */
+  private async extendWithSimilar(play: boolean): Promise<void> {
     const state = usePlayer.getState();
     const seed = currentTrack(state);
-    if (!seed || this.radioBusy) return;
+    if (!seed) return;
+    if (this.radioBusy) {
+      if (play) this.playWhenExtended = true;
+      return;
+    }
     this.radioBusy = true;
+    if (play) this.playWhenExtended = true;
     try {
-      const more = await similarTracks(seed, new Set(state.queue.map((t) => t.id)));
+      // songs heard recently are not offered again straight away
+      const recent = state.queue.slice(Math.max(0, state.index - 100));
+      const more = await similarTracks(seed, new Set([...recent.map((t) => t.id), ...recent.map(songKey)]));
+      const now = usePlayer.getState();
       if (!more.length) {
-        usePlayer.setState({ status: "paused" });
+        if (this.playWhenExtended) usePlayer.setState({ status: "paused", error: "Не нашлось похожих треков" });
         return;
       }
-      const queue = [...usePlayer.getState().queue, ...more];
-      usePlayer.setState({ queue });
-      await this.playIndex(state.index + 1);
+      usePlayer.setState({ queue: [...now.queue, ...more] });
+      if (this.playWhenExtended && now.index === state.index) await this.playIndex(state.index + 1);
     } catch {
-      usePlayer.setState({ status: "paused" });
+      if (this.playWhenExtended) usePlayer.setState({ status: "paused" });
     } finally {
       this.radioBusy = false;
+      this.playWhenExtended = false;
     }
   }
 
@@ -336,6 +351,8 @@ class PlayerEngine {
     if (!this.firstTrack) useEffects.setState(effectsForNextTrack(useEffects.getState()));
     setLevelingTrack(track.id);
     this.firstTrack = false;
+    const st = usePlayer.getState();
+    if (st.index >= st.queue.length - 2 && st.repeat === "off" && useSettings.getState().autoplay) void this.extendWithSimilar(false);
     try {
       const stream = await resolveStream(track, controller.signal);
       if (token !== this.loadToken) return;

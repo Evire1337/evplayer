@@ -264,3 +264,43 @@ export function parseArtist(response: unknown): YouTubeArtist {
 export async function youTubeArtist(channelId: string, signal?: AbortSignal): Promise<YouTubeArtist> {
   return parseArtist(await call("browse", { browseId: channelId.replace(/^yta:/, "") }, signal));
 }
+
+/** one song in a YouTube Music "up next" list */
+export function parsePanelItem(item: Json): Track | null {
+  const videoId = item.videoId as string | undefined;
+  const title = (item.title as { runs?: Run[] } | undefined)?.runs?.map((r) => r.text).join("");
+  if (!videoId || !title) return null;
+  const byline = (item.longBylineText as { runs?: Run[] } | undefined)?.runs ?? [];
+  const artists = byline
+    .filter((r) => r.navigationEndpoint?.browseEndpoint?.browseEndpointContextSupportedConfigs?.browseEndpointContextMusicConfig?.pageType?.match(/ARTIST|USER_CHANNEL/))
+    .map((r) => ({ id: `yta:${r.navigationEndpoint!.browseEndpoint!.browseId}`, name: r.text }));
+  if (!artists.length && byline[0]?.text) artists.push({ id: `ytn:${byline[0].text}`, name: byline[0].text });
+  const views = byline.map((r) => r.text).find((t) => /\d/.test(t) && /(просм|views|прослуш|plays)/i.test(t));
+  const length = (item.lengthText as { runs?: Run[] } | undefined)?.runs?.[0]?.text ?? "";
+  return {
+    id: `yt:${videoId}`,
+    source: "youtube",
+    title,
+    artists,
+    durationMs: parseDuration(length),
+    artwork: bestThumb(item),
+    plays: views ? parseCount(views) : undefined,
+    permalink: `https://music.youtube.com/watch?v=${videoId}`,
+  };
+}
+
+export function parseUpNext(response: unknown): Track[] {
+  const out: Track[] = [];
+  for (const item of findAll(response, "playlistPanelVideoRenderer")) {
+    const t = parsePanelItem(item);
+    if (t && !out.some((x) => x.id === t.id)) out.push(t);
+  }
+  return out;
+}
+
+/** YouTube Music's own radio for a song: what plays after it on music.youtube.com */
+export async function youTubeRadio(videoId: string, signal?: AbortSignal): Promise<Track[]> {
+  const id = videoId.replace(/^yt:/, "");
+  const response = await call("next", { videoId: id, playlistId: `RDAMVM${id}`, isAudioOnly: true }, signal);
+  return parseUpNext(response).filter((t) => t.id !== `yt:${id}`);
+}

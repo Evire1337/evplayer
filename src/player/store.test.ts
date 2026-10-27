@@ -22,6 +22,8 @@ describe("queue navigation", () => {
     expect(nextIndex(base({ index: 2, repeat: "all" }), false)).toBe(0);
     expect(nextIndex(base({ index: 1, repeat: "one" }), false)).toBe(1);
     expect(nextIndex(base({ index: 1, repeat: "one" }), true)).toBe(2);
+    // "next" on the last song does not start the queue over: autoplay continues instead
+    expect(nextIndex(base({ index: 2 }), true)).toBe(-1);
     expect(prevIndex(base({ index: 0, repeat: "all" }))).toBe(2);
   });
   it("shuffles but keeps the chosen track first", () => {

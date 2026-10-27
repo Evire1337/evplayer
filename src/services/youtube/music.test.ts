@@ -45,3 +45,15 @@ describe("youtube collections", () => {
     expect(list[0].subtitle).toContain("Dowita 2610");
   });
 });
+
+import nextFixture from "./next.test.json";
+import { parseUpNext } from "./music";
+
+describe("youtube radio", () => {
+  it("reads the up next list", () => {
+    const list = parseUpNext(nextFixture);
+    expect(list.length).toBe(3);
+    expect(list[1]).toMatchObject({ id: "yt:pjSMPn8dEN0", title: "Snoh Aalegra - I Love You", durationMs: 207000, plays: 327000 });
+    expect(list[1].artists[0].name).toBe("Snoh Aalegra");
+  });
+});
