@@ -59,7 +59,7 @@ export default function QueuePanel() {
                   onClick={() => void player.playIndex(at)}
                   onContextMenu={(e) => openMenu(e, trackMenuItems(t, { queueIndex: at }))}
                 >
-                  <span className="queue-art"><Artwork src={t.artwork} /></span>
+                  <span className="queue-art"><Artwork src={t.artwork} size="row" /></span>
                   <span className="queue-text">
                     <span className="queue-name">{t.title}</span>
                     <span className="queue-sub">{artistLine(t.artists)} · {SOURCE_LABEL[t.source]}</span>

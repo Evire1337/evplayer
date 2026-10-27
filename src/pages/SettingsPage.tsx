@@ -39,6 +39,20 @@ function Playback() {
       <TabHeader icon={<IconPlayCircle size={22} />} hue={160} title="Воспроизведение" description="Что происходит, когда музыка заканчивается, запускается или меняется устройство." />
       <Card title="Очередь">
         <SwitchRow title="Автовоспроизведение" hint="Когда очередь закончится, продолжить похожими треками" checked={s.autoplay} onChange={(v) => s.set({ autoplay: v })} />
+        <Row title="Плавный переход" hint={s.crossfade ? `Следующий трек вступает за ${s.crossfade} с до конца текущего` : "Выключен: следующий трек готовится заранее и начинается сразу, без паузы"}>
+          <input
+            type="range"
+            className="dial small-dial"
+            min={0}
+            max={12}
+            step={1}
+            value={s.crossfade}
+            aria-label="Плавный переход, секунд"
+            onChange={(e) => s.set({ crossfade: Number(e.target.value) })}
+            style={{ "--fill": `${(s.crossfade / 12) * 100}%` } as React.CSSProperties}
+          />
+          <span className="muted small tabular">{s.crossfade ? `${s.crossfade} с` : "выкл"}</span>
+        </Row>
         <SwitchRow title="Продолжать с места" hint="При запуске вернуть очередь и позицию — останется только нажать «Играть»" checked={s.resumeOnStart} onChange={(v) => s.set({ resumeOnStart: v })} />
         <SwitchRow title="Запуск двойным кликом" hint="Одиночный клик по треку только выделяет его — удобно, если часто промахиваетесь" checked={s.doubleClickToPlay} onChange={(v) => s.set({ doubleClickToPlay: v })} />
       </Card>

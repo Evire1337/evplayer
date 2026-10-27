@@ -20,7 +20,7 @@ export default function TrackCard({ track, queue, index, rank, sub }: { track: T
       onContextMenu={(e) => openMenu(e, trackMenuItems(track))}
     >
       <span className="track-card-art">
-        <Artwork src={track.artwork} />
+        <Artwork src={track.artwork} size="card" />
         {rank !== undefined && <span className="track-card-rank">{rank}</span>}
         <span className="track-card-play" aria-label={playing ? "Пауза" : "Играть"}>
           {loading ? <span className="spinner" /> : playing ? <IconPause size={18} /> : <IconPlay size={18} />}

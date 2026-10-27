@@ -5,21 +5,21 @@ import MiniPlayer from "@/ui/components/MiniPlayer";
 import UpdateToast from "@/ui/components/UpdateToast";
 import { useNavigation } from "@/ui/navigation";
 import HomePage from "@/pages/HomePage";
-import SearchPage from "@/pages/SearchPage";
-import LibraryPage from "@/pages/LibraryPage";
+const SearchPage = lazy(() => import("@/pages/SearchPage"));
+const LibraryPage = lazy(() => import("@/pages/LibraryPage"));
 import NowPlayingPage from "@/pages/NowPlayingPage";
-import PlaylistPage from "@/pages/PlaylistPage";
-import FilesPage from "@/pages/FilesPage";
-import SettingsPage from "@/pages/SettingsPage";
-import ArtistPage from "@/pages/ArtistPage";
-import SmartPage from "@/pages/SmartPage";
-import CollectionPage from "@/pages/CollectionPage";
+const PlaylistPage = lazy(() => import("@/pages/PlaylistPage"));
+const FilesPage = lazy(() => import("@/pages/FilesPage"));
+const SettingsPage = lazy(() => import("@/pages/SettingsPage"));
+const ArtistPage = lazy(() => import("@/pages/ArtistPage"));
+const SmartPage = lazy(() => import("@/pages/SmartPage"));
+const CollectionPage = lazy(() => import("@/pages/CollectionPage"));
 import ContextMenu from "@/ui/components/ContextMenu";
 import Toasts from "@/ui/components/Toasts";
 import ImportPill from "@/ui/components/ImportPill";
 import Tooltip from "@/ui/components/Tooltip";
 import LyricsTracker from "@/ui/components/LyricsTracker";
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import LibraryDialogs from "@/library/LibraryDialogs";
 import SpotifyExportDialog from "@/library/SpotifyExportDialog";
 import TrackStatsDialog from "@/stats/TrackStatsDialog";
@@ -51,6 +51,8 @@ export default function App() {
       </div>
       <Rail />
       <main className="content">
+        {/* pages other than Home and Now playing load the first time they are opened */}
+        <Suspense fallback={<div className="page-loading" />}>
         {page === "now" && <NowPlayingPage />}
         {page === "home" && <HomePage />}
         {page === "search" && <SearchPage />}
@@ -61,6 +63,7 @@ export default function App() {
         {page === "artist" && <ArtistPage />}
         {page === "smart" && <SmartPage />}
         {page === "collection" && <CollectionPage />}
+        </Suspense>
       </main>
       {page !== "now" && <MiniPlayer />}
       <UpdateToast />

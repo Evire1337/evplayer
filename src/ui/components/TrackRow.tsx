@@ -78,7 +78,7 @@ export default function TrackRow({ track, queue, index, addedAt, menu, number, d
           <span className="track-num">{number}</span>
         ) : null}
         <span className="track-art">
-          <Artwork src={track.artwork} />
+          <Artwork src={track.artwork} size="row" />
           <span className="track-art-overlay">{active ? <IconPause size={16} /> : <IconPlay size={16} />}</span>
         </span>
       </span>

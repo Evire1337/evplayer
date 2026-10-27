@@ -1,3 +1,4 @@
+import VirtualList from "@/ui/components/VirtualList";
 import { useEffect, useState } from "react";
 import type { Track } from "@/types";
 import { useNavigation } from "@/ui/navigation";
@@ -114,9 +115,7 @@ export default function CollectionPage() {
       {state === "error" && <p className="muted center">Не получилось открыть.</p>}
       {state === "loading" && <p className="muted center">Загружаю треки…</p>}
       <div className="track-list">
-        {tracks.map((t, i) => (
-          <TrackRow key={t.id + i} track={t} queue={tracks} index={i} number={data?.kind === "album" ? i + 1 : undefined} />
-        ))}
+        <VirtualList items={tracks} getKey={(t, i) => t.id + i} render={(t, i) => <TrackRow track={t} queue={tracks} index={i} number={data?.kind === "album" ? i + 1 : undefined} />} />
       </div>
     </div>
   );

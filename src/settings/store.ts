@@ -34,6 +34,8 @@ export interface SoundCloudAccount {
 export interface SettingsState {
   // playback
   autoplay: boolean;
+  /** seconds the next song fades in over the end of the current one; 0 = straight cut, no gap */
+  crossfade: number;
   youtubeMatchSoundCloud: boolean;
   defaultSearchSource: SearchSource;
   /** start where you stopped last time (queue and position) */
@@ -90,6 +92,7 @@ const DEFAULTS = {
   autoplay: true,
   youtubeMatchSoundCloud: true,
   defaultSearchSource: "all" as SearchSource,
+  crossfade: 0,
   resumeOnStart: true,
   pauseOnDeviceChange: true,
   doubleClickToPlay: false,

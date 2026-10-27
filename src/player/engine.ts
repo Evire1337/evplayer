@@ -11,22 +11,49 @@ import { useSettings } from "@/settings/store";
 import { HISTORY_AFTER_MS, useHistory } from "@/stats/history";
 import { recordListen } from "@/stats/listeningStats";
 
-// One <audio> element for the whole app. HLS streams go through hls.js, plain files play
-// directly, YouTube songs without a SoundCloud copy use the official YouTube player. The OS
-// media controls (keyboard keys, the Windows volume flyout) are wired via the Media
-// Session API.
+// Two <audio> "decks": one plays, the other gets the next song ready shortly before the
+// end, so it starts without a gap (or fades in over the end, with crossfade on). HLS streams
+// go through hls.js, plain files play directly, YouTube songs without a SoundCloud copy use
+// the official YouTube player. The OS media controls are wired via the Media Session API.
 
 type Mode = "audio" | "embed";
 
+interface Deck {
+  audio: HTMLAudioElement;
+  hls: Hls | null;
+}
+
+interface Prepared {
+  index: number;
+  track: Track;
+  route?: "matched";
+  ready: boolean;
+}
+
+/** how long before the end the next song starts loading */
+const PREPARE_BEFORE_MS = 25_000;
+
+function makeDeck(volume: number): Deck {
+  const audio = new Audio();
+  audio.crossOrigin = "anonymous";
+  audio.preload = "auto";
+  audio.volume = volume;
+  return { audio, hls: null };
+}
+
 class PlayerEngine {
-  readonly audio: HTMLAudioElement;
-  private hls: Hls | null = null;
+  private decks: [Deck, Deck];
+  private active = 0;
   private loadAbort: AbortController | null = null;
   private loadToken = 0;
   private graph: AudioGraph;
   private firstTrack = true;
   private mode: Mode = "audio";
   private embed: YouTubeEmbed;
+  // the next song, waiting on the other deck
+  private prepared: Prepared | null = null;
+  private prepareAbort: AbortController | null = null;
+  private transitioning = false;
   // listening: how much of the current song was actually heard
   private session = "";
   private sessionTrack: Track | null = null;
@@ -38,32 +65,23 @@ class PlayerEngine {
   /** a restored session starts at this position */
   private resumeAt = 0;
 
-  constructor() {
-    this.audio = new Audio();
-    this.audio.crossOrigin = "anonymous";
-    this.audio.preload = "auto";
-    const state = usePlayer.getState();
-    this.audio.volume = state.volume;
+  private get cur(): Deck {
+    return this.decks[this.active];
+  }
 
-    this.audio.addEventListener("timeupdate", () => {
-      if (this.mode !== "audio") return;
-      const pos = this.audio.currentTime * 1000;
-      usePlayer.setState({ positionMs: pos });
-      this.heard(pos, !this.audio.paused);
-    });
-    this.audio.addEventListener("durationchange", () => {
-      const d = this.audio.duration;
-      if (this.mode === "audio" && Number.isFinite(d)) usePlayer.setState({ durationMs: d * 1000 });
-    });
-    this.audio.addEventListener("playing", () => this.mode === "audio" && usePlayer.setState({ status: "playing", error: undefined }));
-    this.audio.addEventListener("pause", () => {
-      if (this.mode === "audio" && usePlayer.getState().status === "playing") usePlayer.setState({ status: "paused" });
-    });
-    this.audio.addEventListener("ended", () => this.mode === "audio" && this.advance(false));
-    this.audio.addEventListener("error", () => {
-      if (this.mode !== "audio" || !this.audio.getAttribute("src")) return;
-      if (usePlayer.getState().status !== "loading") usePlayer.setState({ status: "error", error: "Не удалось воспроизвести трек" });
-    });
+  private get spare(): Deck {
+    return this.decks[1 - this.active];
+  }
+
+  /** the element that is playing (for code that only needs to read it) */
+  get audio(): HTMLAudioElement {
+    return this.cur.audio;
+  }
+
+  constructor() {
+    const state = usePlayer.getState();
+    this.decks = [makeDeck(state.volume), makeDeck(state.volume)];
+    for (const deck of this.decks) this.listen(deck);
 
     this.embed = new YouTubeEmbed({
       onPlaying: () => usePlayer.setState({ status: "playing", error: undefined }),
@@ -86,24 +104,65 @@ class PlayerEngine {
 
     usePlayer.subscribe((s, prev) => {
       if (s.volume !== prev.volume || s.muted !== prev.muted) {
-        this.audio.volume = s.volume;
-        this.audio.muted = s.muted;
+        for (const deck of this.decks) {
+          deck.audio.volume = s.volume;
+          deck.audio.muted = s.muted;
+        }
         this.embed.setVolume(s.volume, s.muted);
       }
+      // the queue changed under the prepared song: get the right one ready instead
+      if (this.prepared && s.queue !== prev.queue && s.queue[this.prepared.index]?.id !== this.prepared.track.id) this.dropPrepared();
     });
     this.setupMediaSession();
 
-    this.graph = createAudioGraph(this.audio);
+    this.graph = createAudioGraph(this.decks.map((d) => d.audio));
     useEffects.subscribe((fx) => this.applyEffects(fx));
-    this.audio.addEventListener("play", () => this.graph.resume());
     window.addEventListener("beforeunload", () => this.finishListen());
   }
 
+  private listen(deck: Deck): void {
+    const a = deck.audio;
+    const isCur = () => deck === this.cur && this.mode === "audio";
+    a.addEventListener("play", () => this.graph.resume());
+    a.addEventListener("timeupdate", () => {
+      if (!isCur()) return;
+      const pos = a.currentTime * 1000;
+      usePlayer.setState({ positionMs: pos });
+      this.heard(pos, !a.paused);
+      this.nearEnd(a);
+    });
+    a.addEventListener("durationchange", () => {
+      if (isCur() && Number.isFinite(a.duration)) usePlayer.setState({ durationMs: a.duration * 1000 });
+    });
+    a.addEventListener("playing", () => isCur() && usePlayer.setState({ status: "playing", error: undefined }));
+    a.addEventListener("pause", () => {
+      if (isCur() && !this.transitioning && usePlayer.getState().status === "playing") usePlayer.setState({ status: "paused" });
+    });
+    a.addEventListener("canplay", () => {
+      if (deck === this.spare && this.prepared) this.prepared.ready = true;
+    });
+    a.addEventListener("ended", () => {
+      if (!isCur()) return;
+      if (this.prepared?.ready && usePlayer.getState().repeat !== "one") this.transition(0);
+      else this.advance(false);
+    });
+    a.addEventListener("error", () => {
+      if (deck === this.spare) {
+        this.dropPrepared();
+        return;
+      }
+      if (!isCur() || !a.getAttribute("src")) return;
+      if (usePlayer.getState().status !== "loading") usePlayer.setState({ status: "error", error: "Не удалось воспроизвести трек" });
+    });
+  }
+
   private applyEffects(fx: EffectsState = useEffects.getState()): void {
-    this.audio.defaultPlaybackRate = fx.speed;
-    this.audio.playbackRate = fx.speed;
-    // linked: the speed also moves the pitch, the way a faster record sounds higher
-    this.audio.preservesPitch = !fx.linked;
+    for (const { audio } of this.decks) {
+      audio.defaultPlaybackRate = fx.speed;
+      audio.playbackRate = fx.speed;
+      // linked: the speed also moves the pitch, the way a faster record sounds higher
+      audio.preservesPitch = !fx.linked;
+    }
     this.graph.apply({ pitchSemitones: fx.linked ? 0 : fx.pitch, reverb: fx.reverb, reverbAmount: fx.reverbAmount });
     if (this.mode === "embed") this.embed.setRate(fx.speed);
   }
@@ -163,6 +222,11 @@ class PlayerEngine {
     const track = usePlayer.getState().queue[index];
     if (!track) return;
     this.resumeAt = 0;
+    // "next" onto the song that is already waiting: switch at once
+    if (this.prepared?.ready && this.prepared.index === index && this.prepared.track.id === track.id && this.mode === "audio") {
+      this.transition(0);
+      return;
+    }
     usePlayer.setState({ index });
     await this.load(track);
   }
@@ -236,12 +300,16 @@ class PlayerEngine {
 
   private pause(): void {
     if (this.mode === "embed") this.embed.pause();
-    else this.audio.pause();
+    else {
+      this.cur.audio.pause();
+      // a crossfade in progress stops with it
+      if (this.transitioning) this.spare.audio.pause();
+    }
   }
 
   private resume(): void {
     if (this.mode === "embed") this.embed.play();
-    else void this.audio.play().catch(() => {});
+    else void this.cur.audio.play().catch(() => {});
   }
 
   next(): void {
@@ -262,7 +330,7 @@ class PlayerEngine {
     if (!Number.isFinite(ms)) return;
     const target = Math.max(0, ms);
     if (this.mode === "embed") this.embed.seek(target);
-    else this.audio.currentTime = target / 1000;
+    else this.cur.audio.currentTime = target / 1000;
     this.lastPos = target;
     usePlayer.setState({ positionMs: target });
   }
@@ -338,21 +406,40 @@ class PlayerEngine {
     }
   }
 
-  private async load(track: Track): Promise<void> {
-    const token = ++this.loadToken;
-    this.loadAbort?.abort();
-    const controller = new AbortController();
-    this.loadAbort = controller;
-    this.detachHls();
-    this.audio.pause();
+  /** what happens when a song starts, however it started */
+  private begin(track: Track): void {
     this.startListen(track);
-    usePlayer.setState({ status: "loading", positionMs: 0, durationMs: track.durationMs, error: undefined, route: undefined });
     this.updateMetadata(track);
     if (!this.firstTrack) useEffects.setState(effectsForNextTrack(useEffects.getState()));
     setLevelingTrack(track.id);
     this.firstTrack = false;
     const st = usePlayer.getState();
     if (st.index >= st.queue.length - 2 && st.repeat === "off" && useSettings.getState().autoplay) void this.extendWithSimilar(false);
+  }
+
+  private attach(deck: Deck, stream: { url: string; hls: boolean }, onFatal: () => void): void {
+    if (stream.hls && Hls.isSupported()) {
+      const hls = new Hls({ enableWorker: true, maxBufferLength: 30, backBufferLength: 30 });
+      deck.hls = hls;
+      hls.loadSource(stream.url);
+      hls.attachMedia(deck.audio);
+      hls.on(Hls.Events.ERROR, (_event, data) => data.fatal && onFatal());
+    } else {
+      deck.audio.src = stream.url;
+      deck.audio.load();
+    }
+  }
+
+  private async load(track: Track): Promise<void> {
+    const token = ++this.loadToken;
+    this.loadAbort?.abort();
+    const controller = new AbortController();
+    this.loadAbort = controller;
+    this.dropPrepared();
+    this.transitioning = false;
+    this.unload(this.cur);
+    usePlayer.setState({ status: "loading", positionMs: 0, durationMs: track.durationMs, error: undefined, route: undefined });
+    this.begin(track);
     try {
       const stream = await resolveStream(track, controller.signal);
       if (token !== this.loadToken) return;
@@ -367,24 +454,100 @@ class PlayerEngine {
       this.mode = "audio";
       this.embed.stop();
       if (stream.via) usePlayer.setState({ route: "matched" });
-      if (stream.hls && Hls.isSupported()) {
-        const hls = new Hls({ enableWorker: true, maxBufferLength: 30, backBufferLength: 30 });
-        this.hls = hls;
-        hls.loadSource(stream.url);
-        hls.attachMedia(this.audio);
-        hls.on(Hls.Events.ERROR, (_event, data) => {
-          if (data.fatal && token === this.loadToken) usePlayer.setState({ status: "error", error: "Поток прервался" });
-        });
-      } else {
-        this.audio.src = stream.url;
-      }
+      this.graph.setDeck(this.cur.audio, 1);
+      this.attach(this.cur, stream, () => token === this.loadToken && usePlayer.setState({ status: "error", error: "Поток прервался" }));
       this.applyEffects();
-      await this.audio.play();
+      await this.cur.audio.play();
       this.applyResume();
     } catch (error) {
       if (token !== this.loadToken || controller.signal.aborted) return;
       usePlayer.setState({ status: "error", error: error instanceof Error ? error.message : String(error) });
     }
+  }
+
+  // ---- the next song on the other deck -----------------------------------------------
+
+  private nearEnd(audio: HTMLAudioElement): void {
+    const duration = audio.duration;
+    if (!Number.isFinite(duration) || duration <= 0) return;
+    const left = (duration - audio.currentTime) * 1000;
+    const fade = useSettings.getState().crossfade;
+    if (left < PREPARE_BEFORE_MS + fade * 1000 && !this.prepared) void this.prepareNext();
+    if (fade > 0 && !this.transitioning && this.prepared?.ready && left <= fade * 1000 && usePlayer.getState().repeat !== "one") {
+      this.transition(Math.min(fade, left / 1000));
+    }
+  }
+
+  private async prepareNext(): Promise<void> {
+    const state = usePlayer.getState();
+    if (state.repeat === "one" || this.mode !== "audio") return;
+    const index = nextIndex(state, false);
+    const track = state.queue[index];
+    if (index < 0 || !track || index === state.index) return;
+    const prepared: Prepared = { index, track, ready: false };
+    this.prepared = prepared;
+    this.prepareAbort?.abort();
+    const controller = new AbortController();
+    this.prepareAbort = controller;
+    try {
+      const stream = await resolveStream(track, controller.signal);
+      if (this.prepared !== prepared) return;
+      // the official YouTube player cannot be cued on a deck: that song loads when its turn comes
+      if (stream.kind === "embed") {
+        this.prepared = null;
+        return;
+      }
+      if (stream.via) prepared.route = "matched";
+      const deck = this.spare;
+      this.unload(deck);
+      this.graph.setDeck(deck.audio, 0);
+      this.attach(deck, stream, () => this.prepared === prepared && this.dropPrepared());
+    } catch {
+      if (this.prepared === prepared) this.prepared = null;
+    }
+  }
+
+  private dropPrepared(): void {
+    this.prepareAbort?.abort();
+    this.prepareAbort = null;
+    if (this.prepared && !this.transitioning) this.unload(this.spare);
+    this.prepared = null;
+  }
+
+  /** hand over to the prepared song: at once (fade 0) or fading over `fade` seconds */
+  private transition(fade: number): void {
+    const prepared = this.prepared;
+    if (!prepared) return;
+    const state = usePlayer.getState();
+    if (state.queue[prepared.index]?.id !== prepared.track.id) {
+      this.dropPrepared();
+      this.advance(false);
+      return;
+    }
+    const old = this.cur;
+    this.active = 1 - this.active;
+    const now = this.cur;
+    this.prepared = null;
+    this.loadToken++;
+    this.applyEffects();
+    const smooth = fade > 0.2 && this.graph.canFade;
+    if (smooth) {
+      this.transitioning = true;
+      this.graph.setDeck(now.audio, 0);
+      this.graph.fadeDeck(now.audio, 1, fade);
+      this.graph.fadeDeck(old.audio, 0, fade);
+      const token = this.loadToken;
+      setTimeout(() => {
+        this.transitioning = false;
+        if (token === this.loadToken || this.cur === now) this.unload(old);
+      }, fade * 1000 + 150);
+    } else {
+      this.graph.setDeck(now.audio, 1);
+      this.unload(old);
+    }
+    usePlayer.setState({ index: prepared.index, status: "playing", positionMs: 0, durationMs: prepared.track.durationMs, error: undefined, route: prepared.route });
+    this.begin(prepared.track);
+    void now.audio.play().catch(() => usePlayer.setState({ status: "paused" }));
   }
 
   private applyResume(): void {
@@ -394,14 +557,15 @@ class PlayerEngine {
     this.seek(at);
   }
 
-  private detachHls(): void {
-    if (this.hls) {
-      this.hls.destroy();
-      this.hls = null;
+  private unload(deck: Deck): void {
+    if (deck.hls) {
+      deck.hls.destroy();
+      deck.hls = null;
     }
-    if (this.audio.getAttribute("src")) {
-      this.audio.removeAttribute("src");
-      this.audio.load();
+    deck.audio.pause();
+    if (deck.audio.getAttribute("src")) {
+      deck.audio.removeAttribute("src");
+      deck.audio.load();
     }
   }
 

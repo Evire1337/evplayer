@@ -1,3 +1,4 @@
+import VirtualList from "@/ui/components/VirtualList";
 import { useEffect, useMemo, useState } from "react";
 import TrackRow from "@/ui/components/TrackRow";
 import { IconFolder, IconMusic, IconPlay, IconTrash } from "@/ui/components/Icons";
@@ -87,9 +88,12 @@ export default function FilesPage() {
             <input className="filter-input" placeholder="Поиск по файлам" value={filter} onChange={(e) => setFilter(e.target.value)} />
           </div>
           <div className="track-list">
-            {visible.map(({ t, i }) => (
+            <VirtualList
+              items={visible}
+              getKey={({ t }) => t.id}
+              render={({ t, i }) => (
               <div
-                key={t.id}
+                
                 className="file-row"
                 onContextMenu={(e) => {
                   e.stopPropagation();
@@ -101,7 +105,8 @@ export default function FilesPage() {
               >
                 <TrackRow track={t} queue={tracks} index={i} note={labels.get(t.id) || undefined} />
               </div>
-            ))}
+              )}
+            />
           </div>
         </>
       )}

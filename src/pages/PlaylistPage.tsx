@@ -1,3 +1,4 @@
+import VirtualList from "@/ui/components/VirtualList";
 import { useMemo, useState } from "react";
 import type { Track } from "@/types";
 import { player } from "@/player/engine";
@@ -186,21 +187,24 @@ export default function PlaylistPage() {
           <button type="button" className="head-sort" onClick={() => setSort("duration")}>Время{arrow("duration")}</button>
           <span />
         </div>
-        {shown.map((r, i) => (
-          <TrackRow
-            key={r.key}
-            track={r.track}
-            queue={tracks}
-            index={i}
-            addedAt={r.addedAt}
-            menu={r.itemId && playlist ? { playlistId: playlist.id, itemId: r.itemId } : undefined}
-            draggable={canReorder}
-            onDragStart={() => setDrag({ from: i, over: i, before: true })}
-            onDragOverRow={(before) => setDrag((d) => (d ? { ...d, over: i, before } : d))}
-            onDrop={drop}
-            dropHint={drag && drag.over === i && drag.from !== i ? (drag.before ? "before" : "after") : null}
-          />
-        ))}
+        <VirtualList
+          items={shown}
+          getKey={(r) => r.key}
+          render={(r, i) => (
+            <TrackRow
+              track={r.track}
+              queue={tracks}
+              index={i}
+              addedAt={r.addedAt}
+              menu={r.itemId && playlist ? { playlistId: playlist.id, itemId: r.itemId } : undefined}
+              draggable={canReorder}
+              onDragStart={() => setDrag({ from: i, over: i, before: true })}
+              onDragOverRow={(before) => setDrag((d) => (d ? { ...d, over: i, before } : d))}
+              onDrop={drop}
+              dropHint={drag && drag.over === i && drag.from !== i ? (drag.before ? "before" : "after") : null}
+            />
+          )}
+        />
         {rows.length === 0 && <p className="muted center">{isLikes ? "Нажмите ♥ у любого трека, и он появится здесь." : "Пока пусто. Правый клик по треку → «Добавить в плейлист»."}</p>}
       </div>
 

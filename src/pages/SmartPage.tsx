@@ -1,3 +1,4 @@
+import VirtualList from "@/ui/components/VirtualList";
 import { useMemo } from "react";
 import { useNavigation } from "@/ui/navigation";
 import { useLibrary } from "@/library/store";
@@ -50,9 +51,7 @@ export default function SmartPage() {
         <p className="muted center">Пока пусто — слушайте музыку, и плейлист наполнится сам.</p>
       ) : (
         <div className="track-list">
-          {tracks.map((t, i) => (
-            <TrackRow key={t.id} track={t} queue={tracks} index={i} showSource />
-          ))}
+          <VirtualList items={tracks} getKey={(t) => t.id} render={(t, i) => <TrackRow track={t} queue={tracks} index={i} showSource />} />
         </div>
       )}
     </div>

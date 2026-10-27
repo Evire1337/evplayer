@@ -75,7 +75,7 @@ export default function OverlayApp() {
     <div className="overlay">
       <div className="overlay-card">
         <button type="button" className="overlay-art" onClick={() => cmd("showWindow")} aria-label="Открыть EvPlayer">
-          <Artwork src={track?.artwork} lazy={false} />
+          <Artwork src={track?.artwork} lazy={false} size="row" />
           <span className="overlay-art-hover"><IconExpand size={13} /></span>
         </button>
         <div className="overlay-text">
