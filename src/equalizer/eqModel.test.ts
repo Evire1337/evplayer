@@ -37,3 +37,19 @@ describe("advanced mode", () => {
     expect(Math.abs(ten[9].gain)).toBeLessThan(1);
   });
 });
+
+describe("modes keep their own preset", () => {
+  it("switching back shows the preset that was chosen in that mode", async () => {
+    const { useEqualizerStore } = await import("./eqStore");
+    const eq = useEqualizerStore.getState();
+    eq.applyPreset("bass");
+    useEqualizerStore.getState().setMode("advanced");
+    useEqualizerStore.getState().applyPreset("vocal");
+    useEqualizerStore.getState().setMode("simple");
+    expect(useEqualizerStore.getState().preset).toBe("bass");
+    expect(useEqualizerStore.getState().bands).toHaveLength(6);
+    useEqualizerStore.getState().setMode("advanced");
+    expect(useEqualizerStore.getState().preset).toBe("vocal");
+    expect(useEqualizerStore.getState().bands).toHaveLength(10);
+  });
+});

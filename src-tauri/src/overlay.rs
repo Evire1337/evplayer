@@ -196,7 +196,7 @@ impl Overlay {
             *g
         };
         let Some(win) = Self::window(app) else { return };
-        let _ = win.hide();
+        hide_window(&win);
         let _ = app.emit_to("main", "overlay:visible", false);
         let app = app.clone();
         tauri::async_runtime::spawn(async move {
@@ -307,6 +307,18 @@ fn show_inactive(win: &WebviewWindow) {
         return;
     }
     let _ = win.show();
+}
+
+/// The mini player is shown with a raw ShowWindow (so it never takes focus from a game),
+/// which the window library does not notice; its own hide then thinks the window is already
+/// hidden and does nothing. So it is hidden the same raw way.
+fn hide_window(win: &WebviewWindow) {
+    #[cfg(windows)]
+    if let Ok(hwnd) = win.hwnd() {
+        use windows_sys::Win32::UI::WindowsAndMessaging::{ShowWindow, SW_HIDE};
+        unsafe { ShowWindow(hwnd.0 as _, SW_HIDE) };
+    }
+    let _ = win.hide();
 }
 
 /// put it above everything right now, also above windows that made themselves topmost later
