@@ -7,10 +7,10 @@ import { IconChat, IconMusic, IconUser } from "@/ui/components/Icons";
 import type { DiscordUser } from "../../../electron/discord";
 import { Card, Pill, Row, SwitchRow, TabHeader } from "./parts";
 
-type Status = "off" | "connecting" | "connected" | "no-discord";
+type Status = "off" | "connecting" | "connected" | "no-discord" | "error";
 
-function useDiscordStatus(): { status: Status; user: DiscordUser | null } {
-  const [state, setState] = useState<{ status: Status; user: DiscordUser | null }>({ status: "off", user: null });
+function useDiscordStatus(): { status: Status; user: DiscordUser | null; error: string | null } {
+  const [state, setState] = useState<{ status: Status; user: DiscordUser | null; error: string | null }>({ status: "off", user: null, error: null });
   useEffect(() => {
     const tick = () => void window.evplayer?.discord.status().then(setState);
     tick();
@@ -67,11 +67,11 @@ function Preview({ name }: { name: string }) {
 
 export default function DiscordTab() {
   const o = useSettings();
-  const { status, user } = useDiscordStatus();
+  const { status, user, error } = useDiscordStatus();
   const hasId = Boolean(discordAppId(o));
   const [showSetup, setShowSetup] = useState(!hasId);
   const tone = status === "connected" ? "ok" : status === "off" ? "off" : "warn";
-  const label = { off: "выключено", connecting: "подключаюсь…", connected: "подключено", "no-discord": "Discord не запущен" }[status];
+  const label = { off: "выключено", connecting: "подключаюсь…", connected: "подключено", "no-discord": "Discord не запущен", error: "ошибка" }[status];
   const name = user?.globalName || user?.username || "Вы";
 
   return (
@@ -88,6 +88,8 @@ export default function DiscordTab() {
           <input type="checkbox" role="switch" className="switch" aria-label="Статус в Discord" checked={o.discordEnabled} disabled={!hasId} onChange={(e) => o.set({ discordEnabled: e.target.checked })} />
         </div>
         {!hasId && <p className="muted small">Сначала один раз подключите приложение ниже — это займёт минуту.</p>}
+        {hasId && o.discordEnabled && status === "no-discord" && <p className="muted small">Не вижу Discord. Запустите приложение Discord для компьютера (не браузерную версию) — EvPlayer подключится сам.</p>}
+        {error && <p className="field-error">Discord: {error === "Invalid Client ID" ? "такого Application ID нет — проверьте его ниже" : error}</p>}
       </Card>
 
       <div className="dc-grid">

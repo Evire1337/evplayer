@@ -71,7 +71,7 @@ const api = {
   discord: {
     setAppId: (appId: string | null) => ipcRenderer.send("discord:set", appId),
     update: (state: PresenceState | null) => ipcRenderer.send("discord:update", state),
-    status: (): Promise<{ status: "off" | "connecting" | "connected" | "no-discord"; user: DiscordUser | null }> => ipcRenderer.invoke("discord:status"),
+    status: (): Promise<{ status: "off" | "connecting" | "connected" | "no-discord" | "error"; user: DiscordUser | null; error: string | null }> => ipcRenderer.invoke("discord:status"),
   },
 };
 

@@ -103,7 +103,7 @@ const DEFAULTS = {
   soundcloudAccount: null as SoundCloudAccount | null,
   spotifyClientId: "",
   spotifyClientSecret: "",
-  discordEnabled: false,
+  discordEnabled: true,
   discordAppId: "",
   discordShowArtwork: true,
   discordShowPaused: true,
