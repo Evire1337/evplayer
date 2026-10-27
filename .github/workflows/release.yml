@@ -48,6 +48,31 @@ jobs:
           releaseBody: "Установщик для Windows — файл EvPlayer_*_x64-setup.exe ниже. Уже установленные копии обновятся сами."
           releaseDraft: true
           includeUpdaterJson: true
+      # Copies of 0.3 and older (Electron) update through electron-updater, which reads
+      # latest.yml: point it at this installer, so they move over to the new version by
+      # themselves (src-tauri/windows/hooks.nsh removes the old program and starts the new one)
+      - name: Add latest.yml for the Electron version's updater
+        shell: bash
+        run: |
+          EXE=$(ls src-tauri/target/release/bundle/nsis/*-setup.exe | head -1)
+          NAME=$(gh release view "$GITHUB_REF_NAME" --json assets -q '.assets[].name' | grep 'setup\.exe$' | head -1)
+          [ "$NAME" = "$(basename "$EXE")" ] || { echo "installer name in the release ($NAME) differs from the built one ($EXE)"; exit 1; }
+          SHA=$(openssl dgst -sha512 -binary "$EXE" | openssl base64 -A)
+          SIZE=$(stat -c%s "$EXE")
+          cat > latest.yml <<YML
+          version: ${GITHUB_REF_NAME#v}
+          files:
+            - url: $NAME
+              sha512: $SHA
+              size: $SIZE
+          path: $NAME
+          sha512: $SHA
+          releaseDate: '$(date -u +%Y-%m-%dT%H:%M:%S.000Z)'
+          YML
+          cat latest.yml
+          gh release upload "$GITHUB_REF_NAME" latest.yml --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Check every file landed in the release, then publish it
         shell: bash
         run: |
@@ -55,6 +80,7 @@ jobs:
           echo "$FILES"
           echo "$FILES" | grep -q 'setup\.exe$' || { echo "missing the installer"; exit 1; }
           echo "$FILES" | grep -qx 'latest.json' || { echo "missing latest.json"; exit 1; }
+          echo "$FILES" | grep -qx 'latest.yml' || { echo "missing latest.yml"; exit 1; }
           gh release edit "$GITHUB_REF_NAME" --draft=false --latest
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
