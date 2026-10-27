@@ -49,6 +49,8 @@ pub struct Overlay {
     auto_shown: Mutex<bool>,
     /// bumped on every show/hide so old timers know they are stale
     generation: Mutex<u64>,
+    /// hidden for a game in exclusive full screen; comes back when the game is left
+    stepped_aside: Mutex<bool>,
 }
 
 pub fn corner_position(corner: &str, area: PhysicalRect<i32, u32>, scale: f64) -> (i32, i32) {
@@ -158,7 +160,13 @@ impl Overlay {
             },
         };
         self.place(app, &win);
-        show_inactive(&win);
+        // a full-screen game is in front: wait (the watchdog shows it once the game is left)
+        if exclusive_fullscreen() {
+            *self.stepped_aside.lock().unwrap() = true;
+        } else {
+            *self.stepped_aside.lock().unwrap() = false;
+            show_inactive(&win);
+        }
         // some window systems only take the size once the window is on screen
         let _ = win.set_size(tauri::LogicalSize::new(WIDTH, HEIGHT));
         self.apply_top(&win);
@@ -176,19 +184,37 @@ impl Overlay {
                     overlay.show(&app);
                     break;
                 };
+                // A game in exclusive full screen owns the display: no window can be drawn
+                // over it, and pushing one up only makes Windows drop the game out of full
+                // screen and back, again and again. Step aside until the game is left.
+                if exclusive_fullscreen() {
+                    if !*overlay.stepped_aside.lock().unwrap() {
+                        *overlay.stepped_aside.lock().unwrap() = true;
+                        hide_window(&win);
+                    }
+                    continue;
+                }
+                if std::mem::replace(&mut *overlay.stepped_aside.lock().unwrap(), false) {
+                    show_inactive(&win);
+                }
                 if win.is_minimized().unwrap_or(false) {
                     let _ = win.unminimize();
                 }
                 if !win.is_visible().unwrap_or(true) {
                     show_inactive(&win);
                 }
-                overlay.apply_top(&win);
+                // only when something actually sits above it: a constant push to the top
+                // makes full-screen games and video players stutter
+                if covered(&win) {
+                    overlay.apply_top(&win);
+                }
             }
         });
     }
 
     pub fn hide(&self, app: &AppHandle) {
         *self.wanted.lock().unwrap() = false;
+        *self.stepped_aside.lock().unwrap() = false;
         *self.auto_shown.lock().unwrap() = false;
         let generation = {
             let mut g = self.generation.lock().unwrap();
@@ -307,6 +333,48 @@ fn show_inactive(win: &WebviewWindow) {
         return;
     }
     let _ = win.show();
+}
+
+/// a Direct3D game in exclusive full screen is in front (Windows tells "do not disturb")
+fn exclusive_fullscreen() -> bool {
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::UI::Shell::{SHQueryUserNotificationState, QUNS_RUNNING_D3D_FULL_SCREEN};
+        let mut state = 0;
+        let ok = unsafe { SHQueryUserNotificationState(&mut state) } >= 0;
+        return ok && state == QUNS_RUNNING_D3D_FULL_SCREEN;
+    }
+    #[allow(unreachable_code)]
+    false
+}
+
+/// is some other visible window above the mini player and overlapping it
+fn covered(win: &WebviewWindow) -> bool {
+    #[cfg(windows)]
+    if let Ok(hwnd) = win.hwnd() {
+        use windows_sys::Win32::Foundation::RECT;
+        use windows_sys::Win32::UI::WindowsAndMessaging::{GetWindow, GetWindowRect, IsWindowVisible, GW_HWNDPREV};
+        let me = hwnd.0 as windows_sys::Win32::Foundation::HWND;
+        let mut mine = RECT { left: 0, top: 0, right: 0, bottom: 0 };
+        unsafe { GetWindowRect(me, &mut mine) };
+        let mut above = unsafe { GetWindow(me, GW_HWNDPREV) };
+        let mut steps = 0;
+        while !above.is_null() && steps < 500 {
+            steps += 1;
+            if unsafe { IsWindowVisible(above) } != 0 {
+                let mut r = RECT { left: 0, top: 0, right: 0, bottom: 0 };
+                unsafe { GetWindowRect(above, &mut r) };
+                let overlaps = r.left < mine.right && r.right > mine.left && r.top < mine.bottom && r.bottom > mine.top;
+                if overlaps {
+                    return true;
+                }
+            }
+            above = unsafe { GetWindow(above, GW_HWNDPREV) };
+        }
+        return false;
+    }
+    let _ = win;
+    true
 }
 
 /// The mini player is shown with a raw ShowWindow (so it never takes focus from a game),

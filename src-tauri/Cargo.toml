@@ -51,7 +51,7 @@ reqwest = { version = "0.12", default-features = false, features = ["native-tls"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_UI_Shell"] }
 # must match the versions tauri uses (memory.rs talks to WebView2 directly)
 webview2-com = "0.39"
 windows = "0.62"
