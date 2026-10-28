@@ -49,6 +49,16 @@ export interface Transcoding {
   mimeType: string;
 }
 
+/** every format SoundCloud lists for a song, as "protocol mime" (to tell why none plays) */
+export function formatsListed(raw: unknown): string[] {
+  if (!isObj(raw) || !isObj(raw.media) || !Array.isArray(raw.media.transcodings)) return [];
+  return raw.media.transcodings.flatMap((t) => {
+    if (!isObj(t) || !isObj(t.format)) return [];
+    const mime = (str(t.format.mime_type) ?? "").split(";")[0].replace("audio/", "");
+    return [`${str(t.format.protocol) ?? "?"} ${mime}${t.snipped === true ? " (отрывок)" : ""}`];
+  });
+}
+
 export function transcodingsOf(raw: unknown): Transcoding[] {
   if (!isObj(raw) || !isObj(raw.media) || !Array.isArray(raw.media.transcodings)) return [];
   return raw.media.transcodings.flatMap((t): Transcoding[] => {
@@ -59,13 +69,14 @@ export function transcodingsOf(raw: unknown): Transcoding[] {
     if (!url || (protocol !== "progressive" && protocol !== "hls")) return [];
     // encrypted streams (premium "ctr-encrypted-hls") cannot be played here
     if (/encrypted/i.test(protocol) || t.snipped === true) return [];
-    // Opus in HLS comes as Ogg pieces, which the HLS player cannot put together
-    if (protocol === "hls" && /ogg/i.test(mimeType)) return [];
     return [{ url, protocol, mimeType }];
   });
 }
 
-/** best first: a single mp3 file, then plain HLS (mp3 before aac/opus because it works everywhere) */
+/**
+ * best first: a single mp3 file, then plain HLS (mp3 before aac/opus because it works
+ * everywhere); Opus in HLS comes last: its Ogg pieces are joined into one file by the app
+ */
 export function rankTranscodings(list: Transcoding[]): Transcoding[] {
   const rank = (t: Transcoding) =>
     (t.protocol === "progressive" ? 0 : 10) + (t.mimeType.includes("mpeg") ? 0 : t.mimeType.includes("mp4") ? 1 : 2);

@@ -74,6 +74,16 @@ export function mediaStream(url: string): string {
   return `${base}/remote/${encodeURIComponent(url)}`;
 }
 
+/**
+ * An HLS playlist of Ogg pieces (SoundCloud's Opus streams) as one Ogg file with seeking,
+ * joined by the app's media server; null where there is no media server.
+ */
+export function joinedStream(playlistUrl: string): string | null {
+  const base = typeof window !== "undefined" ? window.__EVPLAYER_MEDIA__ : undefined;
+  if (!base || !isOpenHost(playlistUrl)) return null;
+  return `${base}/joined/${encodeURIComponent(playlistUrl)}`;
+}
+
 /** route the page's fetch and XHR calls to the services through the proxy */
 export function installProxy(): void {
   proxyBase = schemeBase("evproxy");

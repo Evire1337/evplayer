@@ -1,6 +1,9 @@
 import type { ArtistSummary, CollectionSummary, Track } from "@/types";
 import { useSettings } from "@/settings/store";
-import { mapScCollection, mapScTrack, mapScUser, rankTranscodings, trackAuthorization, transcodingsOf } from "./mappers";
+import { formatsListed, mapScCollection, mapScTrack, mapScUser, rankTranscodings, trackAuthorization, transcodingsOf, type Transcoding } from "./mappers";
+import { joinedStream } from "@/platform/net";
+
+const isOggHls = (t: Transcoding) => t.protocol === "hls" && /ogg/i.test(t.mimeType);
 
 const API = "https://api-v2.soundcloud.com";
 
@@ -63,8 +66,12 @@ export interface ScStream {
 
 /** the reason a SoundCloud song has nothing this player can use */
 export class ScUnplayableError extends Error {
-  constructor() {
-    super("SoundCloud отдаёт этот трек только в защищённом виде или 30-секундным отрывком");
+  constructor(listed: string[]) {
+    super(
+      listed.length
+        ? `SoundCloud отдаёт этот трек только в защищённом виде или отрывком (форматы: ${listed.join(", ")})`
+        : "SoundCloud не дал ни одного формата для этого трека",
+    );
   }
 }
 
@@ -76,8 +83,9 @@ export async function* soundCloudStreams(trackId: string, signal?: AbortSignal):
   const id = trackId.replace(/^sc:/, "");
   const track = await scGet(`/tracks/${id}`, {}, signal);
   const auth = trackAuthorization(track);
-  const options = rankTranscodings(transcodingsOf(track));
-  if (options.length === 0) throw new ScUnplayableError();
+  // Ogg pieces in HLS play only joined into one file by the app's media server
+  const options = rankTranscodings(transcodingsOf(track)).filter((o) => !isOggHls(o) || joinedStream("https://api-v2.soundcloud.com/") !== null);
+  if (options.length === 0) throw new ScUnplayableError(formatsListed(track));
   let given = 0;
   let lastError: unknown;
   for (const option of options) {
@@ -89,10 +97,16 @@ export async function* soundCloudStreams(trackId: string, signal?: AbortSignal):
       lastError = error;
       continue;
     }
-    if (url) {
+    if (!url) continue;
+    if (isOggHls(option)) {
+      const joined = joinedStream(url);
+      if (!joined) continue;
       given++;
-      yield { url, hls: option.protocol === "hls" };
+      yield { url: joined, hls: false };
+      continue;
     }
+    given++;
+    yield { url, hls: option.protocol === "hls" };
   }
   if (!given) throw lastError instanceof Error ? lastError : new Error("SoundCloud не отдал поток");
 }

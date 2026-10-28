@@ -1,7 +1,7 @@
 import type { Track } from "@/types";
 import { searchSoundCloud, soundCloudStreams } from "@/services/soundcloud/api";
 import { searchYouTubeMusic } from "@/services/youtube/music";
-import { bestMatch, searchQueryFor } from "./match";
+import { bestMatch, matchScore, searchQueryFor } from "./match";
 import { mediaUrl } from "@/files/localFiles";
 import { resolveYouTubeAudio, videoIdOf } from "@/services/youtube/direct";
 
@@ -13,7 +13,9 @@ export interface PlayableStream {
 }
 
 // remembered per session: searching once per song is enough
-const matches = new Map<string, Track | null>();
+const matches = new Map<string, Track[]>();
+/** how many uploads of the same song are tried (one can be protected, another not) */
+const COPIES_TRIED = 3;
 const youTubeMatches = new Map<string, Track | null>();
 
 async function youTubeMatch(track: Track, signal?: AbortSignal): Promise<Track | null> {
@@ -23,18 +25,25 @@ async function youTubeMatch(track: Track, signal?: AbortSignal): Promise<Track |
   return found;
 }
 
-async function soundCloudMatch(track: Track, signal?: AbortSignal): Promise<Track | null> {
-  if (matches.has(track.id)) return matches.get(track.id) ?? null;
+/** uploads of the same song on SoundCloud, most alike first */
+async function soundCloudMatches(track: Track, signal?: AbortSignal): Promise<Track[]> {
+  const known = matches.get(track.id);
+  if (known) return known;
   const { tracks } = await searchSoundCloud(searchQueryFor(track), signal);
-  const found = bestMatch(track, tracks);
+  const found = tracks
+    .map((t) => ({ t, score: matchScore(track, t) }))
+    .filter((x) => x.score >= 0.72)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, COPIES_TRIED)
+    .map((x) => x.t);
   matches.set(track.id, found);
   return found;
 }
 
 /** a YouTube song with no copy on SoundCloud */
 export class NoCopyError extends Error {
-  constructor() {
-    super("Не получилось получить звук этой песни — пропускаю");
+  constructor(cause?: unknown) {
+    super(cause instanceof Error ? `Не получилось включить ни YouTube, ни копии с SoundCloud: ${cause.message}` : "Не получилось получить звук этой песни");
   }
 }
 
@@ -86,9 +95,18 @@ export async function* streamCandidates(track: Track, signal?: AbortSignal): Asy
           console.warn("[youtube] direct playback failed, trying SoundCloud:", e);
         }
       }
-      const match = await soundCloudMatch(track, signal);
-      if (!match) throw new NoCopyError();
-      for await (const stream of soundCloudStreams(match.id, signal)) yield { ...stream, via: match };
+      const copies = await soundCloudMatches(track, signal);
+      if (!copies.length) throw new NoCopyError();
+      // a copy that SoundCloud gives out only protected: the next one
+      for (const copy of copies) {
+        try {
+          for await (const stream of soundCloudStreams(copy.id, signal)) yield { ...stream, via: copy };
+        } catch (e) {
+          if (signal?.aborted) throw e;
+          lastError = e;
+        }
+      }
+      throw new NoCopyError(lastError);
     }
   }
 }
