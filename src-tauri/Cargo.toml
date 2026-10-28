@@ -1,6 +1,6 @@
 [package]
 name = "evplayer"
-version = "0.5.1"
+version = "0.5.2"
 description = "Music player for SoundCloud, YouTube Music and your own files"
 authors = ["Evire1337"]
 license = "MIT"
