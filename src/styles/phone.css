@@ -57,7 +57,8 @@ html.is-phone .now-left { overflow: visible; justify-content: flex-start; flex: 
 html.is-phone .now-art { width: min(100%, 360px); border-radius: 28px; }
 html.is-phone .now-title { font-size: 24px; }
 html.is-phone .now-lyrics { min-height: 60vh; flex-shrink: 0; --lyric-scale: 7; }
-html.is-phone .now .queue { display: none; }
+html.is-phone .now > .queue { display: none; }
+
 
 /* settings: tabs scroll sideways */
 html.is-phone .settings-layout { grid-template-columns: 1fr; }
@@ -96,3 +97,6 @@ html.is-phone .import-panel { background: rgba(6, 26, 32, 0.96); z-index: 40; }
 html.is-phone .pl-hero > .pl-cover { width: 120px !important; height: 120px !important; }
 html.is-phone .pl-hero .display { font-size: 26px; overflow-wrap: anywhere; }
 html.is-phone .lyrics-shift { opacity: 1; }
+/* «Далее» sits above the bottom bar, so its last song is not hidden under it */
+html.is-phone .queue-sheet { bottom: calc(var(--nav-h) + var(--safe-bottom)); }
+html.is-phone .queue-sheet .queue { padding-bottom: 16px; }

@@ -36,6 +36,23 @@
           android:exported="false"
           android:foregroundServiceType="mediaPlayback" />
 
+        <!-- the player on the home screen -->
+        <receiver
+          android:name=".PlayerWidget"
+          android:exported="true"
+          android:label="EvPlayer">
+          <intent-filter>
+            <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+          </intent-filter>
+          <meta-data
+            android:name="android.appwidget.provider"
+            android:resource="@xml/player_widget_info" />
+        </receiver>
+        <!-- its buttons; only this app can press them -->
+        <receiver
+          android:name=".PlayerWidget$Buttons"
+          android:exported="false" />
+
         <provider
           android:name="androidx.core.content.FileProvider"
           android:authorities="${applicationId}.fileprovider"

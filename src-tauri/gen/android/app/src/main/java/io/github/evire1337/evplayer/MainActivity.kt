@@ -12,6 +12,9 @@ class MainActivity : TauriActivity() {
   companion object {
     @Volatile private var webView: WebView? = null
 
+    /** the page (and its music) is there to take commands */
+    val isRunning: Boolean get() = webView != null
+
     /** a button in the notification or on the lock screen: hand it to the page */
     fun command(action: String, value: Double? = null) {
       val view = webView ?: return
@@ -42,6 +45,8 @@ class MainActivity : TauriActivity() {
     // buttons in the notification start the music without a tap in the page first
     webView.settings.mediaPlaybackRequiresUserGesture = false
     webView.addJavascriptInterface(MediaBridge(applicationContext), "EvPlayerAndroid")
+    // the home-screen widget's buttons can now reach the page
+    PlayerWidget.render(applicationContext)
   }
 
   override fun onPause() {
@@ -64,8 +69,8 @@ class MainActivity : TauriActivity() {
 
   override fun onDestroy() {
     if (isFinishing) {
-      MediaService.stop(applicationContext)
       webView = null
+      MediaService.stop(applicationContext)
     }
     super.onDestroy()
   }

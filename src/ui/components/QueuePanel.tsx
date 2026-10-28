@@ -13,7 +13,7 @@ const PLAYED_SHOWN = 30;
 
 const SOURCE_LABEL = { soundcloud: "SoundCloud", youtube: "YouTube Music", local: "Мои файлы" } as const;
 
-export default function QueuePanel() {
+export default function QueuePanel({ onHide }: { onHide?: () => void } = {}) {
   const queue = usePlayer((s) => s.queue);
   const index = usePlayer((s) => s.index);
   const autoplay = useSettings((s) => s.autoplay);
@@ -38,7 +38,7 @@ export default function QueuePanel() {
           {upcoming.length > 0 && (
             <button type="button" className="reset-btn" onClick={() => player.clearUpcoming()}>Очистить</button>
           )}
-          <button type="button" className="reset-btn" onClick={() => useSettings.getState().set({ showQueue: false })}>Скрыть</button>
+          <button type="button" className="reset-btn" onClick={() => (onHide ? onHide() : useSettings.getState().set({ showQueue: false }))}>Скрыть</button>
         </span>
       </div>
       {shown.length <= 1 && upcoming.length === 0 ? (

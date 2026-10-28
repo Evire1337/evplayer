@@ -51,6 +51,9 @@ class MediaService : Service() {
       val next = State.parse(json) ?: return
       state = next
       val service = instance
+      // the service redraws the widget with the notification; without it (paused, not
+      // started yet) the widget is drawn here, without a cover
+      if (service == null) Handler(Looper.getMainLooper()).post { PlayerWidget.render(context, null) }
       if (service != null) {
         Handler(Looper.getMainLooper()).post { service.render() }
       } else if (next.title.isNotEmpty() && next.playing) {
@@ -62,6 +65,7 @@ class MediaService : Service() {
     fun stop(context: Context) {
       state = null
       context.stopService(Intent(context, MediaService::class.java))
+      Handler(Looper.getMainLooper()).post { PlayerWidget.clear(context) }
     }
   }
 
@@ -135,7 +139,10 @@ class MediaService : Service() {
   }
 
   override fun onTaskRemoved(rootIntent: Intent?) {
-    // the app was swiped away: the page and its music are gone, so is the notification
+    // the app was swiped away: the page and its music are gone, so is the notification,
+    // and the widget's buttons open the app again
+    state = null
+    PlayerWidget.clear(applicationContext)
     stopSelf()
   }
 
@@ -219,6 +226,7 @@ class MediaService : Service() {
       }
       getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification)
     }
+    PlayerWidget.render(this, art)
   }
 
   /** the cover, fetched once per song in the background; the notification is redrawn when it arrives */
