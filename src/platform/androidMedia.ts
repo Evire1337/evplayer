@@ -7,6 +7,8 @@
 interface AndroidBridge {
   update(json: string): void;
   clear(): void;
+  keepsRunning?(): boolean;
+  askToKeepRunning?(): void;
 }
 
 declare global {
@@ -14,6 +16,8 @@ declare global {
     EvPlayerAndroid?: AndroidBridge;
     __evplayerMediaCommand?: (action: string, value?: number) => void;
     __evplayerVisible?: (visible: boolean) => void;
+    /** the phone's "back": true when the page went back itself */
+    __evplayerBack?: () => boolean;
   }
 }
 
@@ -23,6 +27,19 @@ const visibleListeners = new Set<(visible: boolean) => void>();
 if (typeof window !== "undefined") {
   window.__evplayerMediaCommand = (action, value) => commandListeners.forEach((cb) => cb(action, value));
   window.__evplayerVisible = (visible) => visibleListeners.forEach((cb) => cb(visible));
+}
+
+/**
+ * Android may close apps that sit in the background; with battery optimisation off for
+ * EvPlayer it leaves it running. null: not on a phone (or an older APK).
+ */
+export function phoneKeepsRunning(): boolean | null {
+  const bridge = typeof window !== "undefined" ? window.EvPlayerAndroid : undefined;
+  return bridge?.keepsRunning ? bridge.keepsRunning() : null;
+}
+
+export function askPhoneToKeepRunning(): void {
+  window.EvPlayerAndroid?.askToKeepRunning?.();
 }
 
 export function onPhoneCommand(cb: (action: string, value?: number) => void): () => void {

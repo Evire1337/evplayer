@@ -28,3 +28,14 @@ export const useNavigation = create<NavState>((set) => ({
       return prev ? { ...prev, back: s.back.slice(0, -1) } : s;
     }),
 }));
+
+// the phone's "back" gesture: the previous tab first; on the first tab the app goes to the
+// background (MainActivity.kt), so the music keeps playing
+if (typeof window !== "undefined") {
+  window.__evplayerBack = () => {
+    const { back, goBack } = useNavigation.getState();
+    if (!back.length) return false;
+    goBack();
+    return true;
+  };
+}

@@ -39,6 +39,8 @@ class MediaService : Service() {
     private const val ACTION_TOGGLE = "evplayer.toggle"
     private const val ACTION_NEXT = "evplayer.next"
     private const val ACTION_LIKE = "evplayer.like"
+    /** on pause the app stays a running music app (in "Active apps", not closed by Android) this long */
+    private const val PAUSED_KEEP_MS = 30L * 60 * 1000
 
     /** the latest state sent by the page */
     @Volatile var state: State? = null
@@ -100,6 +102,16 @@ class MediaService : Service() {
   private var artUrl: String? = null
   private var art: Bitmap? = null
   private var foreground = false
+  private val handler = Handler(Looper.getMainLooper())
+  private var detachPending = false
+  /** paused for a long time: the app becomes an ordinary background app again */
+  private val detach = Runnable {
+    detachPending = false
+    if (state?.playing != true && foreground) {
+      ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_DETACH)
+      foreground = false
+    }
+  }
 
   override fun onBind(intent: Intent?): IBinder? = null
 
@@ -147,6 +159,7 @@ class MediaService : Service() {
   }
 
   override fun onDestroy() {
+    handler.removeCallbacks(detach)
     instance = null
     session.release()
     super.onDestroy()
@@ -215,16 +228,20 @@ class MediaService : Service() {
       .build()
 
     if (s.playing) {
+      handler.removeCallbacks(detach)
+      detachPending = false
       val type = if (Build.VERSION.SDK_INT >= 29) ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK else 0
       ServiceCompat.startForeground(this, NOTIFICATION_ID, notification, type)
       foreground = true
     } else {
-      // paused: the notification stays (to start again from it) but may be swiped away
-      if (foreground) {
-        ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_DETACH)
-        foreground = false
-      }
+      // paused: like other music apps EvPlayer stays a running player for a while, so
+      // Android does not close it while you are in another app; after that the
+      // notification stays (to start again from it) but may be swiped away
       getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification)
+      if (foreground && !detachPending) {
+        detachPending = true
+        handler.postDelayed(detach, PAUSED_KEEP_MS)
+      }
     }
     PlayerWidget.render(this, art)
   }

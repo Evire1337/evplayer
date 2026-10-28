@@ -1,6 +1,13 @@
 package io.github.evire1337.evplayer
 
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
+import android.provider.Settings
+import androidx.activity.OnBackPressedCallback
+import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import android.webkit.WebSettings
@@ -11,6 +18,28 @@ import org.json.JSONObject
 class MainActivity : TauriActivity() {
   companion object {
     @Volatile private var webView: WebView? = null
+
+    @Volatile private var instance: MainActivity? = null
+
+    /** Android does not limit the app in the background (battery optimisation is off for it) */
+    fun keepsRunning(context: Context): Boolean {
+      if (Build.VERSION.SDK_INT < 23) return true
+      return context.getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(context.packageName)
+    }
+
+    /** ask Android (with its own dialog) to let the app run in the background */
+    fun askToKeepRunning(context: Context) {
+      if (Build.VERSION.SDK_INT < 23 || keepsRunning(context)) return
+      val activity = instance ?: return
+      Handler(Looper.getMainLooper()).post {
+        try {
+          activity.startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:${context.packageName}")))
+        } catch (e: Exception) {
+          // some phones hide that dialog: the list of apps instead
+          activity.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+        }
+      }
+    }
 
     /** the page (and its music) is there to take commands */
     val isRunning: Boolean get() = webView != null
@@ -33,6 +62,21 @@ class MainActivity : TauriActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     enableEdgeToEdge()
     super.onCreate(savedInstanceState)
+    instance = this
+    // "back": first the app's own previous tab; on the first tab the app goes to the
+    // background like other music apps, and the music keeps playing (closing it would stop it)
+    onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+      override fun handleOnBackPressed() {
+        val view = webView
+        if (view == null) {
+          moveTaskToBack(true)
+          return
+        }
+        view.evaluateJavascript("window.__evplayerBack ? window.__evplayerBack() : false") { went ->
+          if (went != "true") moveTaskToBack(true)
+        }
+      }
+    })
   }
 
   override fun onWebViewCreate(webView: WebView) {
@@ -47,6 +91,18 @@ class MainActivity : TauriActivity() {
     webView.addJavascriptInterface(MediaBridge(applicationContext), "EvPlayerAndroid")
     // the home-screen widget's buttons can now reach the page
     PlayerWidget.render(applicationContext)
+    // the page runs in a separate process, which Android lets go first when the app is off
+    // the screen (after a while in another app the player was simply gone); it stays
+    // important while the app is in the background too
+    if (Build.VERSION.SDK_INT >= 26) webView.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, false)
+    // on by default, as far as Android allows: an app cannot switch its battery
+    // optimisation off itself, so on the first start Android's own dialog asks once (later
+    // it is in the settings, under "Работа в фоне")
+    val prefs = getSharedPreferences("evplayer", MODE_PRIVATE)
+    if (!prefs.getBoolean("askedKeepRunning", false)) {
+      prefs.edit().putBoolean("askedKeepRunning", true).apply()
+      Handler(Looper.getMainLooper()).postDelayed({ askToKeepRunning(applicationContext) }, 1500)
+    }
   }
 
   override fun onPause() {
@@ -70,6 +126,7 @@ class MainActivity : TauriActivity() {
   override fun onDestroy() {
     if (isFinishing) {
       webView = null
+      instance = null
       MediaService.stop(applicationContext)
     }
     super.onDestroy()

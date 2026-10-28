@@ -21,6 +21,33 @@ import ServicesTab from "./settings/ServicesTab";
 import OverlayTab from "./settings/OverlayTab";
 import { Card, Row, SwitchRow, TabHeader } from "./settings/parts";
 import Dialog from "@/ui/components/Dialog";
+import { askPhoneToKeepRunning, onPhoneVisible, phoneKeepsRunning } from "@/platform/androidMedia";
+
+/** phones: whether Android leaves EvPlayer running in the background, and a way to allow it */
+function KeepRunningCard() {
+  const [allowed, setAllowed] = useState(() => phoneKeepsRunning());
+  // the answer is given in Android's own dialog; read it again on coming back
+  useEffect(() => onPhoneVisible((visible) => visible && setAllowed(phoneKeepsRunning())), []);
+  if (allowed === null) return null;
+  return (
+    <Card title="Работа в фоне">
+      <Row
+        title={allowed ? "EvPlayer может работать в фоне" : "Android может закрыть EvPlayer в фоне"}
+        hint={
+          allowed
+            ? "Экономия батареи для EvPlayer выключена: приложение не закроется, пока вы в других приложениях"
+            : "Например, пока вы в TikTok. Разрешите работу в фоне — так же делают SoundCloud, Spotify и Яндекс Музыка"
+        }
+      >
+        {!allowed && (
+          <button type="button" className="btn primary" onClick={askPhoneToKeepRunning}>
+            Разрешить
+          </button>
+        )}
+      </Row>
+    </Card>
+  );
+}
 
 type Tab = "playback" | "sound" | "appearance" | "keys" | "overlay" | "services" | "discord" | "data" | "about";
 
@@ -60,6 +87,7 @@ function Playback() {
         <SwitchRow title="Продолжать с места" hint="При запуске вернуть очередь и позицию — останется только нажать «Играть»" checked={s.resumeOnStart} onChange={(v) => s.set({ resumeOnStart: v })} />
         <SwitchRow title="Запуск двойным кликом" hint="Одиночный клик по треку только выделяет его — удобно, если часто промахиваетесь" checked={s.doubleClickToPlay} onChange={(v) => s.set({ doubleClickToPlay: v })} />
       </Card>
+      {isPhone && <KeepRunningCard />}
       <Card title="Устройства">
         <SwitchRow title="Пауза при отключении наушников" hint="Если пропадёт устройство вывода, музыка остановится, а не заиграет из колонок" checked={s.pauseOnDeviceChange} onChange={(v) => s.set({ pauseOnDeviceChange: v })} />
       </Card>
