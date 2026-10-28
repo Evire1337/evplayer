@@ -50,7 +50,9 @@ function CreateDialog() {
 }
 
 function ImportDialog() {
-  const open = useLibraryDialogs((s) => s.importCode);
+  const target = useLibraryDialogs((s) => s.importCode);
+  const open = target !== false;
+  const intoLikes = target === "likes";
   const [code, setCode] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -62,35 +64,39 @@ function ImportDialog() {
   }, [open]);
   const close = () => useLibraryDialogs.setState({ importCode: false });
   return (
-    <Dialog title="Импорт плейлиста" open={open} onClose={close}>
+    <Dialog title={intoLikes ? "Добавить в понравившиеся" : "Импорт плейлиста"} open={open} onClose={close}>
       <form
         className="dialog-form"
         onSubmit={async (e) => {
           e.preventDefault();
-          const kind = linkKind(code);
-          if (kind && kind !== "code") {
-            close();
-            void importFromLink(code.trim());
+          const value = code.trim();
+          const kind = linkKind(value);
+          if (!kind) {
+            setError("Это не похоже ни на ссылку, ни на код EvPlayer (он начинается с EVP).");
             return;
           }
-          setBusy(true);
-          try {
-            const shared = await decodePlaylistCode(code);
-            const lib = useLibrary.getState();
-            const playlist = lib.createPlaylist(shared.title, shared.description);
-            if (shared.icon) lib.updatePlaylist(playlist.id, { icon: shared.icon });
-            lib.addToPlaylist(playlist.id, shared.tracks);
-            close();
-            toast(`Плейлист «${playlist.title}» добавлен · ${shared.tracks.length} треков`);
-            goToPlaylist(playlist.id);
-          } catch {
-            setError("Код повреждён или неполный. Скопируйте его целиком, начиная с EVP.");
-          } finally {
-            setBusy(false);
+          if (kind === "code") {
+            // a broken code is told here, before the dialog closes
+            setBusy(true);
+            try {
+              await decodePlaylistCode(value);
+            } catch {
+              setError("Код повреждён или неполный. Скопируйте его целиком, начиная с EVP.");
+              return;
+            } finally {
+              setBusy(false);
+            }
           }
+          close();
+          // the progress panel at the top shows how it goes
+          void importFromLink(value, intoLikes ? "likes" : undefined);
         }}
       >
-        <p className="muted small">Вставьте ссылку на плейлист, альбом или трек из Spotify, Яндекс Музыки, YouTube / YouTube Music, SoundCloud или Deezer — или код EvPlayer (строка с EVP), который прислал друг.</p>
+        <p className="muted small">
+          {intoLikes
+            ? "Вставьте код EvPlayer (строка с EVP) — например, скопированный из чьих-то «Понравившихся», — или ссылку на плейлист. Треки добавятся к вашим лайкам, повторы пропускаются."
+            : "Вставьте ссылку на плейлист, альбом или трек из Spotify, Яндекс Музыки, YouTube / YouTube Music, SoundCloud или Deezer — или код EvPlayer (строка с EVP), который прислал друг. Код из «Понравившихся» добавится к вашим лайкам."}
+        </p>
         <label className="field">
           <span>Ссылка или код</span>
           <textarea id="pl-code" autoFocus rows={4} value={code} onChange={(e) => { setCode(e.target.value); setError(""); }} placeholder="https://open.spotify.com/playlist/… или EVP2.…" spellCheck={false} />
@@ -98,7 +104,7 @@ function ImportDialog() {
         {error && <p className="field-error">{error}</p>}
         <div className="dialog-actions">
           <button type="button" className="btn ghost" onClick={close}>Отмена</button>
-          <button type="submit" className="btn primary" disabled={busy || !code.trim()}>Импортировать</button>
+          <button type="submit" className="btn primary" disabled={busy || !code.trim()}>{intoLikes ? "Добавить" : "Импортировать"}</button>
         </div>
       </form>
     </Dialog>

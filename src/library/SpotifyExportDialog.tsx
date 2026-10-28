@@ -44,8 +44,9 @@ async function importPlaylists(chosen: SpotifyExportPlaylist[]): Promise<void> {
       }
     }
     if (lastId && !controller.signal.aborted) useNavigation.getState().go("playlist", lastId);
-  } finally {
-    progress.finish();
+    progress.finish(controller.signal.aborted ? { ok: false, text: "Загрузка отменена" } : { ok: true, text: "Готово · импорт закончен" });
+  } catch (e) {
+    progress.finish(controller.signal.aborted ? { ok: false, text: "Загрузка отменена" } : { ok: false, text: `Не загрузилось: ${e instanceof Error ? e.message : String(e)}` });
   }
 }
 

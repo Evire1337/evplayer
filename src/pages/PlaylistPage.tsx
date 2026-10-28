@@ -19,7 +19,8 @@ import { songs } from "./LibraryPage";
 import { useSettings } from "@/settings/store";
 import { DEFAULT_DIR, SORT_LABEL, sortRows, type SortDir, type SortKey } from "@/library/sort";
 import { getTrackStats } from "@/stats/listeningStats";
-import { IconCheck, IconSort } from "@/ui/components/Icons";
+import { IconCheck, IconPlus, IconSort } from "@/ui/components/Icons";
+import { openImportCode } from "@/library/dialogs";
 
 interface Row {
   key: string;
@@ -69,11 +70,13 @@ export default function PlaylistPage() {
   const title = isLikes ? "Понравившиеся" : playlist!.title;
 
   const share = async () => {
-    if (!playlist) return;
+    if (!isLikes && !playlist) return;
     try {
-      const code = await encodePlaylistCode({ title: playlist.title, description: playlist.description, icon: playlist.icon, tracks: playlist.items.map((i) => i.track) });
+      const code = isLikes
+        ? await encodePlaylistCode({ title: "Понравившиеся", likes: true, tracks: likes.map((l) => l.track) })
+        : await encodePlaylistCode({ title: playlist!.title, description: playlist!.description, icon: playlist!.icon, tracks: playlist!.items.map((i) => i.track) });
       await navigator.clipboard.writeText(code);
-      toast("Код плейлиста скопирован — отправьте его другу");
+      toast(isLikes ? "Код «Понравившихся» скопирован — вставьте его на другом устройстве или отправьте другу" : "Код плейлиста скопирован — отправьте его другу");
     } catch {
       toast("Не получилось скопировать код", "error");
     }
@@ -131,6 +134,22 @@ export default function PlaylistPage() {
               }}>
               <IconShuffle size={16} /> Вперемешку
             </button>
+            {isLikes && (
+              <button
+                type="button"
+                className="round-btn soft"
+                aria-label="Ещё"
+                onClick={(e) => {
+                  const r = e.currentTarget.getBoundingClientRect();
+                  openMenu({ clientX: r.left, clientY: r.bottom + 6 }, [
+                    ...(likes.length ? [{ label: "Скопировать код", icon: <IconShare size={16} />, onSelect: () => void share() }] : []),
+                    { label: "Вставить код или ссылку", icon: <IconPlus size={16} />, onSelect: () => openImportCode("likes") },
+                  ]);
+                }}
+              >
+                <IconMore size={18} />
+              </button>
+            )}
             {playlist && (
               <button
                 type="button"

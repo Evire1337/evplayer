@@ -14,3 +14,19 @@ describe("linkKind", () => {
     expect(linkKind("https://example.com/x")).toBeNull();
   });
 });
+
+import { parseCounts } from "./importProgress";
+import { decodePlaylistCode, encodePlaylistCode } from "./playlistCode";
+
+describe("import progress", () => {
+  it("reads the counts out of a step", () => {
+    expect(parseCounts("Ищу песни: 12 из 80 (найдено 10)")).toEqual({ done: 12, total: 80, found: 10 });
+    expect(parseCounts("Читаю ссылку…")).toEqual({ done: null, total: null, found: null });
+  });
+
+  it("a likes code says it is the likes", async () => {
+    const t = { id: "sc:1", source: "soundcloud" as const, title: "A", artists: [], durationMs: 1 };
+    expect((await decodePlaylistCode(await encodePlaylistCode({ title: "Понравившиеся", likes: true, tracks: [t] }))).likes).toBe(true);
+    expect((await decodePlaylistCode(await encodePlaylistCode({ title: "P", tracks: [t] }))).likes).toBeUndefined();
+  });
+});

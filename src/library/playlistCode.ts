@@ -8,6 +8,8 @@ export interface SharedPlaylist {
   description?: string;
   icon?: string;
   tracks: Track[];
+  /** a copy of someone's «Понравившиеся»: pasting it adds to your likes */
+  likes?: boolean;
 }
 
 interface Wire {
@@ -15,6 +17,8 @@ interface Wire {
   n: string;
   d?: string;
   c?: string;
+  /** 1: the list is «Понравившиеся» */
+  l?: 1;
   t: Array<[string, string, string, number, string?, Array<[string, string]>?]>;
 }
 
@@ -49,6 +53,7 @@ export async function encodePlaylistCode(p: SharedPlaylist): Promise<string> {
     n: p.title,
     ...(p.description ? { d: p.description } : {}),
     ...(p.icon && p.icon.length <= MAX_ICON ? { c: p.icon } : {}),
+    ...(p.likes ? { l: 1 as const } : {}),
     t: p.tracks.map((t) => [SHORT[t.source], t.id, t.title, t.durationMs, t.artwork ?? "", t.artists.map((a) => [a.id, a.name] as [string, string])]),
   };
   const raw = new TextEncoder().encode(JSON.stringify(wire));
@@ -75,5 +80,5 @@ export async function decodePlaylistCode(code: string): Promise<SharedPlaylist> 
     if (!source || typeof id !== "string" || typeof title !== "string") return [];
     return [{ id, source, title, durationMs: Number(duration) || 0, ...(art ? { artwork: art } : {}), artists: (artists ?? []).map(([aid, name]) => ({ id: aid, name })) }];
   });
-  return { title: wire.n, ...(wire.d ? { description: wire.d } : {}), ...(wire.c ? { icon: wire.c } : {}), tracks };
+  return { title: wire.n, ...(wire.d ? { description: wire.d } : {}), ...(wire.c ? { icon: wire.c } : {}), ...(wire.l === 1 ? { likes: true } : {}), tracks };
 }

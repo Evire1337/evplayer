@@ -67,8 +67,14 @@ html.is-phone .settings-tab-group { display: contents; }
 html.is-phone .settings-tab-group-title { display: none; }
 html.is-phone .settings-tabs button { white-space: nowrap; padding: 8px 12px; font-size: 13px; }
 
-/* rows: the date column does not fit */
+/* rows: the date column does not fit, and the grid loses its column too (otherwise the
+   empty date column squeezed the song title down to nothing) */
 html.is-phone .track-row .track-date, html.is-phone .track-row .track-plays { display: none; }
+html.is-phone .track-row, html.is-phone .track-row.has-date { grid-template-columns: auto minmax(0, 1fr) 34px auto 34px; gap: 8px; padding: 6px 4px; }
+html.is-phone .track-row .track-art { width: 44px; height: 44px; }
+/* the column header becomes a row of sort buttons */
+html.is-phone .track-head { display: flex; flex-wrap: wrap; gap: 6px 18px; padding: 0 4px 8px; }
+html.is-phone .track-head > span { display: none; }
 
 /* bigger touch targets; nothing waits for a hover that never comes */
 html.is-phone .row-icon { opacity: 1; }
@@ -82,3 +88,10 @@ html.is-phone .now { padding-top: calc(var(--safe-top) + 40px); }
 html.is-phone .set-row { flex-wrap: wrap; }
 html.is-phone .set-row-text { flex: 1 1 60%; }
 html.is-phone .set-row-control:has(input[type="range"]), html.is-phone .set-row-control:has(.chip-row), html.is-phone .set-row-control:has(.segmented) { flex: 1 1 100%; justify-content: flex-start; }
+
+/* import progress: across the top of the screen */
+html.is-phone .import-panel { top: calc(var(--safe-top) + 8px); width: calc(100vw - 20px); }
+html.is-phone .import-panel { background: rgba(6, 26, 32, 0.96); z-index: 40; }
+/* playlist pages: the cover is set to 210px inline for computers; small here so the title fits */
+html.is-phone .pl-hero > .pl-cover { width: 120px !important; height: 120px !important; }
+html.is-phone .pl-hero .display { font-size: 26px; overflow-wrap: anywhere; }

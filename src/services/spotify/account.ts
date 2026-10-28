@@ -30,10 +30,11 @@ async function withProgress(label: string, job: (signal: AbortSignal, step: (tex
   progress.start(label, () => controller.abort());
   try {
     await job(controller.signal, (text) => progress.update(text));
+    progress.finish(controller.signal.aborted ? { ok: false, text: "Загрузка отменена" } : { ok: true, text: "Готово · импорт закончен" });
   } catch (e) {
-    if (!controller.signal.aborted) toast(e instanceof Error ? e.message : String(e), "error");
-  } finally {
-    progress.finish();
+    const message = e instanceof Error ? e.message : String(e);
+    if (!controller.signal.aborted) toast(message, "error");
+    progress.finish({ ok: false, text: controller.signal.aborted ? "Загрузка отменена" : `Не загрузилось: ${message}` });
   }
 }
 

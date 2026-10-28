@@ -46,6 +46,10 @@ interface Fetched {
   artwork?: string;
   /** the source showed only part of the list */
   truncated?: boolean;
+  /** your own picture from an EvPlayer code (a data: url) */
+  icon?: string;
+  /** an EvPlayer code made from «Понравившиеся» */
+  likes?: boolean;
 }
 
 async function youtube(url: URL, signal: AbortSignal): Promise<Fetched> {
@@ -160,7 +164,7 @@ async function fetchLink(text: string, signal: AbortSignal): Promise<Fetched> {
   const kind = linkKind(text);
   if (kind === "code") {
     const shared = await decodePlaylistCode(text.trim());
-    return { title: shared.title, description: shared.description, tracks: shared.tracks };
+    return { title: shared.title, description: shared.description, tracks: shared.tracks, icon: shared.icon, likes: shared.likes };
   }
   const url = new URL(text.trim());
   switch (kind) {
@@ -189,13 +193,29 @@ async function fetchLink(text: string, signal: AbortSignal): Promise<Fetched> {
 
 let running: AbortController | null = null;
 
-/** fetch the link, match songs if needed, save as a new playlist and open it */
-export async function importFromLink(text: string): Promise<void> {
+/** where an import goes: a new playlist, or added to «Понравившиеся» */
+export type ImportTarget = "playlist" | "likes";
+
+function songsWord(n: number): string {
+  const d = n % 10;
+  const dd = n % 100;
+  if (d === 1 && dd !== 11) return `${n} трек`;
+  if (d >= 2 && d <= 4 && (dd < 12 || dd > 14)) return `${n} трека`;
+  return `${n} треков`;
+}
+
+/**
+ * fetch the link or read the code, match songs if needed, then save it as a new playlist
+ * (or add it to «Понравившиеся») and open it. A code copied from someone's likes goes to
+ * the likes unless asked otherwise.
+ */
+export async function importFromLink(text: string, target?: ImportTarget): Promise<void> {
   running?.abort();
   const controller = new AbortController();
   running = controller;
   const progress = useImportProgress.getState();
-  progress.start("Читаю ссылку…", () => controller.abort());
+  const isCode = linkKind(text) === "code";
+  progress.start(isCode ? "Читаю код…" : "Читаю ссылку…", () => controller.abort());
   try {
     const fetched = await fetchLink(text, controller.signal);
     let tracks = fetched.tracks ?? [];
@@ -208,20 +228,43 @@ export async function importFromLink(text: string): Promise<void> {
     }
     if (controller.signal.aborted) return;
     if (!tracks.length) throw new Error("В ссылке не нашлось треков, которые можно слушать");
+    progress.update(`Сохраняю: ${tracks.length} из ${tracks.length}`);
     const lib = useLibrary.getState();
-    const playlist = lib.createPlaylist(fetched.title, fetched.description);
-    if (fetched.artwork && /^https:/.test(fetched.artwork)) lib.updatePlaylist(playlist.id, { icon: fetched.artwork });
-    lib.addToPlaylist(playlist.id, tracks);
     const missed = fetched.named ? fetched.named.length - tracks.length : 0;
-    toast(missed > 0 ? `Плейлист «${fetched.title}»: ${tracks.length} треков, ${missed} не нашлось` : `Плейлист «${fetched.title}» добавлен`);
+    const missedNote = missed > 0 ? `, ${missed} не нашлось` : "";
+    let summary: string;
+    if ((target ?? (fetched.likes ? "likes" : "playlist")) === "likes") {
+      const added = lib.addLikes(tracks);
+      const already = tracks.length - added;
+      summary = `В «Понравившиеся» добавлено ${songsWord(added)}${already > 0 ? ` (${already} уже были)` : ""}${missedNote}`;
+      useNavigation.getState().go("playlist", "likes");
+    } else {
+      const playlist = lib.createPlaylist(fetched.title, fetched.description);
+      const icon = fetched.icon ?? (fetched.artwork && /^https:/.test(fetched.artwork) ? fetched.artwork : undefined);
+      if (icon) lib.updatePlaylist(playlist.id, { icon });
+      lib.addToPlaylist(playlist.id, tracks);
+      summary = `Плейлист «${fetched.title}»: ${songsWord(tracks.length)}${missedNote}`;
+      useNavigation.getState().go("playlist", playlist.id);
+    }
+    toast(summary);
+    progress.finish({ ok: true, text: `Готово · ${summary}` });
     if (fetched.truncated) {
       toast("Без входа Spotify показывает по ссылке только первые 100 треков. Войдите через Spotify в Настройки → Сервисы — и импорт заберёт плейлист целиком", "error");
     }
-    useNavigation.getState().go("playlist", playlist.id);
   } catch (error) {
-    if (!controller.signal.aborted) toast(error instanceof Error ? error.message : String(error), "error");
+    const message = error instanceof Error ? error.message : String(error);
+    // replaced by a newer import: the panel is that one's now
+    if (running !== controller) return;
+    if (controller.signal.aborted) progress.finish({ ok: false, text: "Загрузка отменена" });
+    else {
+      toast(message, "error");
+      progress.finish({ ok: false, text: `Не загрузилось: ${message}` });
+    }
   } finally {
-    if (running === controller) running = null;
-    progress.finish();
+    if (running === controller) {
+      running = null;
+      // cancelled before anything was saved
+      if (useImportProgress.getState().text !== null) progress.finish({ ok: false, text: "Загрузка отменена" });
+    }
   }
 }
