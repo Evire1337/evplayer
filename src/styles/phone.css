@@ -56,7 +56,10 @@ html.is-phone .now { display: flex; flex-direction: column; gap: 18px; padding: 
 html.is-phone .now-left { overflow: visible; justify-content: flex-start; flex: 0 0 auto; min-height: auto; }
 html.is-phone .now-art { width: min(100%, 360px); border-radius: 28px; }
 html.is-phone .now-title { font-size: 24px; }
-html.is-phone .now-lyrics { min-height: 60vh; flex-shrink: 0; --lyric-scale: 7; }
+/* the lyrics are a window of a fixed height with their own scroll (they used to grow to
+   the full text, two screens tall, so the current line was centred off the screen) */
+html.is-phone .now-lyrics { height: 64vh; min-height: 320px; flex-shrink: 0; --lyric-scale: 7; }
+html.is-phone .now-lyrics .lyrics { height: 100%; overscroll-behavior: contain; }
 html.is-phone .now > .queue { display: none; }
 
 

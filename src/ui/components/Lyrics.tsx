@@ -1,5 +1,8 @@
 import { useSettings } from "@/settings/store";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+
+/** after scrolling the lyrics by hand, they follow the song again this much later */
+const HAND_SCROLL_PAUSE_MS = 4000;
 import type { Track } from "@/types";
 import { player } from "@/player/engine";
 import { useLyrics } from "../useLyrics";
@@ -20,13 +23,37 @@ export default function Lyrics({ track }: { track: Track | undefined }) {
   const active = useActiveLine(synced ? lines : null, track?.id);
   const offset = useLyricsOffset(track?.id);
 
+  // scrolling the lyrics by hand pauses following the song for a few seconds, then it
+  // glides back to the line being sung (it used to pull the text away under the finger)
+  const [handScrolled, setHandScrolled] = useState(0);
   useEffect(() => {
     const box = boxRef.current;
-    if (!box || active < 0) return;
+    if (!box) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const byHand = () => {
+      clearTimeout(timer);
+      setHandScrolled(Date.now());
+      timer = setTimeout(() => setHandScrolled(0), HAND_SCROLL_PAUSE_MS);
+    };
+    box.addEventListener("wheel", byHand, { passive: true });
+    box.addEventListener("touchmove", byHand, { passive: true });
+    return () => {
+      clearTimeout(timer);
+      box.removeEventListener("wheel", byHand);
+      box.removeEventListener("touchmove", byHand);
+    };
+  }, [lyrics.status]);
+
+  useEffect(() => {
+    const box = boxRef.current;
+    if (!box || active < 0 || handScrolled) return;
     const el = box.querySelector<HTMLElement>(`[data-line="${active}"]`);
     if (!el) return;
-    box.scrollTo({ top: el.offsetTop - box.clientHeight / 2 + el.clientHeight / 2, behavior: useSettings.getState().memorySaver ? "auto" : "smooth" });
-  }, [active]);
+    // measured against the lyrics box itself (offsetTop counts from whichever ancestor is
+    // positioned, which on the phone is far above it)
+    const top = el.getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop;
+    box.scrollTo({ top: top - box.clientHeight / 2 + el.clientHeight / 2, behavior: useSettings.getState().memorySaver ? "auto" : "smooth" });
+  }, [active, handScrolled]);
 
   if (!track) return <div className="lyrics-empty">Включите трек, и здесь появится его текст.</div>;
   if (lyrics.status === "loading" || lyrics.status === "idle") return <div className="lyrics-empty">Ищем текст…</div>;
