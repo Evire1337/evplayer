@@ -878,3 +878,6 @@ html.saver .now-art::before, html.saver .now-art::after { display: none !importa
 .chip.is-draggable { touch-action: none; }
 .chip.drop-before { box-shadow: inset 3px 0 0 var(--accent); }
 .chip.drop-after { box-shadow: inset -3px 0 0 var(--accent); }
+
+/* playlists and albums in "Недавно слушали" sit in the same row as songs */
+.recent-card { flex: 0 0 172px; }

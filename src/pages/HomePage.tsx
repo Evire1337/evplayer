@@ -17,6 +17,12 @@ import { recommendations, type Recommendations } from "@/home/recommendations";
 import { player } from "@/player/engine";
 import { IconRadio } from "@/ui/components/Icons";
 import { useNavigation } from "@/ui/navigation";
+import PlaylistCover from "@/library/Cover";
+import SmartCover from "@/stats/SmartCover";
+import { sourceKey, type PlaySource } from "@/stats/playSource";
+import type { SmartPlaylistKind } from "@/stats/listeningStats";
+import { IconDisc, IconFolder } from "@/ui/components/Icons";
+import { songs } from "./LibraryPage";
 
 function greeting(date = new Date()): string {
   const h = date.getHours();
@@ -66,11 +72,77 @@ function Row({ title, tracks, state, ranked, hint }: { title: string; tracks: Tr
   );
 }
 
+type RecentItem = { kind: "track"; track: Track; at: string } | { kind: "source"; source: PlaySource; at: string };
+
+/** a playlist or album in "Недавно слушали": opens its page */
+function SourceCard({ source }: { source: PlaySource }) {
+  const go = useNavigation((s) => s.go);
+  const likes = useLibrary((s) => s.likes);
+  const playlist = useLibrary((s) => (source.page === "playlist" && source.id !== "likes" ? s.playlists.find((p) => p.id === source.id) : undefined));
+  let cover: React.ReactNode;
+  let title: string;
+  let sub: string;
+  if (source.page === "playlist" && source.id === "likes") {
+    cover = <PlaylistCover liked />;
+    title = "Понравившиеся";
+    sub = songs(likes.length);
+  } else if (source.page === "playlist") {
+    if (!playlist) return null;
+    cover = <PlaylistCover playlist={playlist} />;
+    title = playlist.title;
+    sub = `Плейлист · ${songs(playlist.items.length)}`;
+  } else if (source.page === "smart") {
+    const kind = source.id as SmartPlaylistKind;
+    if (!SMART_INFO[kind]) return null;
+    cover = <SmartCover kind={kind} tracks={getSmartPlaylist(kind, likes.map((l) => l.track))} />;
+    title = SMART_INFO[kind].title;
+    sub = "Собрано для вас";
+  } else if (source.page === "files") {
+    cover = <span className="pl-cover files-cover"><IconFolder size={48} /></span>;
+    title = "Мои файлы";
+    sub = "С компьютера";
+  } else {
+    cover = <span className="pl-cover">{source.cover ? <img src={source.cover} alt="" loading="lazy" /> : <IconDisc size={48} />}</span>;
+    title = source.title ?? "Плейлист";
+    sub = source.kind ?? "Плейлист";
+  }
+  return (
+    <button type="button" className="pl-card recent-card" onClick={() => go(source.page, source.id, source.title)}>
+      {cover}
+      <span className="pl-card-title">{title}</span>
+      <span className="pl-card-sub">{sub}</span>
+    </button>
+  );
+}
+
 function Recent() {
   const entries = useHistory((s) => s.entries);
-  const tracks = useMemo(() => entries.slice(0, 20).map((e) => e.track), [entries]);
-  if (!tracks.length) return null;
-  return <Row title="Недавно слушали" tracks={tracks} state="ready" />;
+  const sources = useHistory((s) => s.sources);
+  // playlists and albums stand for the songs played from them; other songs show on their own
+  const items = useMemo(() => {
+    const shown = new Set(sources.map((e) => sourceKey(e.source)));
+    const list: RecentItem[] = [
+      ...sources.map((e) => ({ kind: "source" as const, source: e.source, at: e.playedAt })),
+      ...entries.filter((e) => !e.from || !shown.has(e.from)).map((e) => ({ kind: "track" as const, track: e.track, at: e.playedAt })),
+    ];
+    return list.sort((a, b) => b.at.localeCompare(a.at)).slice(0, 20);
+  }, [entries, sources]);
+  const tracks = useMemo(() => items.flatMap((i) => (i.kind === "track" ? [i.track] : [])), [items]);
+  if (!items.length) return null;
+  return (
+    <section className="row">
+      <h2 className="row-title">Недавно слушали</h2>
+      <RowScroll>
+        {items.map((item) =>
+          item.kind === "source" ? (
+            <SourceCard key={sourceKey(item.source)} source={item.source} />
+          ) : (
+            <TrackCard key={item.track.id} track={item.track} queue={tracks} index={tracks.indexOf(item.track)} />
+          ),
+        )}
+      </RowScroll>
+    </section>
+  );
 }
 
 function SmartRow({ version }: { version: number }) {

@@ -12,6 +12,7 @@ import { useLibrary } from "@/library/store";
 import { toast } from "@/ui/toasts";
 import { formatTime } from "@/ui/format";
 import { songs } from "./LibraryPage";
+import { describeSource } from "@/stats/playSource";
 
 interface Loaded {
   title: string;
@@ -53,6 +54,7 @@ export default function CollectionPage() {
     setData(null);
     load(id, controller.signal)
       .then((d) => {
+        describeSource(id, d.title, d.artwork, `${d.kind === "album" ? "Альбом" : "Плейлист"} · ${d.source}`);
         setData(d);
         setState("ready");
       })

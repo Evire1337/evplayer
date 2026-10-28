@@ -52,6 +52,7 @@ export default function App() {
   const page = useNavigation((s) => s.page);
   const canGoBack = useNavigation((s) => s.back.length > 0);
   const goBack = useNavigation((s) => s.goBack);
+  const go = useNavigation((s) => s.go);
   const artwork = usePlayer((s) => currentTrack(s)?.artwork);
   const playing = usePlayer((s) => s.status === "playing");
   const lyricsSize = useSettings((s) => s.lyricsSize);
@@ -73,8 +74,9 @@ export default function App() {
       {/* memory saver: no WebGL backdrop at all, a still gradient instead */}
       {saver ? <div className="backdrop backdrop-still" aria-hidden="true" /> : <Backdrop image={artwork} playing={playing} />}
       <div className="titlebar" data-tauri-drag-region>
-        {canGoBack && page !== "now" && (
-          <button type="button" className="back-btn" aria-label="Назад" onClick={goBack}>
+        {/* "Сейчас играет" always has a way back: the previous tab, else Home */}
+        {(canGoBack || page === "now") && (
+          <button type="button" className="back-btn" aria-label="Назад" data-tip="Назад" onClick={() => (canGoBack ? goBack() : go("home"))}>
             <IconBack size={18} />
           </button>
         )}

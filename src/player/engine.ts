@@ -9,6 +9,7 @@ import { effectsForNextTrack, useEffects, type EffectsState } from "./effects";
 import { similarTracks, songKey } from "./radio";
 import { keeps, useSettings } from "@/settings/store";
 import { HISTORY_AFTER_MS, useHistory } from "@/stats/history";
+import { currentSource, type PlaySource } from "@/stats/playSource";
 import { recordListen } from "@/stats/listeningStats";
 
 // Two <audio> "decks": one plays, the other gets the next song ready shortly before the
@@ -54,6 +55,8 @@ class PlayerEngine {
   private session = "";
   private sessionTrack: Track | null = null;
   private heardMs = 0;
+  private source: PlaySource | null = null;
+  private sourceIds = new Set<string>();
   private lastPos = -1;
   private counted = false;
   private radioBusy = false;
@@ -154,7 +157,11 @@ class PlayerEngine {
     const track = this.sessionTrack;
     if (track && !this.counted && this.heardMs >= HISTORY_AFTER_MS) {
       this.counted = true;
-      if (keeps("history")) useHistory.getState().push(track);
+      if (keeps("history")) {
+        // songs added to the queue later are not part of the playlist it was started from
+        const from = this.source && this.sourceIds.has(track.id) ? this.source : null;
+        useHistory.getState().push(track, undefined, from);
+      }
       recordListen(track, this.session, this.heardMs);
     }
   }
@@ -174,8 +181,14 @@ class PlayerEngine {
 
   // ---- queue ---------------------------------------------------------------------------
 
-  async playQueue(tracks: Track[], startIndex = 0): Promise<void> {
+  /**
+   * `source`: the playlist or album the queue comes from (by default the page on screen),
+   * so it shows up in "Недавно слушали"
+   */
+  async playQueue(tracks: Track[], startIndex = 0, source: PlaySource | null = currentSource()): Promise<void> {
     if (tracks.length === 0) return;
+    this.source = source;
+    this.sourceIds = new Set(source ? tracks.map((t) => t.id) : []);
     this.resumeAt = 0;
     const { shuffle } = usePlayer.getState();
     const start = tracks[startIndex] ?? tracks[0];
@@ -210,7 +223,7 @@ class PlayerEngine {
   playNext(track: Track): void {
     const s = usePlayer.getState();
     if (s.queue.length === 0) {
-      void this.playQueue([track]);
+      void this.playQueue([track], 0, null);
       return;
     }
     const queue = [...s.queue];
@@ -221,7 +234,7 @@ class PlayerEngine {
   addToQueue(track: Track): void {
     const s = usePlayer.getState();
     if (s.queue.length === 0) {
-      void this.playQueue([track]);
+      void this.playQueue([track], 0, null);
       return;
     }
     usePlayer.setState({ queue: [...s.queue, track] });
@@ -257,7 +270,7 @@ class PlayerEngine {
 
   /** start a station from one song: the song, then similar ones */
   async startRadio(seed: Track): Promise<void> {
-    await this.playQueue([seed]);
+    await this.playQueue([seed], 0, null);
     const more = await similarTracks(seed, new Set([seed.id])).catch(() => []);
     const s = usePlayer.getState();
     if (currentTrack(s)?.id === seed.id) usePlayer.setState({ queue: [...s.queue, ...more] });
