@@ -21,6 +21,7 @@
 ![React](https://img.shields.io/badge/React_19-149ECA?style=flat-square&logo=react&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white)
 ![Vite](https://img.shields.io/badge/Vite-646CFF?style=flat-square&logo=vite&logoColor=white)
+![Telegram](https://img.shields.io/badge/Telegram%20-8A2BE2?logo=Telegram)
 
 <a href="https://github.com/Evire1337/evplayer/releases/latest">
   <img src="https://img.shields.io/badge/Скачать_для_Windows-6ff0c4?style=for-the-badge&logo=windows&logoColor=06201d&labelColor=6ff0c4" alt="Скачать для Windows" height="42" />
