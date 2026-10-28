@@ -15,8 +15,8 @@ export interface PlayerState {
   repeat: RepeatMode;
   shuffle: boolean;
   error?: string;
-  /** how a YouTube song is playing: through its SoundCloud copy or the YouTube player */
-  route?: "matched";
+  /** the original did not play: a copy of the song from this service is playing */
+  route?: "soundcloud" | "youtube" | "local";
 }
 
 const VOLUME_KEY = "evplayer.volume";

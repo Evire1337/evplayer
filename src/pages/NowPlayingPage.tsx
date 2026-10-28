@@ -39,7 +39,8 @@ export default function NowPlayingPage() {
           {track && (
             <span className="now-source">
               {SOURCE[track.source]}
-              {route === "matched" && " · играет копия с SoundCloud"}
+              {route === "soundcloud" && " · играет копия с SoundCloud"}
+              {route === "youtube" && " · играет копия с YouTube"}
             </span>
           )}
         </div>

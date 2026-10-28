@@ -59,6 +59,8 @@ export function transcodingsOf(raw: unknown): Transcoding[] {
     if (!url || (protocol !== "progressive" && protocol !== "hls")) return [];
     // encrypted streams (premium "ctr-encrypted-hls") cannot be played here
     if (/encrypted/i.test(protocol) || t.snipped === true) return [];
+    // Opus in HLS comes as Ogg pieces, which the HLS player cannot put together
+    if (protocol === "hls" && /ogg/i.test(mimeType)) return [];
     return [{ url, protocol, mimeType }];
   });
 }

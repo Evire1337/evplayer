@@ -43,7 +43,9 @@ function score(record: Record, title: string, durationMs: number): number {
   if (durationMs && record.duration) {
     const diff = Math.abs(durationMs / 1000 - record.duration);
     if (diff > 20) return -1;
-    s += diff <= 3 ? 30 : 10;
+    // the closest length wins: synced lines are timed for that exact version of the song,
+    // and a version a second longer is usually a second off all the way through
+    s += Math.max(0, 30 - diff * 6);
   }
   if (record.syncedLyrics) s += 10;
   return s;

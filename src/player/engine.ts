@@ -1,7 +1,7 @@
 import Hls from "hls.js";
 import type { Track } from "@/types";
 import { currentTrack, nextIndex, prevIndex, shuffledQueue, usePlayer } from "./store";
-import { resolveStream } from "./streams";
+import { resolveStream, streamCandidates, type PlayableStream } from "./streams";
 import { mediaStream } from "@/platform/net";
 import { createAudioGraph, type AudioGraph } from "@/audio/graph";
 import { setLevelingTrack } from "@/equalizer/eqAudio";
@@ -12,6 +12,8 @@ import { HISTORY_AFTER_MS, useHistory } from "@/stats/history";
 import { currentSource, type PlaySource } from "@/stats/playSource";
 import { recordListen } from "@/stats/listeningStats";
 
+/** a source that has not started playing by then counts as not working */
+const START_TIMEOUT_MS = 20_000;
 /** a song that cannot be played gives way to the next one after this long */
 export const SKIP_BROKEN_AFTER_MS = 500;
 /** this many broken songs in a row stop the player (no internet, a service down) */
@@ -30,7 +32,8 @@ interface Deck {
 interface Prepared {
   index: number;
   track: Track;
-  route?: "matched";
+  /** playing a copy of the song from this service */
+  route?: Track["source"];
   ready: boolean;
 }
 
@@ -62,6 +65,7 @@ class PlayerEngine {
   private heardMs = 0;
   private source: PlaySource | null = null;
   private failedInARow = 0;
+  private prepareSkip: string | null = null;
   private fadeTimer: ReturnType<typeof setTimeout> | undefined;
   private failedToken = -1;
   private skipTimer: ReturnType<typeof setTimeout> | undefined;
@@ -79,6 +83,11 @@ class PlayerEngine {
 
   private get spare(): Deck {
     return this.decks[1 - this.active];
+  }
+
+  /** how far the heard sound is behind `audio.currentTime`, in ms */
+  get outputLatencyMs(): number {
+    return this.graph.latencyMs;
   }
 
   /** the element that is playing (for code that only needs to read it) */
@@ -144,7 +153,7 @@ class PlayerEngine {
     });
     a.addEventListener("error", () => {
       if (deck === this.spare) {
-        this.dropPrepared();
+        this.prepareFailed();
         return;
       }
       if (!isCur() || !a.getAttribute("src")) return;
@@ -439,18 +448,33 @@ class PlayerEngine {
     this.loadAbort = controller;
     if (this.transitioning) this.finishTransition();
     this.dropPrepared();
+    this.prepareSkip = null;
     this.unload(this.cur);
     usePlayer.setState({ status: "loading", positionMs: 0, durationMs: track.durationMs, error: undefined, route: undefined });
     this.begin(track);
     try {
-      const stream = await resolveStream(track, controller.signal);
-      if (token !== this.loadToken) return;
-      if (stream.via) usePlayer.setState({ route: "matched" });
-      this.graph.setDeck(this.cur.audio, 1);
-      this.attach(this.cur, stream, () => token === this.loadToken && this.failed("Поток прервался"));
-      this.applyEffects();
-      await this.cur.audio.play();
-      this.applyResume();
+      // one way after another (another format, the same song on the other service) until
+      // one really plays
+      let lastError: unknown = null;
+      let started = false;
+      for await (const stream of streamCandidates(track, controller.signal)) {
+        if (token !== this.loadToken) return;
+        try {
+          await this.start(this.cur, stream, token);
+        } catch (error) {
+          if (token !== this.loadToken) return;
+          if (error instanceof DOMException && error.name === "NotAllowedError") throw error;
+          console.warn("[player] this source did not play, trying the next:", error);
+          lastError = error;
+          this.unload(this.cur);
+          continue;
+        }
+        started = true;
+        usePlayer.setState({ route: stream.via?.source });
+        this.applyResume();
+        break;
+      }
+      if (!started) throw lastError ?? new Error("Не нашлось, откуда взять звук этой песни");
     } catch (error) {
       if (token !== this.loadToken || controller.signal.aborted) return;
       // the system did not let it start on its own (no click yet): not the song's fault
@@ -462,6 +486,32 @@ class PlayerEngine {
       const message = error instanceof DOMException && error.name === "NotSupportedError" ? "Не удалось открыть трек" : error instanceof Error ? error.message : String(error);
       this.failed(message);
     }
+  }
+
+  /** attach a source to a deck and wait until it really plays (or fails, or takes too long) */
+  private start(deck: Deck, stream: PlayableStream, token: number): Promise<void> {
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      const settle = (error?: unknown) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        deck.audio.removeEventListener("error", onError);
+        if (error) reject(error);
+        else resolve();
+      };
+      const onError = () => settle(new Error("Не удалось открыть трек"));
+      const timer = setTimeout(() => settle(new Error("Трек слишком долго не начинается")), START_TIMEOUT_MS);
+      deck.audio.addEventListener("error", onError);
+      this.graph.setDeck(deck.audio, 1);
+      // a stream that breaks before it starts: the next source; after: the next song
+      this.attach(deck, stream, () => {
+        if (!settled) settle(new Error("Поток не открылся"));
+        else if (token === this.loadToken) this.failed("Поток прервался");
+      });
+      this.applyEffects();
+      deck.audio.play().then(() => settle(), settle);
+    });
   }
 
   /**
@@ -508,7 +558,7 @@ class PlayerEngine {
     if (state.repeat === "one") return;
     const index = nextIndex(state, false);
     const track = state.queue[index];
-    if (index < 0 || !track || index === state.index) return;
+    if (index < 0 || !track || index === state.index || track.id === this.prepareSkip) return;
     const prepared: Prepared = { index, track, ready: false };
     this.prepared = prepared;
     this.prepareAbort?.abort();
@@ -517,14 +567,24 @@ class PlayerEngine {
     try {
       const stream = await resolveStream(track, controller.signal);
       if (this.prepared !== prepared) return;
-      if (stream.via) prepared.route = "matched";
+      if (stream.via) prepared.route = stream.via.source;
       const deck = this.spare;
       this.unload(deck);
       this.graph.setDeck(deck.audio, 0);
-      this.attach(deck, stream, () => this.prepared === prepared && this.dropPrepared());
+      this.attach(deck, stream, () => this.prepared === prepared && this.prepareFailed());
     } catch {
       if (this.prepared === prepared) this.prepared = null;
     }
+  }
+
+  /**
+   * The next song's first source did not load on the spare deck. Not tried again before its
+   * turn (it used to be retried on every tick): then it starts the full way, trying every
+   * source.
+   */
+  private prepareFailed(): void {
+    if (this.prepared) this.prepareSkip = this.prepared.track.id;
+    this.dropPrepared();
   }
 
   private dropPrepared(): void {

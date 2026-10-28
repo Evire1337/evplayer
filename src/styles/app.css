@@ -424,6 +424,16 @@ img { display: block; max-width: 100%; }
 .lyric-line.is-active { color: #fff; filter: none; transform: scale(1.06); text-shadow: 0 2px 30px rgba(0, 0, 0, 0.25); }
 .lyric-line.is-plain { margin: 0; filter: none; color: var(--ink); font-size: clamp(20px, calc(var(--lyric-scale) * 0.75cqi), 44px); cursor: text; user-select: text; }
 .lyrics-source { font-size: 11.5px; color: var(--ink-3); padding-bottom: 12px; }
+/* nudging the lyrics: pinned to the bottom of the lyrics, shown on hover (or once used) */
+.lyrics-shift {
+  position: sticky; bottom: 10px; align-self: flex-end; margin-top: -40px; display: flex; align-items: center; gap: 2px;
+  padding: 3px; border-radius: 999px; font-size: 12px; opacity: 0; transition: opacity 180ms ease;
+}
+.lyrics:hover .lyrics-shift, .lyrics-shift.is-set, .lyrics-shift:focus-within { opacity: 1; }
+.lyrics-shift-btn { width: 28px; height: 28px; border-radius: 50%; font-size: 17px; font-weight: 700; color: var(--ink-2); display: flex; align-items: center; justify-content: center; }
+.lyrics-shift-btn:hover, .lyrics-shift-value:hover { background: var(--hover); color: var(--ink); }
+.lyrics-shift-value { height: 28px; padding: 0 10px; border-radius: 999px; color: var(--ink-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.lyrics-shift.is-set .lyrics-shift-value { color: var(--accent); }
 .lyrics-empty { height: 100%; display: flex; align-items: center; justify-content: center; color: var(--ink-3); font-size: 15px; text-align: center; }
 
 .queue { border-radius: 30px; padding: 20px 14px 20px 20px; display: flex; flex-direction: column; gap: 12px; min-height: 0; margin-bottom: 0; }

@@ -148,6 +148,16 @@ class AudioGraph {
     }, SUSPEND_AFTER_MS);
   };
 
+  /**
+   * how far the sound you hear is behind the song's position: the sound card's buffer and
+   * the system's output path (lyrics wait for it, or they run ahead of the singer)
+   */
+  get latencyMs(): number {
+    if (!this.ctx) return 0;
+    const seconds = (this.ctx.baseLatency || 0) + (this.ctx.outputLatency || 0);
+    return Number.isFinite(seconds) ? Math.min(500, Math.max(0, seconds * 1000)) : 0;
+  }
+
   /** can decks be faded against each other right now */
   get canFade(): boolean {
     return this.ctx !== null && this.ctx.state === "running";

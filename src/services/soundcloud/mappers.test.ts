@@ -19,7 +19,7 @@ describe("soundcloud mappers", () => {
     expect(artworkUrl(undefined)).toBeUndefined();
   });
 
-  it("prefers progressive mp3 and skips encrypted streams", () => {
+  it("prefers progressive mp3 and skips encrypted streams and Ogg pieces in HLS", () => {
     const list = transcodingsOf({
       media: {
         transcodings: [
@@ -30,7 +30,7 @@ describe("soundcloud mappers", () => {
         ],
       },
     });
-    expect(list.map((t) => t.url)).toEqual(["a", "c", "d"]);
+    expect(list.map((t) => t.url)).toEqual(["c", "d"]);
     expect(pickTranscoding(list)?.url).toBe("c");
     expect(pickTranscoding(list.filter((t) => t.url !== "c"))?.url).toBe("d");
   });

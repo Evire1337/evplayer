@@ -61,24 +61,46 @@ export interface ScStream {
   hls: boolean;
 }
 
-export async function resolveSoundCloudStream(trackId: string, signal?: AbortSignal): Promise<ScStream> {
+/** the reason a SoundCloud song has nothing this player can use */
+export class ScUnplayableError extends Error {
+  constructor() {
+    super("SoundCloud отдаёт этот трек только в защищённом виде или 30-секундным отрывком");
+  }
+}
+
+/**
+ * Every format of a song this player can play, best first, each asked from SoundCloud only
+ * when the previous one did not work out. A format that SoundCloud refuses is skipped.
+ */
+export async function* soundCloudStreams(trackId: string, signal?: AbortSignal): AsyncGenerator<ScStream> {
   const id = trackId.replace(/^sc:/, "");
   const track = await scGet(`/tracks/${id}`, {}, signal);
   const auth = trackAuthorization(track);
   const options = rankTranscodings(transcodingsOf(track));
-  if (options.length === 0) throw new Error("Этот трек нельзя проиграть (только для подписчиков SoundCloud Go или закрыт автором)");
+  if (options.length === 0) throw new ScUnplayableError();
+  let given = 0;
   let lastError: unknown;
-  // a format can be missing for a given track: fall through to the next one
   for (const option of options) {
+    let url: string | undefined;
     try {
-      const { url } = await scGet<{ url?: string }>(option.url, auth ? { track_authorization: auth } : {}, signal);
-      if (url) return { url, hls: option.protocol === "hls" };
+      ({ url } = await scGet<{ url?: string }>(option.url, auth ? { track_authorization: auth } : {}, signal));
     } catch (error) {
       if (signal?.aborted) throw error;
       lastError = error;
+      continue;
+    }
+    if (url) {
+      given++;
+      yield { url, hls: option.protocol === "hls" };
     }
   }
-  throw lastError instanceof Error ? lastError : new Error("SoundCloud не отдал поток");
+  if (!given) throw lastError instanceof Error ? lastError : new Error("SoundCloud не отдал поток");
+}
+
+/** the first format of a song SoundCloud hands out */
+export async function resolveSoundCloudStream(trackId: string, signal?: AbortSignal): Promise<ScStream> {
+  for await (const stream of soundCloudStreams(trackId, signal)) return stream;
+  throw new Error("SoundCloud не отдал поток");
 }
 
 /** songs SoundCloud considers similar: used for autoplay when the queue runs out */

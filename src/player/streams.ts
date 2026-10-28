@@ -1,5 +1,6 @@
 import type { Track } from "@/types";
-import { resolveSoundCloudStream, searchSoundCloud } from "@/services/soundcloud/api";
+import { searchSoundCloud, soundCloudStreams } from "@/services/soundcloud/api";
+import { searchYouTubeMusic } from "@/services/youtube/music";
 import { bestMatch, searchQueryFor } from "./match";
 import { mediaUrl } from "@/files/localFiles";
 import { resolveYouTubeAudio, videoIdOf } from "@/services/youtube/direct";
@@ -7,12 +8,20 @@ import { resolveYouTubeAudio, videoIdOf } from "@/services/youtube/direct";
 export interface PlayableStream {
   url: string;
   hls: boolean;
-  /** the SoundCloud upload a YouTube track was matched to */
+  /** the same song on the other service, playing because the original did not */
   via?: Track;
 }
 
 // remembered per session: searching once per song is enough
 const matches = new Map<string, Track | null>();
+const youTubeMatches = new Map<string, Track | null>();
+
+async function youTubeMatch(track: Track, signal?: AbortSignal): Promise<Track | null> {
+  if (youTubeMatches.has(track.id)) return youTubeMatches.get(track.id) ?? null;
+  const found = bestMatch(track, await searchYouTubeMusic(searchQueryFor(track), signal));
+  youTubeMatches.set(track.id, found);
+  return found;
+}
 
 async function soundCloudMatch(track: Track, signal?: AbortSignal): Promise<Track | null> {
   if (matches.has(track.id)) return matches.get(track.id) ?? null;
@@ -29,20 +38,49 @@ export class NoCopyError extends Error {
   }
 }
 
-/** where the audio for a track comes from; new sources plug in here */
-export async function resolveStream(track: Track, signal?: AbortSignal): Promise<PlayableStream> {
+/**
+ * Every way to get a song's sound, best first; the player tries the next one when one does
+ * not play (resolveStream below takes only the first):
+ * - SoundCloud: each format of the upload, then the same song on YouTube (some uploads are
+ *   only given out protected or as a 30-second preview, which the SoundCloud site can play
+ *   and this player cannot)
+ * - YouTube: straight from YouTube, then the song's copy on SoundCloud
+ */
+export async function* streamCandidates(track: Track, signal?: AbortSignal): AsyncGenerator<PlayableStream> {
+  let lastError: unknown;
   switch (track.source) {
-    case "soundcloud":
-      return resolveSoundCloudStream(track.id, signal);
     case "local":
-      return { url: mediaUrl("track", track.id), hls: false };
+      yield { url: mediaUrl("track", track.id), hls: false };
+      return;
+    case "soundcloud": {
+      try {
+        yield* soundCloudStreams(track.id, signal);
+      } catch (e) {
+        if (signal?.aborted) throw e;
+        lastError = e;
+      }
+      const copy = await youTubeMatch(track, signal).catch((e) => {
+        if (signal?.aborted) throw e;
+        return null;
+      });
+      const videoId = copy && videoIdOf(copy.id);
+      if (copy && videoId) {
+        try {
+          yield { url: (await resolveYouTubeAudio(videoId, signal)).url, hls: false, via: copy };
+          return;
+        } catch (e) {
+          if (signal?.aborted) throw e;
+          lastError = e;
+        }
+      }
+      if (lastError) throw lastError;
+      return;
+    }
     case "youtube": {
-      // straight from YouTube first; if YouTube refuses, the song's copy on SoundCloud
       const videoId = videoIdOf(track.id);
       if (videoId) {
         try {
-          const direct = await resolveYouTubeAudio(videoId, signal);
-          return { url: direct.url, hls: false };
+          yield { url: (await resolveYouTubeAudio(videoId, signal)).url, hls: false };
         } catch (e) {
           if (signal?.aborted) throw e;
           console.warn("[youtube] direct playback failed, trying SoundCloud:", e);
@@ -50,7 +88,13 @@ export async function resolveStream(track: Track, signal?: AbortSignal): Promise
       }
       const match = await soundCloudMatch(track, signal);
       if (!match) throw new NoCopyError();
-      return { ...(await resolveSoundCloudStream(match.id, signal)), via: match };
+      for await (const stream of soundCloudStreams(match.id, signal)) yield { ...stream, via: match };
     }
   }
+}
+
+/** the first way to get a song's sound */
+export async function resolveStream(track: Track, signal?: AbortSignal): Promise<PlayableStream> {
+  for await (const stream of streamCandidates(track, signal)) return stream;
+  throw new Error("Не нашлось, откуда взять звук этой песни");
 }
