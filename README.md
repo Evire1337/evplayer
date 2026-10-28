@@ -15,13 +15,13 @@
 [![Stars](https://img.shields.io/github/stars/Evire1337/evplayer?style=for-the-badge&label=звёзды&color=6ff0c4&labelColor=06201d)](https://github.com/Evire1337/evplayer/stargazers)
 [![License](https://img.shields.io/github/license/Evire1337/evplayer?style=for-the-badge&label=лицензия&color=6ff0c4&labelColor=06201d)](LICENSE)
 [![Check](https://img.shields.io/github/actions/workflow/status/Evire1337/evplayer/check.yml?branch=desktop&style=for-the-badge&label=сборка&labelColor=06201d)](https://github.com/Evire1337/evplayer/actions)
-![Telegram](https://img.shields.io/badge/Telegram%20-8A2BE2?logo=Telegram)
 
 ![Windows](https://img.shields.io/badge/Windows_10_%7C_11-0078D4?style=flat-square&logo=windows&logoColor=white)
 ![Tauri](https://img.shields.io/badge/Tauri_2-24C8DB?style=flat-square&logo=tauri&logoColor=white) ![Rust](https://img.shields.io/badge/Rust-000000?style=flat-square&logo=rust&logoColor=white)
 ![React](https://img.shields.io/badge/React_19-149ECA?style=flat-square&logo=react&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white)
 ![Vite](https://img.shields.io/badge/Vite-646CFF?style=flat-square&logo=vite&logoColor=white)
+![Telegram](https://img.shields.io/badge/Telegram%20-8A2BE2?logo=Telegram)
 
 <a href="https://github.com/Evire1337/evplayer/releases/latest">
   <img src="https://img.shields.io/badge/Скачать_для_Windows-6ff0c4?style=for-the-badge&logo=windows&logoColor=06201d&labelColor=6ff0c4" alt="Скачать для Windows" height="42" />
