@@ -8,6 +8,7 @@ import { useImportProgress } from "./importProgress";
 import { toast } from "@/ui/toasts";
 import { isYandexMusicUrl, parseYandexLink, yandexCollection } from "@/services/yandex/music";
 import { hasSpotifyAccess, spotifyCollection } from "@/services/spotify/webApi";
+import { spotifyGuestPlaylist } from "@/services/spotify/guest";
 import { useNavigation } from "@/ui/navigation";
 
 // "Import by link": paste a playlist, album or track link from a service and it becomes
@@ -69,7 +70,10 @@ async function youtube(url: URL, signal: AbortSignal): Promise<Fetched> {
   return { title: track.title, tracks: [track] };
 }
 
-/** Spotify's embed page (the one other sites use for the Spotify player) lists the songs */
+/**
+ * Spotify, best source first: your account / own app (official API), then the guest access
+ * of Spotify's web player (whole playlist, no sign-in), then the embed page (100 songs).
+ */
 async function spotify(url: URL, signal: AbortSignal): Promise<Fetched> {
   let target = url;
   if (url.hostname === "spotify.link") {
@@ -85,7 +89,24 @@ async function spotify(url: URL, signal: AbortSignal): Promise<Fetched> {
     );
     return { title: full.title, named: full.tracks, artwork: full.artwork, description: "Импортировано из Spotify" };
   }
-  const res = await fetch(`https://open.spotify.com/embed/${m[1]}/${m[2]}`, { signal });
+  const embed = await spotifyEmbed(m[1], m[2], signal);
+  if (m[1] === "playlist") {
+    try {
+      const guest = await spotifyGuestPlaylist(m[2], signal, (n, total) => useImportProgress.getState().update(`Spotify: прочитано ${n} из ${total}`));
+      if (guest.tracks.length >= embed.named.length && guest.tracks.length > 0) {
+        return { ...embed, named: guest.tracks, truncated: guest.total !== undefined && guest.tracks.length < guest.total };
+      }
+    } catch (e) {
+      if (signal.aborted) throw e;
+      // the web player changed or Spotify refused: the embed page below still works
+    }
+  }
+  return embed;
+}
+
+/** Spotify's embed page (the one other sites use for the Spotify player): at most 100 songs */
+async function spotifyEmbed(kind: string, id: string, signal: AbortSignal): Promise<Fetched & { named: NamedTrack[] }> {
+  const res = await fetch(`https://open.spotify.com/embed/${kind}/${id}`, { signal });
   if (!res.ok) throw new Error(`Spotify ответил ${res.status}`);
   const html = await res.text();
   const json = /<script id="__NEXT_DATA__" type="application\/json">(.+?)<\/script>/s.exec(html)?.[1];
@@ -101,7 +122,7 @@ async function spotify(url: URL, signal: AbortSignal): Promise<Fetched> {
     .filter((t) => t.title)
     .map((t) => ({ title: t.title, artists: t.subtitle.split(/,\s*/).filter(Boolean), durationMs: t.duration }));
   // the embed page stops at 100 songs: a longer playlist needs the official API
-  const cut = m[1] === "playlist" && list.length >= 100;
+  const cut = kind === "playlist" && list.length >= 100;
   const covers = entity.coverArt?.sources ?? [];
   const artwork = [...covers].sort((a, b) => (b.width ?? 0) - (a.width ?? 0))[0]?.url;
   return { title: entity.name ?? entity.title ?? "Spotify", named, artwork, description: "Импортировано из Spotify", truncated: cut };

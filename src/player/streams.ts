@@ -2,6 +2,7 @@ import type { Track } from "@/types";
 import { resolveSoundCloudStream, searchSoundCloud } from "@/services/soundcloud/api";
 import { bestMatch, searchQueryFor } from "./match";
 import { mediaUrl } from "@/files/localFiles";
+import { resolveYouTubeAudio, videoIdOf } from "@/services/youtube/direct";
 
 export interface PlayableStream {
   url: string;
@@ -24,7 +25,7 @@ async function soundCloudMatch(track: Track, signal?: AbortSignal): Promise<Trac
 /** a YouTube song with no copy on SoundCloud */
 export class NoCopyError extends Error {
   constructor() {
-    super("Этой песни нет на SoundCloud — пропускаю");
+    super("Не получилось получить звук этой песни — пропускаю");
   }
 }
 
@@ -36,7 +37,17 @@ export async function resolveStream(track: Track, signal?: AbortSignal): Promise
     case "local":
       return { url: mediaUrl("track", track.id), hls: false };
     case "youtube": {
-      // YouTube songs play from their copy on SoundCloud; there is no other way to get the sound
+      // straight from YouTube first; if YouTube refuses, the song's copy on SoundCloud
+      const videoId = videoIdOf(track.id);
+      if (videoId) {
+        try {
+          const direct = await resolveYouTubeAudio(videoId, signal);
+          return { url: direct.url, hls: false };
+        } catch (e) {
+          if (signal?.aborted) throw e;
+          console.warn("[youtube] direct playback failed, trying SoundCloud:", e);
+        }
+      }
       const match = await soundCloudMatch(track, signal);
       if (!match) throw new NoCopyError();
       return { ...(await resolveSoundCloudStream(match.id, signal)), via: match };

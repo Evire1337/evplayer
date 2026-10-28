@@ -18,6 +18,10 @@ const OPEN_HOSTS = [
   /^open\.spotify\.com$/,
   /^accounts\.spotify\.com$/,
   /^api\.spotify\.com$/,
+  // Spotify without signing in (src/services/spotify/guest.ts)
+  /^api-partner\.spotify\.com$/,
+  /^clienttoken\.spotify\.com$/,
+  /^open\.spotifycdn\.com$/,
   /^api\.music\.yandex\.net$/,
   // the phone version looks for a newer APK
   /^api\.github\.com$/,

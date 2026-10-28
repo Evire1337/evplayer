@@ -26,6 +26,9 @@ const OPEN_HOSTS: &[&str] = &[
     "open.spotify.com",
     "accounts.spotify.com",
     "api.spotify.com",
+    "api-partner.spotify.com",
+    "clienttoken.spotify.com",
+    "open.spotifycdn.com",
     "api.music.yandex.net",
     "api.github.com",
 ];
@@ -125,6 +128,11 @@ pub async fn handle(request: Request<Vec<u8>>) -> Response<Vec<u8>> {
         if SKIP_REQUEST_HEADERS.contains(&lower.as_str()) || lower.starts_with("sec-") {
             continue;
         }
+        // the page cannot set a User-Agent itself: it sends the one it wants in this header
+        if lower == "x-evplayer-user-agent" {
+            builder = builder.header("user-agent", value.as_bytes());
+            continue;
+        }
         if lower == "range" {
             if let Some(limited) = value.to_str().ok().and_then(|v| limit_range(v, MEDIA_CHUNK)) {
                 builder = builder.header("range", limited);
@@ -168,6 +176,9 @@ mod tests {
         assert!(ok("https://api-v2.soundcloud.com/search?q=a"));
         assert!(ok("https://music.youtube.com/youtubei/v1/search"));
         assert!(ok("https://api.spotify.com/v1/me"));
+        assert!(ok("https://api-partner.spotify.com/pathfinder/v1/query"));
+        assert!(ok("https://clienttoken.spotify.com/v1/clienttoken"));
+        assert!(ok("https://open.spotifycdn.com/cdn/build/web-player/web-player.abc.js"));
         assert!(!ok("https://evil.com/?soundcloud.com"));
         assert!(!ok("https://soundcloud.com.evil.com/"));
         assert!(!ok("http://api-v2.soundcloud.com/"));
