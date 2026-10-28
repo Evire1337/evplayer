@@ -1,7 +1,7 @@
 import Hls from "hls.js";
 import type { Track } from "@/types";
 import { currentTrack, nextIndex, prevIndex, shuffledQueue, usePlayer } from "./store";
-import { NoCopyError, resolveStream } from "./streams";
+import { resolveStream } from "./streams";
 import { mediaStream } from "@/platform/net";
 import { createAudioGraph, type AudioGraph } from "@/audio/graph";
 import { setLevelingTrack } from "@/equalizer/eqAudio";
@@ -11,6 +11,11 @@ import { keeps, useSettings } from "@/settings/store";
 import { HISTORY_AFTER_MS, useHistory } from "@/stats/history";
 import { currentSource, type PlaySource } from "@/stats/playSource";
 import { recordListen } from "@/stats/listeningStats";
+
+/** a song that cannot be played gives way to the next one after this long */
+export const SKIP_BROKEN_AFTER_MS = 500;
+/** this many broken songs in a row stop the player (no internet, a service down) */
+const MAX_FAILED_IN_A_ROW = 5;
 
 // Two <audio> "decks": one plays, the other gets the next song ready shortly before the
 // end, so it starts without a gap (or fades in over the end, with crossfade on). HLS streams
@@ -56,6 +61,9 @@ class PlayerEngine {
   private sessionTrack: Track | null = null;
   private heardMs = 0;
   private source: PlaySource | null = null;
+  private failedInARow = 0;
+  private failedToken = -1;
+  private skipTimer: ReturnType<typeof setTimeout> | undefined;
   private sourceIds = new Set<string>();
   private lastPos = -1;
   private counted = false;
@@ -113,7 +121,11 @@ class PlayerEngine {
     a.addEventListener("durationchange", () => {
       if (isCur() && Number.isFinite(a.duration)) usePlayer.setState({ durationMs: a.duration * 1000 });
     });
-    a.addEventListener("playing", () => isCur() && usePlayer.setState({ status: "playing", error: undefined }));
+    a.addEventListener("playing", () => {
+      if (!isCur()) return;
+      this.failedInARow = 0;
+      usePlayer.setState({ status: "playing", error: undefined });
+    });
     a.addEventListener("pause", () => {
       if (isCur() && !this.transitioning && usePlayer.getState().status === "playing") usePlayer.setState({ status: "paused" });
     });
@@ -131,7 +143,7 @@ class PlayerEngine {
         return;
       }
       if (!isCur() || !a.getAttribute("src")) return;
-      if (usePlayer.getState().status !== "loading") usePlayer.setState({ status: "error", error: "Не удалось воспроизвести трек" });
+      if (usePlayer.getState().status !== "loading") this.failed("Не удалось воспроизвести трек");
     });
   }
 
@@ -429,16 +441,45 @@ class PlayerEngine {
       if (token !== this.loadToken) return;
       if (stream.via) usePlayer.setState({ route: "matched" });
       this.graph.setDeck(this.cur.audio, 1);
-      this.attach(this.cur, stream, () => token === this.loadToken && usePlayer.setState({ status: "error", error: "Поток прервался" }));
+      this.attach(this.cur, stream, () => token === this.loadToken && this.failed("Поток прервался"));
       this.applyEffects();
       await this.cur.audio.play();
       this.applyResume();
     } catch (error) {
       if (token !== this.loadToken || controller.signal.aborted) return;
-      usePlayer.setState({ status: "error", error: error instanceof Error ? error.message : String(error) });
-      // a song that cannot be found: go on with the next one instead of stopping
-      if (error instanceof NoCopyError) setTimeout(() => token === this.loadToken && this.advance(true), 2000);
+      // the system did not let it start on its own (no click yet): not the song's fault
+      if (error instanceof DOMException && error.name === "NotAllowedError") {
+        usePlayer.setState({ status: "paused" });
+        return;
+      }
+      // the browser's own wording ("no supported source was found") means nothing to a listener
+      const message = error instanceof DOMException && error.name === "NotSupportedError" ? "Не удалось открыть трек" : error instanceof Error ? error.message : String(error);
+      this.failed(message);
     }
+  }
+
+  /**
+   * The song on now cannot be played: say why and go on with the next one half a second
+   * later instead of stopping. After several failures in a row (no internet, a service
+   * down) the player stops rather than run through the whole queue.
+   */
+  private failed(message: string): void {
+    const token = this.loadToken;
+    // a broken stream can report itself twice (the audio element and the stream reader)
+    if (this.failedToken === token) return;
+    this.failedToken = token;
+    this.failedInARow++;
+    message = message.replace(/[.\s]+$/, "");
+    if (this.failedInARow >= MAX_FAILED_IN_A_ROW) {
+      this.failedInARow = 0;
+      usePlayer.setState({ status: "error", error: `${message}. Подряд не включилось ${MAX_FAILED_IN_A_ROW} треков — проверьте интернет` });
+      return;
+    }
+    usePlayer.setState({ status: "error", error: `${message} — включаю следующий` });
+    clearTimeout(this.skipTimer);
+    this.skipTimer = setTimeout(() => {
+      if (token === this.loadToken && usePlayer.getState().status === "error") this.advance(true);
+    }, SKIP_BROKEN_AFTER_MS);
   }
 
   // ---- the next song on the other deck -----------------------------------------------
