@@ -62,6 +62,7 @@ class PlayerEngine {
   private heardMs = 0;
   private source: PlaySource | null = null;
   private failedInARow = 0;
+  private fadeTimer: ReturnType<typeof setTimeout> | undefined;
   private failedToken = -1;
   private skipTimer: ReturnType<typeof setTimeout> | undefined;
   private sourceIds = new Set<string>();
@@ -127,7 +128,11 @@ class PlayerEngine {
       usePlayer.setState({ status: "playing", error: undefined });
     });
     a.addEventListener("pause", () => {
-      if (isCur() && !this.transitioning && usePlayer.getState().status === "playing") usePlayer.setState({ status: "paused" });
+      if (!isCur() || usePlayer.getState().status !== "playing") return;
+      // paused from outside (a media key, the system) in the middle of a crossfade: the
+      // fading-out song stops too, and the new one is simply paused
+      if (this.transitioning) this.finishTransition();
+      usePlayer.setState({ status: "paused" });
     });
     a.addEventListener("canplay", () => {
       if (deck === this.spare && this.prepared) this.prepared.ready = true;
@@ -299,9 +304,10 @@ class PlayerEngine {
   }
 
   private pause(): void {
+    // a crossfade in progress ends right here: the old song goes, the new one keeps its
+    // full level and waits on pause (it used to stay half-done, and the player hung)
+    if (this.transitioning) this.finishTransition();
     this.cur.audio.pause();
-    // a crossfade in progress stops with it
-    if (this.transitioning) this.spare.audio.pause();
   }
 
   private resume(): void {
@@ -431,8 +437,8 @@ class PlayerEngine {
     this.loadAbort?.abort();
     const controller = new AbortController();
     this.loadAbort = controller;
+    if (this.transitioning) this.finishTransition();
     this.dropPrepared();
-    this.transitioning = false;
     this.unload(this.cur);
     usePlayer.setState({ status: "loading", positionMs: 0, durationMs: track.durationMs, error: undefined, route: undefined });
     this.begin(track);
@@ -485,11 +491,13 @@ class PlayerEngine {
   // ---- the next song on the other deck -----------------------------------------------
 
   private nearEnd(audio: HTMLAudioElement): void {
-    const duration = audio.duration;
+    // a stream that does not tell its length: the length the service gave for the song
+    const duration = Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : usePlayer.getState().durationMs / 1000;
     if (!Number.isFinite(duration) || duration <= 0) return;
     const left = (duration - audio.currentTime) * 1000;
     const fade = useSettings.getState().crossfade;
-    if (left < PREPARE_BEFORE_MS + fade * 1000 && !this.prepared) void this.prepareNext();
+    // the spare deck still holds the song fading out: prepare once the fade is over
+    if (left < PREPARE_BEFORE_MS + fade * 1000 && !this.prepared && !this.transitioning) void this.prepareNext();
     if (fade > 0 && !this.transitioning && this.prepared?.ready && left <= fade * 1000 && usePlayer.getState().repeat !== "one") {
       this.transition(Math.min(fade, left / 1000));
     }
@@ -548,10 +556,9 @@ class PlayerEngine {
       this.graph.setDeck(now.audio, 0);
       this.graph.fadeDeck(now.audio, 1, fade);
       this.graph.fadeDeck(old.audio, 0, fade);
-      const token = this.loadToken;
-      setTimeout(() => {
-        this.transitioning = false;
-        if (token === this.loadToken || this.cur === now) this.unload(old);
+      clearTimeout(this.fadeTimer);
+      this.fadeTimer = setTimeout(() => {
+        if (this.transitioning && this.cur === now) this.finishTransition();
       }, fade * 1000 + 150);
     } else {
       this.graph.setDeck(now.audio, 1);
@@ -560,6 +567,14 @@ class PlayerEngine {
     usePlayer.setState({ index: prepared.index, status: "playing", positionMs: 0, durationMs: prepared.track.durationMs, error: undefined, route: prepared.route });
     this.begin(prepared.track);
     void now.audio.play().catch(() => usePlayer.setState({ status: "paused" }));
+  }
+
+  /** end a crossfade now: the old song is unloaded, the new one plays at full level */
+  private finishTransition(): void {
+    clearTimeout(this.fadeTimer);
+    this.transitioning = false;
+    this.graph.setDeck(this.cur.audio, 1);
+    this.unload(this.spare);
   }
 
   private applyResume(): void {

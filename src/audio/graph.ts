@@ -158,7 +158,8 @@ class AudioGraph {
     this.pendingGain.set(audio, value);
     const gain = this.gains.get(audio);
     if (!gain || !this.ctx) return;
-    gain.gain.cancelScheduledValues(this.ctx.currentTime);
+    // from 0: a fade still running is dropped too (setting a value inside it would throw)
+    gain.gain.cancelScheduledValues(0);
     gain.gain.setValueAtTime(value, this.ctx.currentTime);
   }
 
@@ -175,7 +176,7 @@ class AudioGraph {
       const t = i / (steps - 1);
       curve[i] = to > from ? from + (to - from) * Math.sin((t * Math.PI) / 2) : to + (from - to) * Math.cos((t * Math.PI) / 2);
     }
-    gain.gain.cancelScheduledValues(now);
+    gain.gain.cancelScheduledValues(0);
     gain.gain.setValueCurveAtTime(curve, now, Math.max(0.05, seconds));
   }
 
