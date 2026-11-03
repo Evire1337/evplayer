@@ -48,6 +48,13 @@ function makeDeck(volume: number): Deck {
   return { audio, hls: null };
 }
 
+/** the same songs (in any order: a shuffled queue is still the same list) */
+function sameQueue(a: Track[], b: Track[]): boolean {
+  if (a.length !== b.length) return false;
+  const ids = new Set(a.map((t) => t.id));
+  return b.every((t) => ids.has(t.id));
+}
+
 class PlayerEngine {
   private decks: [Deck, Deck];
   private active = 0;
@@ -222,6 +229,30 @@ class PlayerEngine {
     const index = shuffle ? 0 : Math.max(0, startIndex);
     usePlayer.setState({ queue, index });
     await this.load(queue[index]);
+  }
+
+  /**
+   * A song in a list was pressed. If it is the song already on (paused after a restart, say)
+   * it goes on from where it is, but the list becomes the queue: "next" then plays the next
+   * song of that list. It used to keep the old queue, so after a like came, for instance,
+   * the radio of an earlier song.
+   */
+  playFrom(tracks: Track[], index: number): void {
+    const s = usePlayer.getState();
+    const track = tracks[index];
+    if (!track) return;
+    if (currentTrack(s)?.id !== track.id) {
+      void this.playQueue(tracks, index);
+      return;
+    }
+    if (!sameQueue(s.queue, tracks)) {
+      const queue = s.shuffle ? shuffledQueue(tracks, track.id) : tracks;
+      usePlayer.setState({ queue, index: s.shuffle ? 0 : index });
+      this.source = currentSource();
+      this.sourceIds = new Set(this.source ? tracks.map((t) => t.id) : []);
+      this.dropPrepared();
+    }
+    this.toggle();
   }
 
   /** last session's queue, shown paused until play is pressed */
@@ -429,7 +460,9 @@ class PlayerEngine {
 
   private attach(deck: Deck, stream: { url: string; hls: boolean }, onFatal: () => void): void {
     if (stream.hls && Hls.isSupported()) {
-      const hls = new Hls({ enableWorker: true, maxBufferLength: 30, backBufferLength: 30 });
+      // a long buffer: in the background (a phone in another app) the page's timers are
+      // slowed down, and with only half a minute buffered the sound ran dry and stuttered
+      const hls = new Hls({ enableWorker: true, maxBufferLength: 120, maxMaxBufferLength: 180, backBufferLength: 20 });
       deck.hls = hls;
       hls.loadSource(stream.url);
       hls.attachMedia(deck.audio);

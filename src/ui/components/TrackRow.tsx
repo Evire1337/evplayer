@@ -45,16 +45,14 @@ export default function TrackRow({ track, queue, index, addedAt, menu, number, r
       tabIndex={0}
       onClick={() => {
         if (useSettings.getState().doubleClickToPlay) return;
-        if (isCurrent) player.toggle();
-        else void player.playQueue(queue, index);
+        player.playFrom(queue, index);
       }}
       onDoubleClick={() => {
         if (!useSettings.getState().doubleClickToPlay) return;
-        if (isCurrent) player.toggle();
-        else void player.playQueue(queue, index);
+        player.playFrom(queue, index);
       }}
       onKeyDown={(e) => {
-        if (e.key === "Enter") isCurrent ? player.toggle() : void player.playQueue(queue, index);
+        if (e.key === "Enter") player.playFrom(queue, index);
       }}
       onContextMenu={(e) => openMenu(e, trackMenuItems(track, menu))}
       {...reorder}

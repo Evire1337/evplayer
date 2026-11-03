@@ -16,7 +16,7 @@ export default function TrackCard({ track, queue, index, rank, sub }: { track: T
     <button
       type="button"
       className={`track-card${isCurrent ? " is-current" : ""}`}
-      onClick={() => (isCurrent ? player.toggle() : void player.playQueue(queue, index))}
+      onClick={() => player.playFrom(queue, index)}
       onContextMenu={(e) => openMenu(e, trackMenuItems(track))}
     >
       <span className="track-card-art">

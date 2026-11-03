@@ -32,6 +32,49 @@ export function splitTitle(track: Pick<Track, "title" | "artists">): { title: st
   return { artist: track.artists[0]?.name ?? "", title: track.title };
 }
 
+/** a whole word (or words) in any alphabet: \b only knows Latin letters */
+const word = (pattern: string) => new RegExp(`(?<![\\p{L}\\p{N}])(?:${pattern})(?![\\p{L}\\p{N}])`, "u");
+
+/** markers of another version of a song: a remix, a cover, sped up, an edit… */
+const VERSION_TAGS: Array<[string, RegExp]> = [
+  ["remix", word("remix|rmx|ремикс")],
+  ["cover", word("cover|кавер")],
+  ["sped", word("sped|speed ?up|ускор\\p{L}*")],
+  ["slowed", word("slowed|замедл\\p{L}*")],
+  ["reverb", word("reverb")],
+  ["nightcore", word("nightcore")],
+  ["live", word("live|концерт\\p{L}*")],
+  ["instrumental", word("instrumental|минус|минусовка")],
+  ["karaoke", word("karaoke|караоке")],
+  ["8d", word("8d")],
+  // "radio edit" / "clean edit" are the same song
+  ["edit", word("(?<!radio |clean |explicit )edit")],
+  ["bootleg", word("bootleg")],
+  ["flip", word("flip")],
+  ["mashup", word("mash ?up|мэшап")],
+  ["phonk", word("phonk|фонк")],
+  ["vip", word("vip")],
+  ["rework", word("rework|remake")],
+  ["bass", word("bass ?boost(?:ed)?")],
+  ["acoustic", word("acoustic|акустик\\p{L}*")],
+  // "Club Mix", "Extended Mix", but not "Original Mix"
+  ["mix", word("(?<!original )mix")],
+];
+
+export function versionTags(title: string): Set<string> {
+  const t = title.toLowerCase().replace(/ё/g, "е");
+  return new Set(VERSION_TAGS.filter(([, re]) => re.test(t)).map(([tag]) => tag));
+}
+
+/**
+ * Good enough to play in place of the song: a close match of about the same length.
+ * (bestMatch's threshold is for finding the song at all, e.g. when importing a list.)
+ */
+export function isSameRecording(wanted: Track, candidate: Track): boolean {
+  if (wanted.durationMs && candidate.durationMs && Math.abs(wanted.durationMs - candidate.durationMs) > 15000) return false;
+  return matchScore(wanted, candidate) >= 0.8;
+}
+
 /** 0..1: how sure we are that `candidate` is the same recording as `wanted` */
 export function matchScore(wanted: Track, candidate: Track): number {
   const w = splitTitle(wanted);
@@ -41,14 +84,16 @@ export function matchScore(wanted: Track, candidate: Track): number {
   const artistScore = overlap(artistWords, words(`${candidate.artists.map((a) => a.name).join(" ")} ${candidate.title}`));
   let score = titleScore * 0.6 + artistScore * 0.3;
   if (wanted.durationMs && candidate.durationMs) {
+    // a remix or an edit is usually a different length: that counts for a lot
     const diff = Math.abs(wanted.durationMs - candidate.durationMs);
-    score += diff < 4000 ? 0.1 : diff < 10000 ? 0.05 : diff > 40000 ? -0.4 : 0;
+    score += diff < 4000 ? 0.1 : diff < 8000 ? 0.05 : diff < 15000 ? 0 : diff < 30000 ? -0.2 : -0.5;
   }
-  // remixes, covers, sped-up versions are different songs unless that is what was asked for
-  for (const tag of ["remix", "cover", "sped", "slowed", "nightcore", "live", "instrumental", "karaoke", "8d"]) {
-    const inWanted = simplify(wanted.title).includes(tag);
-    const inCandidate = simplify(candidate.title).includes(tag);
-    if (inWanted !== inCandidate) score -= 0.3;
+  // remixes, covers, sped-up versions are different songs unless that is what was asked for;
+  // read from the raw title: tags are often in brackets, which simplify() drops
+  const wantedTags = versionTags(wanted.title);
+  const candidateTags = versionTags(candidate.title);
+  for (const tag of new Set([...wantedTags, ...candidateTags])) {
+    if (wantedTags.has(tag) !== candidateTags.has(tag)) score -= 0.35;
   }
   return score;
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bestMatch, matchScore, searchQueryFor, simplify } from "./match";
+import { bestMatch, isSameRecording, matchScore, searchQueryFor, simplify, versionTags } from "./match";
 import type { Track } from "@/types";
 
 const tr = (title: string, artist: string, durationMs = 200000, id = title): Track => ({
@@ -21,5 +21,17 @@ describe("match", () => {
   });
   it("builds a search query", () => {
     expect(searchQueryFor(tr("Daft Punk - Get Lucky (Official Video)", "convar"))).toBe("daft punk get lucky");
+  });
+  it("sees version tags in brackets too", () => {
+    expect([...versionTags("Song [Phonk Remix]")].sort()).toEqual(["phonk", "remix"]);
+    expect(versionTags("Song (Radio Edit)").has("edit")).toBe(false);
+    expect(versionTags("Song (Original Mix)").has("mix")).toBe(false);
+    expect(versionTags("Песня (ускоренная версия)").has("sped")).toBe(true);
+  });
+  it("does not play a remix in place of the original", () => {
+    const yt = { ...tr("He's back", "OUENZA", 184000), source: "youtube" as const };
+    expect(isSameRecording(yt, tr("OUENZA - He's back [Phonk Remix]", "someone", 186000))).toBe(false);
+    expect(isSameRecording(yt, tr("He's back", "OUENZA", 212000))).toBe(false);
+    expect(isSameRecording(yt, tr("He's Back", "OUENZA", 185000))).toBe(true);
   });
 });

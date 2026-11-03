@@ -1,7 +1,7 @@
 import type { Track } from "@/types";
 import { searchSoundCloud, soundCloudStreams } from "@/services/soundcloud/api";
 import { searchYouTubeMusic } from "@/services/youtube/music";
-import { bestMatch, matchScore, searchQueryFor } from "./match";
+import { isSameRecording, matchScore, searchQueryFor } from "./match";
 import { mediaUrl } from "@/files/localFiles";
 import { keptUrl } from "@/offline/store";
 import { resolveYouTubeAudio, videoIdOf } from "@/services/youtube/direct";
@@ -21,7 +21,10 @@ const youTubeMatches = new Map<string, Track | null>();
 
 async function youTubeMatch(track: Track, signal?: AbortSignal): Promise<Track | null> {
   if (youTubeMatches.has(track.id)) return youTubeMatches.get(track.id) ?? null;
-  const found = bestMatch(track, await searchYouTubeMusic(searchQueryFor(track), signal));
+  const ranked = (await searchYouTubeMusic(searchQueryFor(track), signal))
+    .filter((t) => isSameRecording(track, t))
+    .sort((a, b) => matchScore(track, b) - matchScore(track, a));
+  const found = ranked[0] ?? null;
   youTubeMatches.set(track.id, found);
   return found;
 }
@@ -33,7 +36,8 @@ async function soundCloudMatches(track: Track, signal?: AbortSignal): Promise<Tr
   const { tracks } = await searchSoundCloud(searchQueryFor(track), signal);
   const found = tracks
     .map((t) => ({ t, score: matchScore(track, t) }))
-    .filter((x) => x.score >= 0.72)
+    // played in place of the song: the same recording, not a remix of about the same name
+    .filter((x) => isSameRecording(track, x.t))
     .sort((a, b) => b.score - a.score)
     .slice(0, COPIES_TRIED)
     .map((x) => x.t);
