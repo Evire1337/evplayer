@@ -1,14 +1,22 @@
 import type { UpdateState } from "./api";
 
 // Phone updates: the app looks at the newest GitHub release; if it is newer than this one
-// and has an APK, "Скачать" opens that APK in the browser, and Android installs it over
-// this one (same signing key, so everything stays).
+// and has an APK, "Скачать" downloads it inside the app (UpdateInstaller.kt) and opens
+// Android's installer, which puts it over this one (same signing key, so everything stays).
+// An older APK without that part opens the APK in the browser instead.
 
 const LATEST = "https://api.github.com/repos/Evire1337/evplayer/releases/latest";
 const EVERY_MS = 4 * 60 * 60 * 1000;
 
 let state: UpdateState = { status: "idle" };
 let apkUrl: string | null = null;
+let apkVersion = "";
+
+declare global {
+  interface Window {
+    __evplayerUpdateProgress?: (percent: number, finished: boolean, error: string | null) => void;
+  }
+}
 const listeners = new Set<(s: UpdateState) => void>();
 
 function set(next: UpdateState): void {
@@ -37,6 +45,7 @@ async function check(currentVersion: () => Promise<string>): Promise<void> {
     const version = release.tag_name.replace(/^v/, "");
     if (apk && isNewer(version, await currentVersion())) {
       apkUrl = apk.browser_download_url;
+      apkVersion = version;
       set({ status: "ready", version });
     } else {
       set({ status: "latest" });
@@ -53,7 +62,19 @@ export function phoneUpdates(currentVersion: () => Promise<string>, open: (url: 
     get: async () => state,
     check: () => check(currentVersion),
     install: async () => {
-      if (apkUrl) await open(apkUrl);
+      if (!apkUrl) return;
+      const bridge = window.EvPlayerAndroid;
+      if (!bridge?.installUpdate) {
+        await open(apkUrl);
+        return;
+      }
+      set({ status: "downloading", version: apkVersion, percent: 0 });
+      window.__evplayerUpdateProgress = (percent, finished, error) => {
+        if (error) set({ status: "error", message: error });
+        else if (finished) set({ status: "ready", version: apkVersion });
+        else set({ status: "downloading", version: apkVersion, percent });
+      };
+      bridge.installUpdate(apkUrl);
     },
     onState: (cb: (s: UpdateState) => void) => {
       listeners.add(cb);

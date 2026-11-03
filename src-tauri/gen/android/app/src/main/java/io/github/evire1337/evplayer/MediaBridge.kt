@@ -17,6 +17,10 @@ class MediaBridge(private val context: Context) {
   @JavascriptInterface
   fun keepsRunning(): Boolean = MainActivity.keepsRunning(context)
 
+  /** download a new version's APK and open Android's installer for it */
+  @JavascriptInterface
+  fun installUpdate(url: String) = UpdateInstaller.install(context, url)
+
   /** show Android's dialog that lets the app run in the background */
   @JavascriptInterface
   fun askToKeepRunning() = MainActivity.askToKeepRunning(context)

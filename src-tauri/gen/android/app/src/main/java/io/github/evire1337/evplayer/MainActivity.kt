@@ -44,6 +44,15 @@ class MainActivity : TauriActivity() {
     /** the page (and its music) is there to take commands */
     val isRunning: Boolean get() = webView != null
 
+    /** how the update download goes, for the settings page */
+    fun updateProgress(percent: Int, finished: Boolean, error: String?) {
+      val view = webView ?: return
+      val err = if (error == null) "null" else JSONObject.quote(error)
+      Handler(Looper.getMainLooper()).post {
+        view.evaluateJavascript("window.__evplayerUpdateProgress && window.__evplayerUpdateProgress($percent, $finished, $err)", null)
+      }
+    }
+
     /** the app is on the screen (between onStart and onStop) */
     @Volatile private var onScreen = false
 
@@ -81,6 +90,7 @@ class MainActivity : TauriActivity() {
     enableEdgeToEdge()
     super.onCreate(savedInstanceState)
     instance = this
+    UpdateInstaller.cleanUp(applicationContext)
     // "back": first the app's own previous tab; on the first tab the app goes to the
     // background like other music apps, and the music keeps playing (closing it would stop it)
     onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {

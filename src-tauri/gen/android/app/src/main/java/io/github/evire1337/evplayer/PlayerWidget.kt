@@ -28,13 +28,19 @@ class PlayerWidget : AppWidgetProvider() {
     @Volatile private var cover: Bitmap? = null
     @Volatile private var coverOf: Bitmap? = null
 
+    /** both widgets: the big one and the one-row one, with the same parts in them */
     fun render(context: Context, art: Bitmap? = coverOf) {
       val manager = AppWidgetManager.getInstance(context)
-      val ids = manager.getAppWidgetIds(ComponentName(context, PlayerWidget::class.java))
+      draw(context, manager, PlayerWidget::class.java, R.layout.widget_player, art)
+      draw(context, manager, Mini::class.java, R.layout.widget_player_mini, art)
+    }
+
+    private fun draw(context: Context, manager: AppWidgetManager, provider: Class<*>, layout: Int, art: Bitmap?) {
+      val ids = manager.getAppWidgetIds(ComponentName(context, provider))
       if (ids.isEmpty()) return
       val s = MediaService.state
       val alive = MainActivity.isRunning
-      val views = RemoteViews(context.packageName, R.layout.widget_player)
+      val views = RemoteViews(context.packageName, layout)
       if (s != null && s.title.isNotEmpty()) {
         views.setTextViewText(R.id.widget_title, s.title)
         views.setTextViewText(R.id.widget_artist, s.artist)
@@ -96,13 +102,21 @@ class PlayerWidget : AppWidgetProvider() {
       val scaled = Bitmap.createScaledBitmap(square, size, size, true)
       val out = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
       val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { shader = BitmapShader(scaled, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP) }
-      Canvas(out).drawRoundRect(RectF(0f, 0f, size.toFloat(), size.toFloat()), 40f, 40f, paint)
+      // the corners of the system media widgets (about a sixth of the side)
+      Canvas(out).drawRoundRect(RectF(0f, 0f, size.toFloat(), size.toFloat()), 44f, 44f, paint)
       return out
     }
   }
 
   override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
     render(context)
+  }
+
+  /** the one-row widget; drawn together with the big one */
+  class Mini : AppWidgetProvider() {
+    override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
+      render(context)
+    }
   }
 
   /** a widget button: handed to the page like a notification button */

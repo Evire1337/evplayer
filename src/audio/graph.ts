@@ -1,6 +1,7 @@
 import { makeImpulse } from "./impulse";
 import { semitonesToRatio } from "./pitch";
 import { createEqBus } from "@/equalizer/eqAudio";
+import { isPhone } from "@/platform/device";
 
 // The sound path for the player (two <audio> "decks", so the next song can be ready and
 // fade in over the end of the current one):
@@ -49,7 +50,9 @@ class AudioGraph {
 
   ensure(): Promise<void> {
     this.building ??= (async () => {
-      const ctx = new AudioContext({ latencyHint: "playback" });
+      // a phone gets a long buffer: in the background Android slows the page down, and a
+      // short one ran dry and crackled (the lyrics take the delay into account)
+      const ctx = new AudioContext({ latencyHint: isPhone ? 0.3 : "playback" });
       await ctx.audioWorklet.addModule("./worklets/pitch-shifter.js");
       const shifter = new AudioWorkletNode(ctx, "evplayer-pitch-shifter", { outputChannelCount: [2] });
       const dry = ctx.createGain();

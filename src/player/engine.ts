@@ -5,6 +5,8 @@ import { resolveStream, streamCandidates, type PlayableStream } from "./streams"
 import { mediaStream } from "@/platform/net";
 import { createAudioGraph, type AudioGraph } from "@/audio/graph";
 import { setLevelingTrack } from "@/equalizer/eqAudio";
+import { useEqualizerStore } from "@/equalizer/eqStore";
+import { isPhone } from "@/platform/device";
 import { effectsForNextTrack, useEffects, type EffectsState } from "./effects";
 import { similarTracks, songKey } from "./radio";
 import { keeps, useSettings } from "@/settings/store";
@@ -46,6 +48,19 @@ function makeDeck(volume: number): Deck {
   audio.preload = "auto";
   audio.volume = volume;
   return { audio, hls: null };
+}
+
+/**
+ * Whether the sound has to go through the page's sound graph (equalizer, volume levelling,
+ * pitch, reverb, crossfade). A phone that uses none of these plays through Android's own
+ * audio path, which keeps going smoothly in the background (the graph can crackle there when
+ * Android slows the page down). Once wired in, the graph stays until the app restarts.
+ */
+function needsSoundGraph(): boolean {
+  if (!isPhone) return true;
+  const eq = useEqualizerStore.getState();
+  const fx = useEffects.getState();
+  return eq.enabled || eq.normalize || fx.reverb || (!fx.linked && fx.pitch !== 0) || useSettings.getState().crossfade > 0;
 }
 
 /** the same songs (in any order: a shuffled queue is still the same list) */
@@ -121,13 +136,22 @@ class PlayerEngine {
 
     this.graph = createAudioGraph(this.decks.map((d) => d.audio));
     useEffects.subscribe((fx) => this.applyEffects(fx));
+    // something that needs the sound graph was switched on while music plays: wire it in now
+    const wireIfNeeded = () => {
+      if (!this.graph.active && needsSoundGraph() && this.decks.some((d) => !d.audio.paused)) this.graph.resume();
+    };
+    useEffects.subscribe(wireIfNeeded);
+    useEqualizerStore.subscribe(wireIfNeeded);
+    useSettings.subscribe(wireIfNeeded);
     window.addEventListener("beforeunload", () => this.finishListen());
   }
 
   private listen(deck: Deck): void {
     const a = deck.audio;
     const isCur = () => deck === this.cur;
-    a.addEventListener("play", () => this.graph.resume());
+    a.addEventListener("play", () => {
+      if (this.graph.active || needsSoundGraph()) this.graph.resume();
+    });
     a.addEventListener("timeupdate", () => {
       if (!isCur()) return;
       const pos = a.currentTime * 1000;

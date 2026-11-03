@@ -8,6 +8,8 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <!-- the "let EvPlayer run in the background" dialog in the settings -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <!-- installing a new version downloaded in the app -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <!-- AndroidTV support -->
     <uses-feature android:name="android.software.leanback" android:required="false" />
@@ -49,6 +51,18 @@
           <meta-data
             android:name="android.appwidget.provider"
             android:resource="@xml/player_widget_info" />
+        </receiver>
+        <!-- the small one, in one row -->
+        <receiver
+          android:name=".PlayerWidget$Mini"
+          android:exported="true"
+          android:label="EvPlayer мини">
+          <intent-filter>
+            <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+          </intent-filter>
+          <meta-data
+            android:name="android.appwidget.provider"
+            android:resource="@xml/player_widget_mini_info" />
         </receiver>
         <!-- its buttons; only this app can press them -->
         <receiver

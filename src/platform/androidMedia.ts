@@ -9,6 +9,7 @@ interface AndroidBridge {
   clear(): void;
   keepsRunning?(): boolean;
   askToKeepRunning?(): void;
+  installUpdate?(url: string): void;
 }
 
 declare global {
