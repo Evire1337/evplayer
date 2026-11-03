@@ -918,3 +918,13 @@ html.saver .now-art::before, html.saver .now-art::after { display: none !importa
 @keyframes sheet-up { from { transform: translateY(40%); opacity: 0.4; } }
 @keyframes sheet-fade { from { opacity: 0; } }
 .svc-sync { display: flex; flex-direction: column; gap: 10px; margin-top: 4px; padding-top: 12px; border-top: 1px solid rgba(238, 247, 244, 0.08); }
+
+/* search history: recent queries under the field while it is empty */
+.search-history { display: flex; flex-direction: column; gap: 6px; max-width: 640px; }
+.search-history-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.search-history-list li { display: flex; align-items: center; gap: 4px; border-radius: 14px; }
+.search-history-list li:hover { background: var(--hover); }
+.search-history-item { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; padding: 10px 12px; text-align: left; color: var(--ink-2); }
+.search-history-item span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); }
+.search-history-remove { opacity: 0.6; }
+.search-history-remove:hover { opacity: 1; }

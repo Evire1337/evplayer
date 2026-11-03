@@ -6,6 +6,7 @@ import { saveBackupFile, readBackup, restoreBackup, makeBackup } from "@/setting
 import { Segmented } from "@/ui/components/Controls";
 import { toast } from "@/ui/toasts";
 import { useHistory } from "@/stats/history";
+import { useSearchHistory } from "./searchState";
 import { clearListeningStats } from "@/stats/listeningStats";
 import { clearLyricsCache, lyricsCacheBytes } from "@/ui/useLyrics";
 import { recommendationsCacheBytes } from "@/home/recommendations";
@@ -328,8 +329,8 @@ function DataTab() {
         <Row title="Кэш" hint="Обложки и ответы сервисов — скачаются заново, когда понадобятся">
           <button type="button" className="btn ghost" onClick={async () => { await window.evplayer?.clearCache(); clearLyricsCache(); setCache(0); toast("Кэш очищен"); }}>Очистить</button>
         </Row>
-        <Row title="История прослушиваний" hint="Список «Недавно слушали» на главной">
-          <button type="button" className="btn ghost" onClick={() => { clearHistory(); toast("История очищена"); }}>Очистить</button>
+        <Row title="История прослушиваний" hint="«Недавно слушали» на главной и недавние запросы в поиске">
+          <button type="button" className="btn ghost" onClick={() => { clearHistory(); useSearchHistory.getState().clear(); toast("История очищена"); }}>Очистить</button>
         </Row>
         <Row title="Статистика" hint="Топы, графики и умные плейлисты строятся из неё">
           <button type="button" className="btn ghost" onClick={() => setConfirm("stats")}>Сбросить</button>

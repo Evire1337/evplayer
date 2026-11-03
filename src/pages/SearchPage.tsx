@@ -1,6 +1,6 @@
 import RowScroll from "@/ui/components/RowScroll";
-import { useEffect, useRef, useState } from "react";
-import type { ArtistSummary, CollectionSummary, Track } from "@/types";
+import { useEffect, useRef } from "react";
+import type { CollectionSummary, Track } from "@/types";
 import { searchSoundCloud, searchSoundCloudCollections } from "@/services/soundcloud/api";
 import { searchYouTubeCollections, searchYouTubeMusic } from "@/services/youtube/music";
 import CollectionCard from "@/ui/components/CollectionCard";
@@ -11,11 +11,14 @@ import { formatCount } from "@/ui/format";
 import { useNavigation } from "@/ui/navigation";
 import { useSettings, type SearchSource } from "@/settings/store";
 import { importFromLink, looksLikeLink } from "@/library/importLink";
+import { searchKey, useSearchHistory, useSearchState, type SearchKind, type SearchResult } from "./searchState";
 
 const DEBOUNCE_MS = 350;
 
-type Result = { tracks: Track[]; artists: ArtistSummary[]; albums: CollectionSummary[]; playlists: CollectionSummary[]; failed: string[] };
-type Kind = "all" | "tracks" | "artists" | "albums" | "playlists";
+type Result = SearchResult;
+type Kind = SearchKind;
+/** a query that stayed on screen with results this long counts as a search for the history */
+const HISTORY_AFTER_MS = 2500;
 
 function mix<T>(a: T[], b: T[]): T[] {
   const out: T[] = [];
@@ -63,16 +66,27 @@ async function runSearch(q: string, source: SearchSource, kind: Kind, signal: Ab
 
 export default function SearchPage() {
   const defaultSource = useSettings((s) => s.defaultSearchSource);
-  const [query, setQuery] = useState("");
-  const [source, setSource] = useState<SearchSource>(defaultSource);
-  const [kind, setKind] = useState<Kind>("all");
-  const [result, setResult] = useState<Result>({ tracks: [], artists: [], albums: [], playlists: [], failed: [] });
-  const [state, setState] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  // kept outside the page: coming back from a song's player finds the same search
+  const query = useSearchState((s) => s.query);
+  const source = useSearchState((s) => s.source) ?? defaultSource;
+  const kind = useSearchState((s) => s.kind);
+  const result = useSearchState((s) => s.result);
+  const state = useSearchState((s) => s.status);
+  const save = useSearchState((s) => s.set);
+  const setQuery = (q: string) => save({ query: q });
+  const setSource = (v: SearchSource) => save({ source: v });
+  const setKind = (v: Kind) => save({ kind: v });
+  const setState = (st: "idle" | "loading" | "ready" | "error") => save({ status: st });
+  const history = useSearchHistory((s) => s.queries);
   const inputRef = useRef<HTMLInputElement>(null);
   const go = useNavigation((s) => s.go);
   const link = looksLikeLink(query);
 
-  useEffect(() => inputRef.current?.focus(), []);
+  // a fresh visit puts the cursor in the field; coming back to results does not (on a phone
+  // the keyboard would cover them)
+  useEffect(() => {
+    if (!useSearchState.getState().query) inputRef.current?.focus();
+  }, []);
 
   useEffect(() => {
     const q = query.trim();
@@ -80,14 +94,21 @@ export default function SearchPage() {
       setState("idle");
       return;
     }
+    const key = searchKey(q, source, kind);
+    // the same search as before (back from another tab): the results are still here
+    const kept = useSearchState.getState();
+    if (kept.resultKey === key && kept.status === "ready") return;
     const controller = new AbortController();
     setState("loading");
     const timer = setTimeout(() => {
       runSearch(q, source, kind, controller.signal)
         .then((res) => {
           if (controller.signal.aborted) return;
-          setResult(res);
-          setState(res.tracks.length + res.albums.length + res.playlists.length === 0 && res.failed.length ? "error" : "ready");
+          save({
+            result: res,
+            resultKey: key,
+            status: res.tracks.length + res.albums.length + res.playlists.length === 0 && res.failed.length ? "error" : "ready",
+          });
         })
         .catch(() => !controller.signal.aborted && setState("error"));
     }, DEBOUNCE_MS);
@@ -95,7 +116,15 @@ export default function SearchPage() {
       clearTimeout(timer);
       controller.abort();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query, source, kind]);
+
+  // a search that found something and stayed a moment goes into the history
+  useEffect(() => {
+    if (state !== "ready" || result.tracks.length + result.artists.length + result.albums.length === 0) return;
+    const timer = setTimeout(() => useSearchHistory.getState().add(query), HISTORY_AFTER_MS);
+    return () => clearTimeout(timer);
+  }, [state, query, result]);
 
   const { tracks, artists, albums, playlists } = result;
   const active = state !== "idle";
@@ -114,7 +143,11 @@ export default function SearchPage() {
           ref={inputRef}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && link && void importFromLink(query.trim())}
+          onKeyDown={(e) => {
+            if (e.key !== "Enter") return;
+            if (link) void importFromLink(query.trim());
+            else useSearchHistory.getState().add(query);
+          }}
           placeholder="Трек, исполнитель или ссылка на плейлист"
           autoComplete="off"
           spellCheck={false}
@@ -157,7 +190,28 @@ export default function SearchPage() {
           <button type="button" className="btn primary" onClick={() => void importFromLink(query.trim())}>Импортировать</button>
         </div>
       )}
-      {state === "idle" && !link && <p className="muted center">Ищите на SoundCloud и YouTube Music сразу — или вставьте ссылку на плейлист из Spotify, YouTube, SoundCloud или Deezer.</p>}
+      {state === "idle" && !link && !query.trim() && history.length > 0 && (
+        <section className="search-history">
+          <div className="row-head">
+            <h2 className="row-title">Недавние запросы</h2>
+            <button type="button" className="reset-btn" onClick={() => useSearchHistory.getState().clear()}>Очистить</button>
+          </div>
+          <ul className="search-history-list">
+            {history.map((q) => (
+              <li key={q}>
+                <button type="button" className="search-history-item" onClick={() => setQuery(q)}>
+                  <IconSearch size={15} />
+                  <span>{q}</span>
+                </button>
+                <button type="button" className="icon-btn search-history-remove" aria-label={`Убрать «${q}» из истории`} onClick={() => useSearchHistory.getState().remove(q)}>
+                  <IconClose size={14} />
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+      {state === "idle" && !link && (query.trim() || history.length === 0) && <p className="muted center">Ищите на SoundCloud и YouTube Music сразу — или вставьте ссылку на плейлист из Spotify, YouTube, SoundCloud или Deezer.</p>}
       {state === "error" && <p className="muted center">Не получилось найти. Проверьте интернет и попробуйте ещё раз.</p>}
       {state === "ready" && result.failed.length > 0 && <p className="muted small">{result.failed.join(" и ")} сейчас не отвечает — показаны остальные результаты.</p>}
       {state === "ready" && nothing && <p className="muted center">Ничего не нашлось.</p>}
