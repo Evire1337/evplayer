@@ -1,4 +1,7 @@
 import { useState } from "react";
+import Dialog from "@/ui/components/Dialog";
+import { signInSoundCloud, signOutSoundCloud } from "@/services/soundcloud/oauth";
+import { syncNow, useMirror } from "@/services/soundcloud/mirror";
 import { useSettings } from "@/settings/store";
 import { connectSoundCloud, disconnectSoundCloud, importSoundCloudLikes, importSoundCloudPlaylists } from "@/services/soundcloud/account";
 import { importFromLink, linkKind } from "@/library/importLink";
@@ -43,6 +46,90 @@ function ImportBox() {
       {kind && <Pill tone="info">{names[kind]}</Pill>}
       <button type="submit" className="btn primary" disabled={!value.trim() || busy}>Импортировать</button>
     </form>
+  );
+}
+
+function SoundCloudSync() {
+  const id = useSettings((s) => s.soundcloudClientId);
+  const secret = useSettings((s) => s.soundcloudClientSecret);
+  const login = useSettings((s) => s.soundcloudLogin);
+  const full = useSettings((s) => s.soundcloudFullSync);
+  const set = useSettings((s) => s.set);
+  const mirror = useMirror();
+  const [working, setWorking] = useState(false);
+  const [ask, setAsk] = useState(false);
+
+  const enter = async () => {
+    setWorking(true);
+    try {
+      await signInSoundCloud();
+      toast("Вход в SoundCloud выполнен");
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Не получилось войти", "error");
+    } finally {
+      setWorking(false);
+    }
+  };
+
+  return (
+    <div className="svc-sync">
+      <span className="svc-name small">Вход и полная синхронизация</span>
+      {login ? (
+        <>
+          <div className="svc-account">
+            <span className="svc-avatar">{login.avatar ? <img src={login.avatar} alt="" /> : <IconUser size={22} />}</span>
+            <span className="svc-account-text">
+              <span className="strong">{login.name}</span>
+              <span className="muted small">
+                {mirror.running ? "синхронизирую…" : mirror.lastRun ? `последняя синхронизация ${formatAddedAt(mirror.lastRun)}` : "вход выполнен"}
+              </span>
+            </span>
+            <button type="button" className="btn ghost" onClick={signOutSoundCloud}>Выйти</button>
+          </div>
+          <SwitchRow
+            title="Включить полную синхронизацию"
+            hint="Лайки и плейлисты из плеера появляются в вашем аккаунте SoundCloud, а удалённые здесь удаляются и там"
+            checked={full}
+            onChange={(v) => (v ? setAsk(true) : set({ soundcloudFullSync: false }))}
+            icon={<IconRefresh size={16} />}
+          />
+          {full && (
+            <div className="svc-actions">
+              <button type="button" className="btn ghost" disabled={mirror.running} onClick={() => void syncNow()}>
+                {mirror.running ? <span className="spinner small-spin" /> : <IconRefresh size={15} />} Синхронизировать сейчас
+              </button>
+            </div>
+          )}
+          {mirror.error && <p className="small" style={{ color: "var(--danger, #ff6b6b)" }}>{mirror.error}</p>}
+        </>
+      ) : (
+        <>
+          <label className="field">
+            <span>client_secret своего приложения</span>
+            <input type="password" value={secret} onChange={(e) => set({ soundcloudClientSecret: e.target.value.trim() })} placeholder="Вместе с client_id из «Дополнительно»" spellCheck={false} autoComplete="off" />
+          </label>
+          <div className="svc-actions">
+            <button type="button" className="btn primary" disabled={working || !id.trim() || !secret.trim()} onClick={() => void enter()}>
+              {working ? <span className="spinner small-spin" /> : <IconPlug size={15} />} Войти через OAuth
+            </button>
+          </div>
+          <p className="muted small">
+            Нужно своё приложение на soundcloud.com/you/apps: его client_id впишите в «Дополнительно», а в Redirect URI укажите
+            {" "}<code>http://127.0.0.1:43821/callback</code>. Вход проходит на сайте SoundCloud, пароль в EvPlayer не попадает.
+          </p>
+        </>
+      )}
+      <Dialog title="Включить полную синхронизацию?" open={ask} onClose={() => setAsk(false)}>
+        <p className="muted">
+          Все песни SoundCloud из «Понравившихся» будут отмечены лайком в вашем аккаунте, а плейлисты, созданные в EvPlayer, появятся там как приватные.
+          Если убрать лайк или удалить такой плейлист в плеере, он исчезнет и на SoundCloud. Плейлисты, которые вы забрали с SoundCloud, и всё, что создано не в EvPlayer, не трогаются.
+        </p>
+        <div className="dialog-actions">
+          <button type="button" className="btn ghost" onClick={() => setAsk(false)}>Отмена</button>
+          <button type="button" className="btn primary" onClick={() => { set({ soundcloudFullSync: true }); setAsk(false); }}>Включить</button>
+        </div>
+      </Dialog>
+    </div>
   );
 }
 
@@ -135,6 +222,8 @@ function SoundCloudCard() {
         </form>
       )}
       <p className="muted small">Подтягиваются ваши публичные лайки и плейлисты. Пароль не нужен и никуда не передаётся.</p>
+
+      <SoundCloudSync />
 
       <button type="button" className="svc-more" onClick={() => setAdvanced((v) => !v)}>{advanced ? "Скрыть дополнительно" : "Дополнительно"}</button>
       {advanced && (

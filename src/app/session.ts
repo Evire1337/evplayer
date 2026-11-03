@@ -3,6 +3,7 @@ import { usePlayer } from "@/player/store";
 import { useSettings } from "@/settings/store";
 import type { Track } from "@/types";
 import { syncSoundCloudOnStart } from "@/services/soundcloud/account";
+import { startMirror } from "@/services/soundcloud/mirror";
 
 // Picking up where you left off: the queue and the position are saved now and then and
 // restored on start (paused). Also: pause when the headphones go away.
@@ -41,6 +42,7 @@ export function restoreSession(): void {
   window.addEventListener("beforeunload", save);
   watchOutputDevices();
   syncSoundCloudOnStart();
+  startMirror();
 }
 
 function watchOutputDevices(): void {

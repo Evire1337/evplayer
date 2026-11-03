@@ -124,6 +124,10 @@ export function createTauriApi(): EvPlayerApi {
       signIn: (clientId) => invoke("spotify_sign_in", { clientId }),
       refresh: (clientId, refreshToken) => invoke("spotify_refresh", { clientId, refreshToken }),
     },
+    soundcloudAuth: {
+      signIn: (clientId, clientSecret) => invoke("soundcloud_sign_in", { clientId, clientSecret }),
+      refresh: (clientId, clientSecret, refreshToken) => invoke("soundcloud_refresh", { clientId, clientSecret, refreshToken }),
+    },
     discord: {
       setAppId: (appId) => fire("discord_set", { appId }),
       update: (presence) => fire("discord_update", { presence }),

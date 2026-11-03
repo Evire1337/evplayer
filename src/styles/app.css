@@ -917,3 +917,4 @@ html.saver .now-art::before, html.saver .now-art::after { display: none !importa
 .queue-sheet .queue { display: flex; height: 100%; border-radius: 26px 26px 0 0; background: rgba(10, 30, 36, 0.98); padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 16px); }
 @keyframes sheet-up { from { transform: translateY(40%); opacity: 0.4; } }
 @keyframes sheet-fade { from { opacity: 0; } }
+.svc-sync { display: flex; flex-direction: column; gap: 10px; margin-top: 4px; padding-top: 12px; border-top: 1px solid rgba(238, 247, 244, 0.08); }

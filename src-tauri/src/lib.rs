@@ -498,6 +498,22 @@ async fn spotify_refresh(client_id: String, refresh_token: String) -> Result<Val
 }
 
 #[tauri::command]
+async fn soundcloud_sign_in(app: AppHandle, client_id: String, client_secret: String) -> Result<Value, String> {
+    let opener = app.clone();
+    let tokens = services::soundcloud_sign_in(client_id, client_secret, move |url| {
+        let _ = opener.opener().open_url(url, None::<&str>);
+    })
+    .await?;
+    serde_json::to_value(tokens).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn soundcloud_refresh(client_id: String, client_secret: String, refresh_token: String) -> Result<Value, String> {
+    let tokens = services::soundcloud_refresh(client_id, client_secret, refresh_token).await?;
+    serde_json::to_value(tokens).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn discord_set(state: tauri::State<'_, AppState>, app_id: Option<String>) {
     state.discord.set_app_id(app_id);
 }
@@ -646,6 +662,8 @@ pub fn run() {
             overlay_command,
             spotify_sign_in,
             spotify_refresh,
+            soundcloud_sign_in,
+            soundcloud_refresh,
             discord_set,
             discord_update,
             discord_status,

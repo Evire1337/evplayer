@@ -183,6 +183,10 @@ export interface EvPlayerApi {
     signIn: (clientId: string) => Promise<SpotifyTokens>;
     refresh: (clientId: string, refreshToken: string) => Promise<SpotifyTokens>;
   };
+  soundcloudAuth: {
+    signIn: (clientId: string, clientSecret: string) => Promise<SpotifyTokens>;
+    refresh: (clientId: string, clientSecret: string, refreshToken: string) => Promise<SpotifyTokens>;
+  };
   discord: {
     setAppId: (appId: string | null) => void;
     update: (state: PresenceState | null) => void;

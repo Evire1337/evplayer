@@ -47,6 +47,16 @@ export interface SoundCloudAccount {
   lastSync?: string;
 }
 
+/** signed in to SoundCloud through its official OAuth: this is what lets likes and playlists be written */
+export interface SoundCloudLogin {
+  id: string;
+  name: string;
+  avatar?: string;
+  accessToken: string;
+  refreshToken: string;
+  expiresAt: number;
+}
+
 export interface SettingsState {
   // playback
   autoplay: boolean;
@@ -99,6 +109,11 @@ export interface SettingsState {
   /** client id of your own app from soundcloud.com/you/apps; empty = automatic */
   soundcloudClientId: string;
   soundcloudAccount: SoundCloudAccount | null;
+  /** secret of that same app (needed for the OAuth sign-in) */
+  soundcloudClientSecret: string;
+  soundcloudLogin: SoundCloudLogin | null;
+  /** full sync: likes and playlists you change here are changed on your SoundCloud too */
+  soundcloudFullSync: boolean;
   /** your own app from developer.spotify.com: lets imports read whole playlists */
   spotifyClientId: string;
   spotifyClientSecret: string;
@@ -150,6 +165,9 @@ const DEFAULTS = {
   overlayShowLyrics: true,
   soundcloudClientId: "",
   soundcloudAccount: null as SoundCloudAccount | null,
+  soundcloudClientSecret: "",
+  soundcloudLogin: null as SoundCloudLogin | null,
+  soundcloudFullSync: false,
   spotifyClientId: "",
   spotifyClientSecret: "",
   spotifyAccount: null as SpotifyAccount | null,
