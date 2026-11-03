@@ -1,7 +1,9 @@
 name: Release
 
-# Push a tag like v0.4.0 (matching "version" in package.json) and this builds the Windows
-# installer and publishes it as a GitHub release, with latest.json for the updater.
+# Push a tag like v0.4.0 (matching "version" in package.json) and this builds EvPlayer for
+# Windows (x64 and ARM), Linux (x64 and ARM: .deb, .rpm, AppImage) and Android, and publishes
+# a GitHub release with latest.json for the updater. The release stays a draft until every
+# computer's files are in it.
 # Needs the repository secret TAURI_SIGNING_PRIVATE_KEY (the update signing key).
 on:
   push:
@@ -13,6 +15,8 @@ permissions:
 jobs:
   windows:
     runs-on: windows-latest
+    outputs:
+      release_id: ${{ steps.tauri.outputs.releaseId }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -38,6 +42,7 @@ jobs:
       # built into a draft first and published only when every file is there, so a release
       # is never seen half-uploaded
       - uses: tauri-apps/tauri-action@v0
+        id: tauri
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -45,7 +50,11 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: ${{ github.ref_name }}
-          releaseBody: "Установщик для Windows — файл EvPlayer_*_x64-setup.exe ниже. Уже установленные копии обновятся сами."
+          releaseBody: |
+            Windows — EvPlayer_*_x64-setup.exe (для Windows на ARM — EvPlayer_*_arm64-setup.exe).
+            Linux — .AppImage (обновляется сам), .deb или .rpm; amd64/x86_64 — обычные компьютеры, arm64/aarch64 — ARM.
+            Android — EvPlayer-*.apk.
+            Уже установленные копии обновятся сами.
           releaseDraft: true
           includeUpdaterJson: true
       # Copies of 0.3 and older (Electron) update through electron-updater, which reads
@@ -73,21 +82,86 @@ jobs:
           gh release upload "$GITHUB_REF_NAME" latest.yml --clobber
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # the other computers, added to the same draft one after another (each adds its line to
+  # latest.json, so they must not write it at the same time)
+  desktop:
+    needs: windows
+    strategy:
+      max-parallel: 1
+      matrix:
+        include:
+          - name: Windows ARM
+            runner: windows-latest
+            rust_target: aarch64-pc-windows-msvc
+            args: --target aarch64-pc-windows-msvc
+          - name: Linux x64
+            runner: ubuntu-22.04
+            args: --bundles deb,rpm,appimage
+          - name: Linux ARM
+            runner: ubuntu-22.04-arm
+            args: --bundles deb,rpm,appimage
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: System libraries for Tauri
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev patchelf file
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: ${{ matrix.name }}
+      - run: pnpm install --frozen-lockfile
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+        with:
+          releaseId: ${{ needs.windows.outputs.release_id }}
+          args: ${{ matrix.args }}
+          includeUpdaterJson: true
+
+  publish:
+    needs: [windows, desktop]
+    runs-on: ubuntu-latest
+    steps:
       - name: Check every file landed in the release, then publish it
         shell: bash
         run: |
-          FILES=$(gh release view "$GITHUB_REF_NAME" --json assets -q '.assets[].name')
+          FILES=$(gh release view "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" --json assets -q '.assets[].name')
           echo "$FILES"
-          echo "$FILES" | grep -q 'setup\.exe$' || { echo "missing the installer"; exit 1; }
-          echo "$FILES" | grep -qx 'latest.json' || { echo "missing latest.json"; exit 1; }
-          echo "$FILES" | grep -qx 'latest.yml' || { echo "missing latest.yml"; exit 1; }
-          gh release edit "$GITHUB_REF_NAME" --draft=false --latest
+          need() { echo "$FILES" | grep -Eq "$1" || { echo "missing: $2"; exit 1; }; }
+          need '_x64-setup\.exe$' "the Windows installer"
+          need '_arm64-setup\.exe$' "the Windows ARM installer"
+          need '_amd64\.AppImage$' "the Linux x64 AppImage"
+          need '_aarch64\.AppImage$' "the Linux ARM AppImage"
+          need '_amd64\.deb$' "the Linux x64 .deb"
+          need '_arm64\.deb$' "the Linux ARM .deb"
+          need '^latest\.json$' "latest.json"
+          need '^latest\.yml$' "latest.yml"
+          gh release download "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" -p latest.json -O latest.json
+          for p in windows-x86_64 windows-aarch64 linux-x86_64 linux-aarch64; do
+            jq -e --arg p "$p" '[.platforms | keys[] | select(startswith($p))] | length > 0' latest.json > /dev/null || { echo "latest.json has no $p"; cat latest.json; exit 1; }
+          done
+          gh release edit "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" --draft=false --latest
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # the phone version: the same release gets an APK (the phone app offers it as an update)
   android:
-    needs: windows
+    needs: publish
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

@@ -61,3 +61,70 @@ jobs:
           name: EvPlayer-test-installer
           path: src-tauri/target/release/bundle/nsis/*.exe
           retention-days: 14
+
+  # the other computers: Linux (x64 and ARM) packages and a Windows-on-ARM installer, to try
+  # before a release
+  linux:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: ubuntu-22.04
+          - arch: arm64
+            runner: ubuntu-22.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: System libraries for Tauri
+        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev patchelf file
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: linux-${{ matrix.arch }}
+      - run: pnpm install --frozen-lockfile
+      - name: Build the packages (a test build, without the update signature)
+        run: pnpm tauri build --bundles deb,rpm,appimage --config src-tauri/test-build.conf.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: EvPlayer-linux-${{ matrix.arch }}
+          path: |
+            src-tauri/target/release/bundle/deb/*.deb
+            src-tauri/target/release/bundle/rpm/*.rpm
+            src-tauri/target/release/bundle/appimage/*.AppImage
+          retention-days: 14
+
+  windows-arm64:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-pc-windows-msvc
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: windows-arm64
+      - run: pnpm install --frozen-lockfile
+      - name: Build the installer for Windows on ARM (a test build)
+        run: pnpm tauri build --target aarch64-pc-windows-msvc --config src-tauri/test-build.conf.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: EvPlayer-test-installer-arm64
+          path: src-tauri/target/aarch64-pc-windows-msvc/release/bundle/nsis/*.exe
+          retention-days: 14

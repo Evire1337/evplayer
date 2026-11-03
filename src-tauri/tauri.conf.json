@@ -57,7 +57,8 @@
         "displayLanguageSelector": false,
         "installerHooks": "./windows/hooks.nsh"
       }
-    }
+    },
+    "category": "Music"
   },
   "plugins": {
     "updater": {

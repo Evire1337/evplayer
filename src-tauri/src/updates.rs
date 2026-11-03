@@ -59,6 +59,12 @@ async fn check(app: AppHandle) {
             return Ok::<(), String>(());
         };
         let version = update.version.clone();
+        // on Linux only the AppImage can replace itself; a .deb or .rpm install is updated
+        // by installing the new package
+        if cfg!(target_os = "linux") && std::env::var_os("APPIMAGE").is_none() {
+            send(&app, json!({ "status": "error", "message": format!("вышла версия {version} — скачайте новый пакет со страницы релизов на GitHub") }));
+            return Ok(());
+        }
         send(&app, json!({ "status": "downloading", "version": version, "percent": 0 }));
         let mut got: usize = 0;
         let mut last = 0u64;
