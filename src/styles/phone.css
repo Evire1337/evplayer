@@ -103,3 +103,6 @@ html.is-phone .lyrics-shift { opacity: 1; }
 /* «Далее» sits above the bottom bar, so its last song is not hidden under it */
 html.is-phone .queue-sheet { bottom: calc(var(--nav-h) + var(--safe-bottom)); }
 html.is-phone .queue-sheet .queue { padding-bottom: 16px; }
+/* no blur on the lyric lines: every blurred line is redrawn by the phone's graphics chip,
+   which costs battery and can make the page stutter */
+html.is-phone .lyric-line { filter: none !important; }

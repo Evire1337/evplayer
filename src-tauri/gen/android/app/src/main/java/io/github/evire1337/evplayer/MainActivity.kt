@@ -44,12 +44,30 @@ class MainActivity : TauriActivity() {
     /** the page (and its music) is there to take commands */
     val isRunning: Boolean get() = webView != null
 
-    /** a button in the notification or on the lock screen: hand it to the page */
+    /** the app is on the screen (between onStart and onStop) */
+    @Volatile private var onScreen = false
+
+    /** a button in the notification, on the lock screen or in the widget: hand it to the page */
     fun command(action: String, value: Double? = null) {
       val view = webView ?: return
       val arg = if (value == null) "undefined" else value.toString()
       Handler(Looper.getMainLooper()).post {
+        // the page may be asleep (paused in the background, see sleepIfIdle): wake it first,
+        // or "play" from the notification did nothing until the app was opened
+        view.onResume()
+        view.resumeTimers()
         view.evaluateJavascript("window.__evplayerMediaCommand && window.__evplayerMediaCommand(${JSONObject.quote(action)}, $arg)", null)
+      }
+    }
+
+    /**
+     * Paused while the app is off the screen: the page sleeps (no timers, no drawing) until
+     * a button wakes it, instead of running at full speed in the pocket.
+     */
+    fun sleepIfIdle() {
+      val view = webView ?: return
+      Handler(Looper.getMainLooper()).post {
+        if (!onScreen && !MediaService.isPlaying) view.onPause()
       }
     }
 
@@ -114,11 +132,13 @@ class MainActivity : TauriActivity() {
 
   override fun onStart() {
     super.onStart()
+    onScreen = true
     visible(true)
   }
 
   override fun onStop() {
     super.onStop()
+    onScreen = false
     visible(false)
     cacheDir.listFiles()?.forEach { it.deleteRecursively() }
   }

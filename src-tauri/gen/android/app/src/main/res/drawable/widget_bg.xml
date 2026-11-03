@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- the widget card: dark and rounded, like the rest of the app -->
+<!-- the widget card: a soft grey, like the system's own media widgets -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
-  <solid android:color="#F0232326" />
-  <corners android:radius="28dp" />
+  <solid android:color="#F2393939" />
+  <corners android:radius="26dp" />
 </shape>

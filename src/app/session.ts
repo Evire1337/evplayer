@@ -16,9 +16,15 @@ interface Saved {
   positionMs: number;
 }
 
+let lastSaved = "";
+
 function save(): void {
   const s = usePlayer.getState();
   if (!s.queue.length) return;
+  // nothing new (paused, or the same song a few seconds on): no rewrite of the whole queue
+  const key = `${s.queue.length}|${s.queue[0]?.id}|${s.queue[s.queue.length - 1]?.id}|${s.index}|${Math.round(s.positionMs / 5000)}`;
+  if (key === lastSaved) return;
+  lastSaved = key;
   // a long queue is cut around the current song so the file stays small
   const start = Math.max(0, s.index - 50);
   const data: Saved = { queue: s.queue.slice(start, start + 300), index: s.index - start, positionMs: s.positionMs };

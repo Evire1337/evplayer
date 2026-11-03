@@ -136,8 +136,21 @@ class AudioGraph {
   private onPlay = (): void => {
     if (this.suspendTimer) clearTimeout(this.suspendTimer);
     this.suspendTimer = null;
-    if (this.ctx?.state === "suspended") void this.ctx.resume();
+    this.wake(3);
   };
+
+  /**
+   * Resume the suspended sound graph. Woken from the background (a phone's notification
+   * button) the first try can be refused, and the song then "played" without a sound: try
+   * again a few times.
+   */
+  private wake(tries: number): void {
+    const ctx = this.ctx;
+    if (!ctx || ctx.state === "running" || ctx.state === "closed") return;
+    void ctx.resume().catch(() => undefined).finally(() => {
+      if (ctx.state !== "running" && tries > 1 && this.decks.some((d) => !d.paused)) setTimeout(() => this.wake(tries - 1), 400);
+    });
+  }
 
   private onPause = (): void => {
     if (this.decks.some((d) => !d.paused)) return;

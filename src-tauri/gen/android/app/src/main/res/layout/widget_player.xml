@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- the home-screen player: cover on the left, the song and four buttons on the right -->
+<!-- the home-screen player: cover on the left; the song and four buttons on the right.
+     Compact on purpose: the buttons fit even when the widget is made smaller -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/widget_root"
     android:layout_width="match_parent"
@@ -7,14 +8,12 @@
     android:background="@drawable/widget_bg"
     android:gravity="center_vertical"
     android:orientation="horizontal"
-    android:padding="12dp">
+    android:padding="10dp">
 
     <ImageView
         android:id="@+id/widget_cover"
         android:layout_width="112dp"
         android:layout_height="match_parent"
-        android:maxHeight="140dp"
-        android:adjustViewBounds="true"
         android:contentDescription="@null"
         android:scaleType="centerCrop"
         android:src="@drawable/widget_cover_empty" />
@@ -30,33 +29,36 @@
             android:id="@+id/widget_title"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
             android:ellipsize="end"
+            android:fontFamily="sans-serif-medium"
+            android:includeFontPadding="false"
             android:maxLines="1"
             android:text="EvPlayer"
             android:textColor="#FFFFFFFF"
-            android:textSize="18sp"
-            android:textStyle="bold" />
+            android:textSize="17sp" />
 
         <TextView
             android:id="@+id/widget_artist"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="2dp"
+            android:layout_marginTop="4dp"
             android:ellipsize="end"
+            android:includeFontPadding="false"
             android:maxLines="1"
             android:text="@string/widget_idle"
             android:textColor="#B3FFFFFF"
             android:textSize="14sp" />
 
+        <!-- takes what is left, and gives it up first when the widget is short -->
         <FrameLayout
             android:layout_width="match_parent"
             android:layout_height="0dp"
-            android:layout_weight="1"
-            android:minHeight="8dp" />
+            android:layout_weight="1" />
 
         <LinearLayout
             android:layout_width="match_parent"
-            android:layout_height="44dp"
+            android:layout_height="40dp"
             android:orientation="horizontal">
 
             <ImageButton
@@ -67,6 +69,7 @@
                 android:layout_weight="1"
                 android:background="@drawable/widget_btn"
                 android:contentDescription="Предыдущий"
+                android:scaleType="center"
                 android:src="@drawable/ic_w_prev" />
 
             <ImageButton
@@ -77,6 +80,7 @@
                 android:layout_weight="1"
                 android:background="@drawable/widget_btn"
                 android:contentDescription="Играть"
+                android:scaleType="center"
                 android:src="@drawable/ic_w_play" />
 
             <ImageButton
@@ -87,15 +91,18 @@
                 android:layout_weight="1"
                 android:background="@drawable/widget_btn"
                 android:contentDescription="Следующий"
+                android:scaleType="center"
                 android:src="@drawable/ic_w_next" />
 
             <ImageButton
                 android:id="@+id/widget_like"
                 android:layout_width="0dp"
                 android:layout_height="match_parent"
+                
                 android:layout_weight="1"
                 android:background="@drawable/widget_btn"
                 android:contentDescription="Нравится"
+                android:scaleType="center"
                 android:src="@drawable/ic_heart" />
         </LinearLayout>
     </LinearLayout>

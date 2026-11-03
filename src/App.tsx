@@ -1,3 +1,4 @@
+import { isPhone } from "@/platform/device";
 import { currentTrack, usePlayer } from "@/player/store";
 import Backdrop from "@/ui/backdrop/Backdrop";
 import Rail from "@/ui/components/Rail";
@@ -45,7 +46,8 @@ function useAsleep(): boolean {
       setAsleep(false);
       return;
     }
-    const timer = setTimeout(() => setAsleep(true), saver ? SAVER_SLEEP_AFTER_MS : SLEEP_AFTER_MS);
+    // a phone in the pocket or in another app: the pages go at once (battery)
+    const timer = setTimeout(() => setAsleep(true), saver || isPhone ? SAVER_SLEEP_AFTER_MS : SLEEP_AFTER_MS);
     return () => clearTimeout(timer);
   }, [visible, saver]);
   return asleep;

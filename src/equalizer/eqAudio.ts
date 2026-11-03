@@ -1,6 +1,7 @@
 import { MAX_BANDS, peakBoostDb, type EqBand } from "./eqModel";
 import { useEqualizerStore } from "./eqStore";
 import { LoudnessLeveler, rememberedLoudness, rememberLoudness } from "./loudness";
+import { usePlayer } from "@/player/store";
 
 // The equalizer sits at the very end of the playback graph:
 //   effects output -> preamp -> band filters -> limiter -> analyser -> speakers
@@ -112,9 +113,12 @@ useEqualizerStore.subscribe((s, prev) => {
 // ---- volume levelling ---------------------------------------------------------------
 
 const TICK_MS = 150;
+/** once a song's loudness is known, a look now and then is enough */
+const SETTLED_TICK_MS = 1000;
 let leveler = new LoudnessLeveler();
 let levelTrackId: string | null = null;
-let levelTimer: ReturnType<typeof setInterval> | null = null;
+let levelTimer: ReturnType<typeof setTimeout> | null = null;
+let lastTick = 0;
 let samples: Float32Array<ArrayBuffer> | null = null;
 
 /** the player calls this when a new song starts loading */
@@ -130,19 +134,34 @@ export function setLevelingTrack(trackId: string | null): void {
   }
 }
 
+// The levelling only listens while music plays with levelling on: it used to wake the
+// device several times a second always, paused or not, which costs battery on a phone.
 function tick(): void {
-  if (!bus || !useEqualizerStore.getState().normalize) return;
+  levelTimer = null;
+  if (!bus || !useEqualizerStore.getState().normalize || usePlayer.getState().status !== "playing") return;
+  const now = performance.now();
+  const elapsed = Math.min(2000, now - lastTick);
+  lastTick = now;
   const meter = bus.meter;
   if (!samples || samples.length !== meter.fftSize) samples = new Float32Array(meter.fftSize);
   meter.getFloatTimeDomainData(samples);
   let sum = 0;
   for (let i = 0; i < samples.length; i++) sum += samples[i] * samples[i];
-  leveler.update(sum / samples.length, TICK_MS);
+  leveler.update(sum / samples.length, elapsed);
   // glide slowly so the change is never heard as a jump
   bus.level.gain.setTargetAtTime(Math.pow(10, leveler.gainDb() / 20), bus.context.currentTime, 1.2);
+  levelTimer = setTimeout(tick, leveler.isSettled() ? SETTLED_TICK_MS : TICK_MS);
 }
 
 function startLeveler(): void {
-  if (levelTimer) return;
-  levelTimer = setInterval(tick, TICK_MS);
+  if (levelTimer || !bus) return;
+  lastTick = performance.now();
+  levelTimer = setTimeout(tick, TICK_MS);
 }
+
+usePlayer.subscribe((s, prev) => {
+  if (s.status === "playing" && prev.status !== "playing") startLeveler();
+});
+useEqualizerStore.subscribe((s, prev) => {
+  if (s.normalize && !prev.normalize) startLeveler();
+});

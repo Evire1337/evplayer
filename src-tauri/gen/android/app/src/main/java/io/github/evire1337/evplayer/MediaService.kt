@@ -51,7 +51,10 @@ class MediaService : Service() {
     /** called by the page (through MediaBridge) whenever the song or its state changes */
     fun update(context: Context, json: String) {
       val next = State.parse(json) ?: return
+      val wasPlaying = state?.playing == true
       state = next
+      // paused in the background: let the page sleep
+      if (wasPlaying && !next.playing) MainActivity.sleepIfIdle()
       val service = instance
       // the service redraws the widget with the notification; without it (paused, not
       // started yet) the widget is drawn here, without a cover
