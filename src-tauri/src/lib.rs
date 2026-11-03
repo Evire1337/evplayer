@@ -8,6 +8,7 @@ mod library;
 mod media_server;
 mod memory;
 mod migrate;
+mod offline;
 mod proxy;
 mod services;
 // desktop: tray, mini player window, installer updates; phones get stand-ins
@@ -34,6 +35,7 @@ use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 use tauri_plugin_opener::OpenerExt;
 
 use library::{AddResult, Library, LocalTrackEdit, LocalTrackRecord, Watcher};
+use offline::{Offline, OfflineEntry};
 use overlay::Overlay;
 use tray::Tray;
 
@@ -42,6 +44,7 @@ pub const MAIN: &str = "main";
 pub struct AppState {
     pub data_dir: PathBuf,
     pub library: Arc<Library>,
+    pub offline: Arc<Offline>,
     pub watcher: Mutex<Option<Arc<Watcher>>>,
     pub discord: discord::Discord,
     /// was the main window minimized at the last resize (to notice minimize and restore)
@@ -199,6 +202,52 @@ fn open_url(app: AppHandle, url: String) -> Result<(), String> {
 #[tauri::command]
 fn show_window(app: AppHandle) {
     show_main(&app);
+}
+
+// ---- songs kept offline ------------------------------------------------------------------
+
+#[tauri::command]
+fn offline_list(state: tauri::State<'_, AppState>) -> Vec<OfflineEntry> {
+    state.offline.list()
+}
+
+/// keep one song; progress goes to the page as `offline:progress` (at most a few times a second)
+#[tauri::command]
+async fn offline_download(app: AppHandle, id: String, source: offline::Source) -> Result<OfflineEntry, String> {
+    let offline = app.state::<AppState>().offline.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let last = Mutex::new(std::time::Instant::now() - std::time::Duration::from_secs(1));
+        let report = |done: u64, total: u64| {
+            let mut at = last.lock().unwrap();
+            if at.elapsed() >= std::time::Duration::from_millis(250) || (total > 0 && done >= total) {
+                *at = std::time::Instant::now();
+                let _ = app.emit_to(MAIN, "offline:progress", serde_json::json!({ "id": id, "done": done, "total": total }));
+            }
+        };
+        offline.fetch(&id, &source, proxy::is_open_host, &report)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+fn offline_cancel(state: tauri::State<'_, AppState>, id: String) {
+    state.offline.cancel(&id);
+}
+
+#[tauri::command]
+fn offline_remove(state: tauri::State<'_, AppState>, ids: Vec<String>) {
+    state.offline.remove(&ids);
+}
+
+#[tauri::command]
+fn offline_clear(state: tauri::State<'_, AppState>) {
+    state.offline.clear();
+}
+
+#[tauri::command]
+fn offline_open_folder(app: AppHandle, state: tauri::State<'_, AppState>) {
+    let _ = app.opener().open_path(state.offline.folder().to_string_lossy(), None::<&str>);
 }
 
 #[tauri::command]
@@ -571,6 +620,12 @@ pub fn run() {
             show_window,
             open_url,
             local_list,
+            offline_list,
+            offline_download,
+            offline_cancel,
+            offline_remove,
+            offline_clear,
+            offline_open_folder,
             local_pick,
             local_add_paths,
             local_remove,
@@ -603,9 +658,11 @@ pub fn run() {
             let handle = app.handle().clone();
             let dir = data_dir(&handle);
             let library = Library::new(dir.clone());
+            let offline = Offline::new(&dir);
             app.manage(AppState {
                 data_dir: dir,
                 library: library.clone(),
+                offline: offline.clone(),
                 watcher: Mutex::new(None),
                 discord: discord::Discord::new(),
                 minimized: Mutex::new(false),
@@ -615,7 +672,7 @@ pub fn run() {
             if no_cache_flag(&handle).exists() {
                 clear_cache_dirs(&handle);
             }
-            let media = media_server::MediaServer::start(library.clone()).map(|m| m.base).unwrap_or_default();
+            let media = media_server::MediaServer::start(library.clone(), offline.clone()).map(|m| m.base).unwrap_or_default();
             create_main(&handle, &media)?;
             tray::create(&handle)?;
             let notify = handle.clone();

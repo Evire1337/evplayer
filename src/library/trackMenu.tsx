@@ -3,11 +3,14 @@ import { player } from "@/player/engine";
 import { useNavigation } from "@/ui/navigation";
 import type { MenuItem } from "@/ui/menu";
 import { toast } from "@/ui/toasts";
-import { IconChart, IconDisc, IconFolder, IconHeart, IconHeartFill, IconLink, IconListPlus, IconNext, IconPencil, IconPlus, IconQueue, IconRadio, IconTrash, IconUser } from "@/ui/components/Icons";
+import { IconChart, IconDisc, IconDownload, IconFolder, IconHeart, IconHeartFill, IconLink, IconListPlus, IconNext, IconPencil, IconPlus, IconQueue, IconRadio, IconTrash, IconUser } from "@/ui/components/Icons";
 import { isLiked, useLibrary } from "./store";
 import { openCreatePlaylist } from "./dialogs";
 import { openTrackStats } from "@/stats/statsDialog";
 import { openTagEditor } from "@/files/tagEditor";
+import { forgetTracks, keepTracks } from "@/offline/keep";
+import { isKeepable } from "@/offline/scopes";
+import { offlineSupported, useOffline } from "@/offline/store";
 
 export interface TrackMenuContext {
   playlistId?: string;
@@ -53,6 +56,14 @@ export function trackMenuItems(track: Track, ctx: TrackMenuContext = {}): MenuIt
   ];
   if (artist) {
     items.push({ label: `Исполнитель: ${artist.name}`, icon: <IconUser size={16} />, onSelect: () => useNavigation.getState().go("artist", artist.id, artist.name) });
+  }
+  if (offlineSupported() && isKeepable(track)) {
+    const kept = track.id in useOffline.getState().entries;
+    items.push(
+      kept
+        ? { label: "Удалить скачанное", icon: <IconTrash size={16} />, onSelect: () => void forgetTracks([track.id]).then(() => toast("Копия для офлайн удалена")) }
+        : { label: "Скачать для офлайн", icon: <IconDownload size={16} />, onSelect: () => void keepTracks([track]) },
+    );
   }
   if (track.permalink) {
     const permalink = track.permalink;

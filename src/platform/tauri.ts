@@ -90,6 +90,16 @@ export function createTauriApi(): EvPlayerApi {
       // songs come from the media server (every engine can play from it), covers from evmedia
       mediaUrl: (kind, id) => (kind === "track" && window.__EVPLAYER_MEDIA__ ? `${window.__EVPLAYER_MEDIA__}/track/${encodeURIComponent(id)}` : media + encodeURIComponent(`${kind}/${id}`)),
     },
+    offline: {
+      list: () => invoke("offline_list"),
+      download: (id, source) => invoke("offline_download", { id, source }),
+      cancel: (id) => fire("offline_cancel", { id }),
+      remove: (ids) => invoke("offline_remove", { ids }),
+      clear: () => invoke("offline_clear"),
+      openFolder: () => fire("offline_open_folder"),
+      onProgress: (cb) => on("offline:progress", cb),
+      mediaUrl: (id) => (window.__EVPLAYER_MEDIA__ ? `${window.__EVPLAYER_MEDIA__}/offline/${encodeURIComponent(id)}` : null),
+    },
     files: {
       saveText: (name, text) => invoke("save_text", { name, text }),
       openText: (extensions) => invoke("open_text", { extensions }),

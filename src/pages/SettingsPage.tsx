@@ -22,6 +22,48 @@ import OverlayTab from "./settings/OverlayTab";
 import { Card, Row, SwitchRow, TabHeader } from "./settings/parts";
 import Dialog from "@/ui/components/Dialog";
 import { askPhoneToKeepRunning, onPhoneVisible, phoneKeepsRunning } from "@/platform/androidMedia";
+import { offlineSupported, keptBytes, useKeepLists, useOffline } from "@/offline/store";
+import { cancelKeeping, forgetTracks } from "@/offline/keep";
+import { openDownloadDialog } from "@/offline/dialog";
+import { scopeTitle } from "@/offline/scopes";
+
+/** songs saved for offline: how much room they take, and the lists that keep themselves complete */
+function OfflineCard() {
+  const entries = useOffline((s) => s.entries);
+  const lists = useKeepLists((s) => s.lists);
+  const count = Object.keys(entries).length;
+  if (!offlineSupported()) return null;
+  return (
+    <Card title="Скачанное для офлайн" hint="Песни из SoundCloud и YouTube, сохранённые на этом компьютере: играют без интернета">
+      <Row title={count ? `${count} ${count % 10 === 1 && count % 100 !== 11 ? "трек" : "треков"}` : "Пока ничего не скачано"} hint={count ? `${(keptBytes(entries) / 1024 / 1024).toFixed(0)} МБ на диске` : "Скачать можно трек, плейлист или лайки: правый клик по треку или кнопка на странице списка"}>
+        <button type="button" className="btn primary" onClick={() => openDownloadDialog()}>Скачать…</button>
+      </Row>
+      {lists.length > 0 && (
+        <Row title="Докачиваются сами" hint={lists.map(scopeTitle).join(", ")}>
+          <button type="button" className="btn ghost" onClick={() => useKeepLists.getState().remove(lists)}>Перестать</button>
+        </Row>
+      )}
+      <Row title="Папка со скачанным" hint="Файлы лежат там под служебными именами">
+        <button type="button" className="btn ghost" onClick={() => window.evplayer?.offline.openFolder()}>Открыть</button>
+      </Row>
+      {count > 0 && (
+        <Row title="Удалить всё скачанное" hint="Песни останутся в плейлистах и будут играть из интернета">
+          <button
+            type="button"
+            className="btn ghost"
+            onClick={() => {
+              cancelKeeping();
+              useKeepLists.getState().remove(lists);
+              void forgetTracks(Object.keys(entries)).then(() => toast("Скачанное удалено"));
+            }}
+          >
+            Удалить
+          </button>
+        </Row>
+      )}
+    </Card>
+  );
+}
 
 /** phones: whether Android leaves EvPlayer running in the background, and a way to allow it */
 function KeepRunningCard() {
@@ -281,6 +323,7 @@ function DataTab() {
           </button>
         </div>
       </Card>
+      <OfflineCard />
       <Card title="Очистка">
         <Row title="Кэш" hint="Обложки и ответы сервисов — скачаются заново, когда понадобятся">
           <button type="button" className="btn ghost" onClick={async () => { await window.evplayer?.clearCache(); clearLyricsCache(); setCache(0); toast("Кэш очищен"); }}>Очистить</button>

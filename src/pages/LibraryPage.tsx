@@ -3,7 +3,9 @@ import PlaylistCover from "@/library/Cover";
 import { openCreatePlaylist, openImportCode } from "@/library/dialogs";
 import { useNavigation } from "@/ui/navigation";
 import { formatDate } from "@/ui/dates";
-import { IconCode, IconFolder, IconPlus } from "@/ui/components/Icons";
+import { IconCode, IconDownload, IconFolder, IconPlus } from "@/ui/components/Icons";
+import { openDownloadDialog } from "@/offline/dialog";
+import { offlineSupported } from "@/offline/store";
 import { openSpotifyExport } from "@/library/SpotifyExportDialog";
 import { useLocalFiles } from "@/files/localFiles";
 import { getSmartPlaylist, SMART_PLAYLISTS } from "@/stats/listeningStats";
@@ -52,6 +54,11 @@ export default function LibraryPage() {
           <button type="button" className="btn ghost" onClick={openSpotifyExport}>
             Из Spotify
           </button>
+          {offlineSupported() && (
+            <button type="button" className="btn ghost" onClick={() => openDownloadDialog()}>
+              <IconDownload size={16} /> Скачать офлайн
+            </button>
+          )}
           <div className="view-toggle" role="radiogroup" aria-label="Вид">
             <button type="button" role="radio" aria-checked={view === "grid"} className={view === "grid" ? "is-on" : ""} aria-label="Крупные значки" data-tip="Крупные значки" onClick={() => useSettings.getState().set({ libraryView: "grid" })}>
               <IconGridView size={17} />

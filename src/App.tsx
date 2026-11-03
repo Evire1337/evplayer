@@ -17,6 +17,9 @@ const CollectionPage = lazy(() => import("@/pages/CollectionPage"));
 import ContextMenu from "@/ui/components/ContextMenu";
 import Toasts from "@/ui/components/Toasts";
 import ImportPill from "@/ui/components/ImportPill";
+import KeepPill from "@/offline/KeepPill";
+import DownloadDialog from "@/offline/DownloadDialog";
+import { startOffline } from "@/offline/sync";
 import Tooltip from "@/ui/components/Tooltip";
 import LyricsTracker from "@/ui/components/LyricsTracker";
 import { lazy, Suspense, useEffect, useState } from "react";
@@ -61,6 +64,8 @@ export default function App() {
   const overlayLyrics = useSettings((s) => s.overlayEnabled && s.overlayShowLyrics);
   const [overlayOpen, setOverlayOpen] = useState(false);
   useEffect(() => window.evplayer?.overlay.onVisible(setOverlayOpen), []);
+  // songs saved for offline: the index, progress, and lists that keep themselves complete
+  useEffect(() => startOffline(), []);
   const asleep = useAsleep();
   const saver = useSettings((s) => s.memorySaver);
   useEffect(() => {
@@ -101,11 +106,13 @@ export default function App() {
       {page !== "now" && <MiniPlayer />}
       <UpdateToast />
       <ImportPill />
+      <KeepPill />
       <Toasts />
       <ContextMenu />
       <Tooltip />
       {overlayLyrics && overlayOpen && <LyricsTracker />}
       <LibraryDialogs />
+      <DownloadDialog />
       <SpotifyExportDialog />
       <TrackStatsDialog />
       <TagEditorDialog />

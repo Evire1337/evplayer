@@ -80,6 +80,28 @@ export interface SpotifyTokens {
   expiresAt: number;
 }
 
+/** a song kept on this computer for listening offline */
+export interface OfflineEntry {
+  id: string;
+  file: string;
+  ext: string;
+  size: number;
+  savedAt: string;
+}
+
+/** where the desktop side fetches a song from: one file, or an HLS playlist laid end to end */
+export interface OfflineSource {
+  kind: "file" | "hls";
+  url: string;
+}
+
+export interface OfflineProgress {
+  id: string;
+  done: number;
+  /** 0 when the service does not say how long the file is */
+  total: number;
+}
+
 export type AddResult = { added: LocalTrackRecord[]; skipped: number };
 type Off = () => void;
 
@@ -122,6 +144,17 @@ export interface EvPlayerApi {
     onChanged: (cb: () => void) => Off;
     /** where a local song or cover is served from */
     mediaUrl: (kind: "track" | "cover", id: string) => string;
+  };
+  offline: {
+    list: () => Promise<OfflineEntry[]>;
+    download: (id: string, source: OfflineSource) => Promise<OfflineEntry>;
+    cancel: (id: string) => void;
+    remove: (ids: string[]) => Promise<void>;
+    clear: () => Promise<void>;
+    openFolder: () => void;
+    onProgress: (cb: (progress: OfflineProgress) => void) => Off;
+    /** where a kept song is played from */
+    mediaUrl: (id: string) => string | null;
   };
   files: {
     saveText: (name: string, text: string) => Promise<boolean>;

@@ -9,7 +9,8 @@ import { trackMenuItems, type TrackMenuContext } from "@/library/trackMenu";
 import { openMenu } from "../menu";
 import { artistLine, formatCount, formatTime } from "../format";
 import { formatAddedAt } from "../dates";
-import { IconGrip, IconHeart, IconHeartFill, IconMore, IconPause, IconPlay } from "./Icons";
+import { useIsKept, useOffline } from "@/offline/store";
+import { IconGrip, IconHeart, IconHeartFill, IconMore, IconOffline, IconPause, IconPlay } from "./Icons";
 
 export interface TrackRowProps {
   track: Track;
@@ -34,6 +35,8 @@ export default function TrackRow({ track, queue, index, addedAt, menu, number, r
   const isCurrent = usePlayer((s) => currentTrack(s)?.id === track.id);
   const playing = usePlayer((s) => s.status === "playing");
   const liked = useIsLiked(track.id);
+  const kept = useIsKept(track.id);
+  const saving = useOffline((s) => s.progress[track.id]);
   const active = isCurrent && playing;
   return (
     <div
@@ -91,6 +94,11 @@ export default function TrackRow({ track, queue, index, addedAt, menu, number, r
       >
         {liked ? <IconHeartFill size={17} /> : <IconHeart size={17} />}
       </button>
+      {(kept || saving !== undefined) && (
+        <span className={`row-kept${kept ? "" : " is-saving"}`} data-tip={kept ? "Скачан, играет без интернета" : "Скачивается…"}>
+          {kept ? <IconOffline size={15} /> : <span className="spinner" aria-hidden="true" />}
+        </span>
+      )}
       <span className="track-time">{track.durationMs > 0 ? formatTime(track.durationMs) : ""}</span>
       <button
         type="button"

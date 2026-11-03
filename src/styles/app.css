@@ -171,6 +171,9 @@ img { display: block; max-width: 100%; }
 .track-row:hover .row-icon, .row-icon:focus-visible, .row-icon.is-liked { opacity: 1; }
 .row-icon:hover { background: var(--hover); color: var(--ink); }
 .row-icon.is-liked { color: var(--accent); }
+.row-kept { width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; color: var(--accent); flex-shrink: 0; }
+.row-kept.is-saving { color: var(--ink-3); }
+.row-kept .spinner { width: 13px; height: 13px; border-width: 2px; }
 .track-head {
   display: grid; grid-template-columns: minmax(0, 1fr) 130px 34px 44px 34px; gap: 12px; padding: 0 8px 8px 92px;
   font-size: 12px; color: var(--ink-3); border-bottom: 1px solid var(--edge); margin-bottom: 6px;
@@ -250,6 +253,7 @@ img { display: block; max-width: 100%; }
 .round-btn.ghost:hover { color: var(--ink); background: var(--hover); }
 .round-btn.ghost.is-on { color: var(--accent); }
 .round-btn.soft { width: 42px; height: 42px; background: rgba(238, 247, 244, 0.1); }
+.round-btn.soft.is-on { color: var(--accent); }
 .round-btn.soft:hover:not(:disabled) { background: rgba(238, 247, 244, 0.18); }
 .round-btn.main { width: 50px; height: 50px; background: var(--ink); color: var(--ground); }
 .round-btn.main:active:not(:disabled) { transform: scale(0.94); }
@@ -520,6 +524,7 @@ kbd { font: 600 12px var(--font); padding: 3px 8px; border-radius: 7px; backgrou
 }
 .import-head { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .import-title { flex: 1; min-width: 0; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.keep-panel { top: auto; bottom: 108px; }
 .import-panel .spinner { width: 16px; height: 16px; flex-shrink: 0; border-color: rgba(238, 247, 244, 0.25); border-top-color: var(--ink); }
 .import-bar { position: relative; height: 6px; border-radius: 3px; background: rgba(238, 247, 244, 0.12); overflow: hidden; }
 .import-bar > span { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 3px; background: var(--accent); transition: width 300ms ease; }

@@ -59,7 +59,9 @@ describe("resolveSoundCloudStream", () => {
     );
     const out = [];
     for await (const s of soundCloudStreams("sc:7")) out.push(s);
-    expect(out).toEqual([{ url: `http://127.0.0.1:1/s/joined/${encodeURIComponent("https://cf-hls-opus-media.sndcdn.com/playlist/x.m3u8")}`, hls: false }]);
+    const playlist = "https://cf-hls-opus-media.sndcdn.com/playlist/x.m3u8";
+    // the playlist behind the joined address is kept too: that is what a download fetches
+    expect(out).toEqual([{ url: `http://127.0.0.1:1/s/joined/${encodeURIComponent(playlist)}`, hls: false, playlist }]);
     delete window.__EVPLAYER_MEDIA__;
   });
 });

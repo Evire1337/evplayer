@@ -16,6 +16,7 @@ use std::time::Duration;
 use tiny_http::{Header, Method, Request, Response, Server, StatusCode};
 
 use crate::library::Library;
+use crate::offline::Offline;
 use crate::proxy::is_open_host;
 
 pub struct MediaServer {
@@ -89,7 +90,7 @@ fn serve_file(req: Request, path: &Path) {
     let _ = req.respond(res);
 }
 
-fn blocking_client() -> &'static reqwest::blocking::Client {
+pub(crate) fn blocking_client() -> &'static reqwest::blocking::Client {
     static CLIENT: std::sync::OnceLock<reqwest::blocking::Client> = std::sync::OnceLock::new();
     CLIENT.get_or_init(|| {
         reqwest::blocking::Client::builder()
@@ -104,14 +105,14 @@ fn blocking_client() -> &'static reqwest::blocking::Client {
 /// how much of a YouTube song is asked from googlevideo at a time
 const GOOGLE_PIECE: u64 = 1024 * 1024;
 
-fn is_googlevideo(url: &url::Url) -> bool {
+pub(crate) fn is_googlevideo(url: &url::Url) -> bool {
     url.host_str().map(|h| h.to_ascii_lowercase().ends_with(".googlevideo.com")).unwrap_or(false)
 }
 
 /// googlevideo gives a song in pieces, asked as `&range=a-b` in the address, to the app it
 /// handed the address to. Turn the player's `Range: bytes=a-b` into one such piece:
 /// (a, b, whole length). None when the address does not say how long the song is.
-fn google_piece(url: &url::Url, range: Option<&str>) -> Option<(u64, u64, u64)> {
+pub(crate) fn google_piece(url: &url::Url, range: Option<&str>) -> Option<(u64, u64, u64)> {
     let total: u64 = url.query_pairs().find(|(k, _)| k == "clen")?.1.parse().ok()?;
     if total == 0 {
         return None;
@@ -135,7 +136,7 @@ fn google_piece(url: &url::Url, range: Option<&str>) -> Option<(u64, u64, u64)> 
 }
 
 /// googlevideo expects the app the address was made for; the address names it (`c=`)
-fn google_user_agent(url: &url::Url) -> Option<&'static str> {
+pub(crate) fn google_user_agent(url: &url::Url) -> Option<&'static str> {
     match url.query_pairs().find(|(k, _)| k == "c")?.1.as_ref() {
         "ANDROID_VR" => Some("com.google.android.apps.youtube.vr.oculus/1.65.10 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip"),
         "VISIONOS" => Some("Mozilla/5.0 (Macintosh; Intel Mac OS X 15_7_3) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15"),
@@ -143,13 +144,19 @@ fn google_user_agent(url: &url::Url) -> Option<&'static str> {
     }
 }
 
-fn serve_google(req: Request, mut url: url::Url) {
+/// the address of one piece: googlevideo takes it as `&range=a-b`, and refuses a Range header on top
+pub(crate) fn google_piece_url(url: &url::Url, start: u64, end: u64) -> url::Url {
+    let mut piece = url.clone();
+    let kept: Vec<(String, String)> = url.query_pairs().filter(|(k, _)| k != "range").map(|(k, v)| (k.into_owned(), v.into_owned())).collect();
+    piece.query_pairs_mut().clear().extend_pairs(kept).append_pair("range", &format!("{start}-{end}"));
+    piece
+}
+
+fn serve_google(req: Request, url: url::Url) {
     let Some((start, end, total)) = google_piece(&url, range_of(&req).as_deref()) else {
         return reply_text(req, 416, "bad range");
     };
-    // the piece is asked in the address; a Range header on top of it is refused
-    let kept: Vec<(String, String)> = url.query_pairs().filter(|(k, _)| k != "range").map(|(k, v)| (k.into_owned(), v.into_owned())).collect();
-    url.query_pairs_mut().clear().extend_pairs(kept).append_pair("range", &format!("{start}-{end}"));
+    let url = google_piece_url(&url, start, end);
     let mut upstream = blocking_client().get(url.clone());
     if let Some(agent) = google_user_agent(&url) {
         upstream = upstream.header("User-Agent", agent);
@@ -214,7 +221,7 @@ struct Joined {
 
 /// the pieces of an HLS media playlist; protected (EXT-X-KEY) or fMP4 (EXT-X-MAP) ones are
 /// not for joining
-fn playlist_pieces(text: &str, base: &url::Url) -> Result<Vec<url::Url>, String> {
+pub(crate) fn playlist_pieces(text: &str, base: &url::Url) -> Result<Vec<url::Url>, String> {
     if !text.trim_start().starts_with("#EXTM3U") {
         return Err("not a playlist".into());
     }
@@ -365,7 +372,7 @@ fn serve_joined(req: Request, encoded: &str, allowed: fn(&url::Url) -> bool) {
 }
 
 impl MediaServer {
-    pub fn start(library: Arc<Library>) -> Option<Self> {
+    pub fn start(library: Arc<Library>, offline: Arc<Offline>) -> Option<Self> {
         let server = Arc::new(Server::http("127.0.0.1:0").ok()?);
         let port = server.server_addr().to_ip()?.port();
         let secret: String = {
@@ -378,6 +385,7 @@ impl MediaServer {
         for _ in 0..6 {
             let server = server.clone();
             let library = library.clone();
+            let offline = offline.clone();
             let prefix = prefix.clone();
             std::thread::spawn(move || {
                 for req in server.incoming_requests() {
@@ -400,6 +408,13 @@ impl MediaServer {
                             match library.get(&id) {
                                 Some(record) => serve_file(req, Path::new(&record.path)),
                                 None => reply_text(req, 404, "unknown track"),
+                            }
+                        }
+                        Some(("offline", id)) => {
+                            let id = percent_encoding::percent_decode_str(id).decode_utf8_lossy().to_string();
+                            match offline.path_of(&id) {
+                                Some(path) => serve_file(req, &path),
+                                None => reply_text(req, 404, "not kept offline"),
                             }
                         }
                         Some(("remote", encoded)) => serve_remote(req, encoded),
@@ -489,8 +504,9 @@ x.m4s
                 }
             }
         });
-        let library = Library::new(std::env::temp_dir().join("evplayer-joined-test"));
-        let server = MediaServer::start(library).unwrap();
+        let data = std::env::temp_dir().join("evplayer-joined-test");
+        let library = Library::new(data.clone());
+        let server = MediaServer::start(library, Offline::new(&data)).unwrap();
         // the real route only allows the music services; this test calls the handler's parts
         let playlist = url::Url::parse(&format!("http://127.0.0.1:{port}/list.m3u8")).unwrap();
         let joined = load_joined(&playlist, |_| true).unwrap();
@@ -524,7 +540,7 @@ x.m4s
         let library = Library::new(dir.join("data"));
         let (added, _) = library.add(&[song.clone()]);
         let id = added.added[0].id.clone();
-        let server = MediaServer::start(library).unwrap();
+        let server = MediaServer::start(library, Offline::new(&dir.join("data"))).unwrap();
         let client = reqwest::blocking::Client::new();
         let url = format!("{}/track/{}", server.base, percent_encoding::utf8_percent_encode(&id, percent_encoding::NON_ALPHANUMERIC));
         let res = client.get(&url).header("Range", "bytes=100-199").send().unwrap();

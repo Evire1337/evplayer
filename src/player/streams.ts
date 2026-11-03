@@ -3,6 +3,7 @@ import { searchSoundCloud, soundCloudStreams } from "@/services/soundcloud/api";
 import { searchYouTubeMusic } from "@/services/youtube/music";
 import { bestMatch, matchScore, searchQueryFor } from "./match";
 import { mediaUrl } from "@/files/localFiles";
+import { keptUrl } from "@/offline/store";
 import { resolveYouTubeAudio, videoIdOf } from "@/services/youtube/direct";
 
 export interface PlayableStream {
@@ -54,9 +55,13 @@ export class NoCopyError extends Error {
  *   only given out protected or as a 30-second preview, which the SoundCloud site can play
  *   and this player cannot)
  * - YouTube: straight from YouTube, then the song's copy on SoundCloud
+ * A copy saved for offline listening goes before all of these.
  */
 export async function* streamCandidates(track: Track, signal?: AbortSignal): AsyncGenerator<PlayableStream> {
   let lastError: unknown;
+  // a copy saved for offline comes first: no waiting for a service, no connection needed
+  const kept = keptUrl(track.id);
+  if (kept) yield { url: kept, hls: false };
   switch (track.source) {
     case "local":
       yield { url: mediaUrl("track", track.id), hls: false };

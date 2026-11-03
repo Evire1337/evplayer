@@ -21,6 +21,11 @@ import { DEFAULT_DIR, SORT_LABEL, sortRows, type SortDir, type SortKey } from "@
 import { getTrackStats } from "@/stats/listeningStats";
 import { IconCheck, IconPlus, IconSort } from "@/ui/components/Icons";
 import { openImportCode } from "@/library/dialogs";
+import { IconDownload, IconOffline } from "@/ui/components/Icons";
+import { openDownloadDialog } from "@/offline/dialog";
+import { offlineMenuItems } from "@/offline/menu";
+import { scopeStatus } from "@/offline/scopes";
+import { offlineSupported, useOffline } from "@/offline/store";
 
 interface Row {
   key: string;
@@ -51,6 +56,11 @@ export default function PlaylistPage() {
     return sortRows(filtered, sort.key, sort.dir, (id) => getTrackStats(id).all.n);
   }, [rows, filter, sort]);
   const tracks = shown.map((r) => r.track);
+  // how much of this list is saved for offline
+  const keptNow = useOffline((s) => s.entries);
+  const scope = isLikes ? "likes" : (id ?? "");
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const offline = useMemo(() => scopeStatus(scope, keptNow), [scope, keptNow, rows]);
   const canReorder = !filter.trim() && sort.key === "custom" && sort.dir === "asc";
   const setSort = (key: SortKey) => {
     const cur = useSettings.getState().trackSort;
@@ -123,6 +133,7 @@ export default function PlaylistPage() {
           <span className="muted small">
             {songs(rows.length)}
             {playlist ? ` · создан ${formatDate(playlist.createdAt)}` : ""}
+            {offline.kept > 0 ? ` · скачано ${offline.kept} из ${offline.total}` : ""}
           </span>
           <div className="pl-actions">
             <button type="button" className="btn primary" disabled={!tracks.length} onClick={() => void player.playQueue(tracks, 0)}>
@@ -134,6 +145,17 @@ export default function PlaylistPage() {
               }}>
               <IconShuffle size={16} /> Вперемешку
             </button>
+            {offlineSupported() && offline.total > 0 && (
+              <button
+                type="button"
+                className={`round-btn soft${offline.kept === offline.total ? " is-on" : ""}`}
+                aria-label="Скачать для офлайн"
+                data-tip={offline.kept === offline.total ? "Всё скачано · настроить" : "Скачать для офлайн"}
+                onClick={() => openDownloadDialog([scope])}
+              >
+                {offline.kept === offline.total ? <IconOffline size={18} /> : <IconDownload size={18} />}
+              </button>
+            )}
             {isLikes && (
               <button
                 type="button"
@@ -144,6 +166,7 @@ export default function PlaylistPage() {
                   openMenu({ clientX: r.left, clientY: r.bottom + 6 }, [
                     ...(likes.length ? [{ label: "Скопировать код", icon: <IconShare size={16} />, onSelect: () => void share() }] : []),
                     { label: "Вставить код или ссылку", icon: <IconPlus size={16} />, onSelect: () => openImportCode("likes") },
+                    ...offlineMenuItems(scope),
                   ]);
                 }}
               >
@@ -159,6 +182,7 @@ export default function PlaylistPage() {
                   const r = e.currentTarget.getBoundingClientRect();
                   openMenu({ clientX: r.left, clientY: r.bottom + 6 }, [
                     { label: "Поделиться кодом", icon: <IconShare size={16} />, onSelect: () => void share() },
+                    ...offlineMenuItems(scope),
                     { label: "Сменить обложку", icon: <IconImage size={16} />, onSelect: () => void changeIcon() },
                     ...(playlist.icon ? [{ label: "Убрать обложку", onSelect: () => useLibrary.getState().updatePlaylist(playlist.id, { icon: "" }) }] : []),
                     { label: "Переименовать", icon: <IconPencil size={16} />, onSelect: () => setRenaming(true) },

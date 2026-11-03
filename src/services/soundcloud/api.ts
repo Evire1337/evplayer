@@ -62,6 +62,8 @@ export async function soundCloudCharts(kind: "top" | "trending", signal?: AbortS
 export interface ScStream {
   url: string;
   hls: boolean;
+  /** the HLS playlist behind a stream the app joins into one file (what a download fetches) */
+  playlist?: string;
 }
 
 /** the reason a SoundCloud song has nothing this player can use */
@@ -102,7 +104,7 @@ export async function* soundCloudStreams(trackId: string, signal?: AbortSignal):
       const joined = joinedStream(url);
       if (!joined) continue;
       given++;
-      yield { url: joined, hls: false };
+      yield { url: joined, hls: false, playlist: url };
       continue;
     }
     given++;
