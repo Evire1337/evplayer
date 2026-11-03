@@ -6,6 +6,7 @@ import { useLibraryDialogs } from "./dialogs";
 import { decodePlaylistCode } from "./playlistCode";
 import { goToPlaylist } from "./trackMenu";
 import { importFromLink, linkKind } from "./importLink";
+import { looksLikeTrackList, parseTrackList } from "./trackList";
 
 function CreateDialog() {
   const state = useLibraryDialogs((s) => s.create);
@@ -71,8 +72,8 @@ function ImportDialog() {
           e.preventDefault();
           const value = code.trim();
           const kind = linkKind(value);
-          if (!kind) {
-            setError("Это не похоже ни на ссылку, ни на код EvPlayer (он начинается с EVP).");
+          if (!kind && !looksLikeTrackList(value)) {
+            setError("Не похоже ни на ссылку, ни на код EvPlayer (он начинается с EVP), ни на список песен «Исполнитель — Название».");
             return;
           }
           if (kind === "code") {
@@ -95,12 +96,15 @@ function ImportDialog() {
         <p className="muted small">
           {intoLikes
             ? "Вставьте код EvPlayer (строка с EVP) — например, скопированный из чьих-то «Понравившихся», — или ссылку на плейлист. Треки добавятся к вашим лайкам, повторы пропускаются."
-            : "Вставьте ссылку на плейлист, альбом или трек из Spotify, Яндекс Музыки, YouTube / YouTube Music, SoundCloud или Deezer — или код EvPlayer (строка с EVP), который прислал друг. Код из «Понравившихся» добавится к вашим лайкам."}
+            : "Вставьте ссылку на плейлист, альбом или трек из Spotify, Яндекс Музыки, YouTube / YouTube Music, SoundCloud или Deezer, код EvPlayer (строка с EVP) — или просто список песен, по одной на строку: «Исполнитель — Название». Из ВКонтакте: откройте плейлист или «Мою музыку» на vk.com, выделите треки мышью, скопируйте и вставьте сюда."}
         </p>
         <label className="field">
-          <span>Ссылка или код</span>
-          <textarea id="pl-code" autoFocus rows={4} value={code} onChange={(e) => { setCode(e.target.value); setError(""); }} placeholder="https://open.spotify.com/playlist/… или EVP2.…" spellCheck={false} />
+          <span>Ссылка, код или список песен</span>
+          <textarea id="pl-code" autoFocus rows={6} value={code} onChange={(e) => { setCode(e.target.value); setError(""); }} placeholder={"https://open.spotify.com/playlist/…, EVP2.… или\nИсполнитель — Название\nИсполнитель — Название"} spellCheck={false} />
         </label>
+        {!linkKind(code.trim()) && looksLikeTrackList(code) && (
+          <p className="muted small">В списке песен: {parseTrackList(code).length}. Их найдём на YouTube Music и SoundCloud — сколько нашлось, будет видно в окошке загрузки.</p>
+        )}
         {error && <p className="field-error">{error}</p>}
         <div className="dialog-actions">
           <button type="button" className="btn ghost" onClick={close}>Отмена</button>

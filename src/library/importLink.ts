@@ -10,6 +10,7 @@ import { isYandexMusicUrl, parseYandexLink, yandexCollection } from "@/services/
 import { hasSpotifyAccess, spotifyCollection } from "@/services/spotify/webApi";
 import { spotifyGuestPlaylist } from "@/services/spotify/guest";
 import { useNavigation } from "@/ui/navigation";
+import { looksLikeTrackList, parseTrackList } from "./trackList";
 
 // "Import by link": paste a playlist, album or track link from a service and it becomes
 // one of your playlists.
@@ -162,6 +163,10 @@ async function deezer(url: URL, signal: AbortSignal): Promise<Fetched> {
 
 async function fetchLink(text: string, signal: AbortSignal): Promise<Fetched> {
   const kind = linkKind(text);
+  // a pasted list of songs (from a VK playlist page, notes, a message)
+  if (!kind && looksLikeTrackList(text)) {
+    return { title: "Импорт списком", named: parseTrackList(text), description: "Импортировано списком песен" };
+  }
   if (kind === "code") {
     const shared = await decodePlaylistCode(text.trim());
     return { title: shared.title, description: shared.description, tracks: shared.tracks, icon: shared.icon, likes: shared.likes };
@@ -215,7 +220,8 @@ export async function importFromLink(text: string, target?: ImportTarget): Promi
   running = controller;
   const progress = useImportProgress.getState();
   const isCode = linkKind(text) === "code";
-  progress.start(isCode ? "Читаю код…" : "Читаю ссылку…", () => controller.abort());
+  const isList = !linkKind(text) && looksLikeTrackList(text);
+  progress.start(isCode ? "Читаю код…" : isList ? "Читаю список…" : "Читаю ссылку…", () => controller.abort());
   try {
     const fetched = await fetchLink(text, controller.signal);
     let tracks = fetched.tracks ?? [];
