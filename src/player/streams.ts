@@ -1,7 +1,7 @@
 import type { Track } from "@/types";
 import { searchSoundCloud, soundCloudStreams } from "@/services/soundcloud/api";
 import { searchYouTubeMusic } from "@/services/youtube/music";
-import { isSameRecording, matchScore, searchQueryFor } from "./match";
+import { isSameRecording, matchScore, searchQueryFor, simplify, splitTitle } from "./match";
 import { mediaUrl } from "@/files/localFiles";
 import { keptUrl } from "@/offline/store";
 import { resolveYouTubeAudio, videoIdOf } from "@/services/youtube/direct";
@@ -21,10 +21,17 @@ const youTubeMatches = new Map<string, Track | null>();
 
 async function youTubeMatch(track: Track, signal?: AbortSignal): Promise<Track | null> {
   if (youTubeMatches.has(track.id)) return youTubeMatches.get(track.id) ?? null;
-  const ranked = (await searchYouTubeMusic(searchQueryFor(track), signal))
-    .filter((t) => isSameRecording(track, t))
-    .sort((a, b) => matchScore(track, b) - matchScore(track, a));
-  const found = ranked[0] ?? null;
+  // with the artist first; then the title alone (a SoundCloud uploader's name is often not the
+  // artist's, and YouTube finds nothing for it)
+  const queries = [...new Set([searchQueryFor(track), simplify(splitTitle(track).title)])].filter(Boolean);
+  let found: Track | null = null;
+  for (const query of queries) {
+    const ranked = (await searchYouTubeMusic(query, signal))
+      .filter((t) => isSameRecording(track, t))
+      .sort((a, b) => matchScore(track, b) - matchScore(track, a));
+    found = ranked[0] ?? null;
+    if (found) break;
+  }
   youTubeMatches.set(track.id, found);
   return found;
 }
@@ -91,10 +98,11 @@ export async function* streamCandidates(track: Track, signal?: AbortSignal): Asy
           return;
         } catch (e) {
           if (signal?.aborted) throw e;
-          lastError = e;
+          throw new Error(`копия с YouTube Music не включилась: ${e instanceof Error ? e.message : String(e)}`);
         }
       }
-      if (lastError) throw lastError;
+      // say both: what SoundCloud gives, and that there was no copy to play instead
+      if (lastError) throw new Error(`${lastError instanceof Error ? lastError.message : String(lastError)}; на YouTube Music эта песня не нашлась`);
       if (track.preview) throw new Error("SoundCloud даёт только 30-секундный отрывок, а на YouTube Music эта песня не нашлась");
       return;
     }

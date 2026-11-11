@@ -25,6 +25,13 @@ describe("match", () => {
     expect(isSameRecording(yt, tr("LOVE.", "Kendrick Lamar", 213500))).toBe(true);
     expect(isSameRecording(yt, tr("Kendrick Lamar - Love (Official Audio)", "kendricklamar", 213000))).toBe(true);
   });
+  it("takes a copy under another artist name when the title and length are the same", () => {
+    const sc = tr("VVV (HE'S BACK)", "mikeeysmind", 80000);
+    expect(isSameRecording(sc, { ...tr("VVV (HE'S BACK)", "Mikeey", 81000), source: "youtube" })).toBe(true);
+    expect(isSameRecording(sc, { ...tr("VVV (HE'S BACK)", "Someone Else", 81000), source: "youtube" })).toBe(true);
+    expect(isSameRecording(sc, { ...tr("VVV (HE'S BACK)", "Someone Else", 95000), source: "youtube" })).toBe(false);
+    expect(isSameRecording(sc, { ...tr("VVV (HE'S BACK) (Sped Up)", "Mikeey", 81000), source: "youtube" })).toBe(false);
+  });
   it("builds a search query", () => {
     expect(searchQueryFor(tr("Daft Punk - Get Lucky (Official Video)", "convar"))).toBe("daft punk get lucky");
   });

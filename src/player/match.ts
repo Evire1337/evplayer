@@ -71,24 +71,47 @@ export function versionTags(title: string): Set<string> {
  * (bestMatch's threshold is for finding the song at all, e.g. when importing a list.)
  */
 export function isSameRecording(wanted: Track, candidate: Track): boolean {
-  if (wanted.durationMs && candidate.durationMs && Math.abs(wanted.durationMs - candidate.durationMs) > 15000) return false;
-  return matchScore(wanted, candidate) >= 0.8;
+  const diff = wanted.durationMs && candidate.durationMs ? Math.abs(wanted.durationMs - candidate.durationMs) : Infinity;
+  if (diff !== Infinity && diff > 15000) return false;
+  if (matchScore(wanted, candidate) >= 0.8) return true;
+  // the very same title, as long to a few seconds, and not another version: the same song even
+  // when the artist is written differently (a SoundCloud uploader's name is often not the artist's)
+  return diff < 3000 && titleScore(wanted, candidate) === 1 && sameVersion(wanted, candidate);
+}
+
+function sameVersion(wanted: Track, candidate: Track): boolean {
+  const a = versionTags(wanted.title);
+  const b = versionTags(candidate.title);
+  return a.size === b.size && [...a].every((tag) => b.has(tag));
+}
+
+/** 0..1: all of the wanted title is in the candidate's, and the candidate's has nothing much besides */
+function titleScore(wanted: Track, candidate: Track): number {
+  const w = splitTitle(wanted);
+  const c = splitTitle(candidate);
+  // both ways: "Love" is not "Love Me Harder" by the same artist, though every word is there
+  const wantedTitle = words(w.title);
+  const found = overlap(wantedTitle, words(`${c.title} ${c.artist}`));
+  const credited = words(`${c.artist} ${candidate.artists.map((a) => a.name).join(" ")}`);
+  const named = new Set([...words(c.title)].filter((x) => !credited.has(x)));
+  const extra = named.size ? [...named].filter((x) => wantedTitle.has(x) || words(w.artist).has(x)).length / named.size : 1;
+  return found && extra ? (2 * found * extra) / (found + extra) : 0;
+}
+
+/** like overlap, but a name inside a longer one counts ("mikeey" in "mikeeysmind") */
+function nameOverlap(a: Set<string>, b: Set<string>): number {
+  if (!a.size || !b.size) return 0;
+  let shared = 0;
+  for (const w of a) if ([...b].some((x) => x === w || (Math.min(x.length, w.length) >= 4 && (x.startsWith(w) || w.startsWith(x))))) shared++;
+  return shared / Math.min(a.size, b.size);
 }
 
 /** 0..1: how sure we are that `candidate` is the same recording as `wanted` */
 export function matchScore(wanted: Track, candidate: Track): number {
   const w = splitTitle(wanted);
-  const c = splitTitle(candidate);
-  // both ways: all of the wanted title is there, and the candidate's title has nothing much
-  // besides ("Love" is not "Love Me Harder" by the same artist, though every word is there)
-  const wantedTitle = words(w.title);
-  const found = overlap(wantedTitle, words(`${c.title} ${c.artist}`));
-  const named = new Set([...words(c.title)].filter((x) => !words(`${c.artist} ${candidate.artists.map((a) => a.name).join(" ")}`).has(x)));
-  const extra = named.size ? [...named].filter((x) => wantedTitle.has(x) || words(w.artist).has(x)).length / named.size : 1;
-  const titleScore = found && extra ? (2 * found * extra) / (found + extra) : 0;
   const artistWords = words(w.artist);
-  const artistScore = overlap(artistWords, words(`${candidate.artists.map((a) => a.name).join(" ")} ${candidate.title}`));
-  let score = titleScore * 0.6 + artistScore * 0.3;
+  const artistScore = nameOverlap(artistWords, words(`${candidate.artists.map((a) => a.name).join(" ")} ${candidate.title}`));
+  let score = titleScore(wanted, candidate) * 0.6 + artistScore * 0.3;
   if (wanted.durationMs && candidate.durationMs) {
     // a remix or an edit is usually a different length: that counts for a lot
     const diff = Math.abs(wanted.durationMs - candidate.durationMs);
