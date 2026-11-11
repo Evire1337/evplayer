@@ -1,11 +1,15 @@
 import { proxied } from "@/platform/net";
+import { isPhone } from "@/platform/device";
 import { FRAGMENT, VERTEX } from "./shaders";
 
 const TEX_SIZE = 64;
 const FADE_MS = 1400;
 const RENDER_SCALE = 0.5;
-/** the background drifts slowly: 30 frames a second look the same as 60 and cost half */
-const FRAME_MS = 1000 / 30 - 2;
+/** the background drifts slowly: 30 frames a second look the same as 60 and cost half (a phone
+    gets 24: its battery matters more) */
+const FRAME_MS = 1000 / (isPhone ? 24 : 30) - 2;
+/** paused, it drifts four times slower: 10 frames a second are just as smooth */
+const PAUSED_FRAME_MS = 1000 / 10 - 2;
 
 /** the default look before anything plays: deep sea green with a cool blue glow */
 function fallbackSource(): HTMLCanvasElement {
@@ -139,7 +143,7 @@ export class BackdropRenderer {
 
   private frame = (now: number): void => {
     if (!this.running) return;
-    if (this.last && now - this.last < FRAME_MS) {
+    if (this.last && now - this.last < (this.speed < 1 && this.mix >= 1 ? PAUSED_FRAME_MS : FRAME_MS)) {
       this.raf = requestAnimationFrame(this.frame);
       return;
     }
