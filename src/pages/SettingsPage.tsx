@@ -374,6 +374,17 @@ function DataTab() {
 function About() {
   const [version, setVersion] = useState("");
   const [update, setUpdate] = useState<UpdateState>({ status: "idle" });
+  const [clicks, setClicks] = useState<number[]>([]);
+  // seven clicks on the version within three seconds turn the developer's tools on or off
+  const countToDevTools = () => {
+    const now = Date.now();
+    const recent = [...clicks.filter((t) => now - t < 3000), now];
+    if (recent.length < 7) return setClicks(recent);
+    setClicks([]);
+    const on = !useSettings.getState().devTools;
+    useSettings.getState().set({ devTools: on });
+    toast(on ? "Диагностика включена: Настройки → Диагностика" : "Диагностика выключена");
+  };
   useEffect(() => {
     void window.evplayer?.version().then(setVersion);
     const bridge = window.evplayer?.updates;
@@ -394,7 +405,7 @@ function About() {
         <img src="./icon.png" alt="" className="about-icon" />
         <div>
           <h2 className="about-name">EvPlayer</h2>
-          <p className="muted">Версия {version || "—"} · открытый проект, лицензия MIT</p>
+          <p className="muted" onClick={countToDevTools}>Версия {version || "—"} · открытый проект, лицензия MIT</p>
         </div>
       </div>
       <div className="donate-card">
@@ -424,7 +435,9 @@ function About() {
 
 export default function SettingsPage() {
   const [tab, setTab] = useState<Tab>("playback");
-  const tabs = isPhone ? TABS.filter((t) => !DESKTOP_ONLY_TABS.has(t.id)) : TABS;
+  const devTools = useSettings((s) => s.devTools);
+  // diagnostics are the developer's tool: shown once turned on (seven clicks on the version)
+  const tabs = TABS.filter((t) => !(isPhone && DESKTOP_ONLY_TABS.has(t.id)) && (t.id !== "diagnostics" || devTools));
   const groups = [...new Set(tabs.map((t) => t.group))];
   return (
     <div className="page settings-page">

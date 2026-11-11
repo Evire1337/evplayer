@@ -130,6 +130,8 @@ export interface SettingsState {
   discordShowButton: boolean;
   /** friends may press "Ask to join" on the status to listen along */
   discordJoin: boolean;
+  /** the developer's tools (Настройки → Диагностика): opened by seven clicks on the version */
+  devTools: boolean;
   discordStatusShows: DiscordStatusShows;
   set: (patch: Partial<Omit<SettingsState, "set" | "reset">>) => void;
   reset: () => void;
@@ -181,6 +183,7 @@ const DEFAULTS = {
   discordShowTimeline: true,
   discordShowButton: true,
   discordJoin: true,
+  devTools: false,
   discordStatusShows: "song" as DiscordStatusShows,
 };
 
