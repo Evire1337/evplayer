@@ -31,6 +31,9 @@ describe("match", () => {
     expect(isSameRecording(sc, { ...tr("VVV (HE'S BACK)", "Someone Else", 81000), source: "youtube" })).toBe(true);
     expect(isSameRecording(sc, { ...tr("VVV (HE'S BACK)", "Someone Else", 95000), source: "youtube" })).toBe(false);
     expect(isSameRecording(sc, { ...tr("VVV (HE'S BACK) (Sped Up)", "Mikeey", 81000), source: "youtube" })).toBe(false);
+    // what was found on YouTube for it: a re-upload of the same part, and the full song (longer)
+    expect(isSameRecording(sc, { ...tr("VVV HE'S BACK (ALL CREDITS TO mikeeysmind) not my song", "CYBERMASK", 81000), source: "youtube" })).toBe(true);
+    expect(isSameRecording(sc, { ...tr("VVV", "mikeeysmind", 228000), source: "youtube" })).toBe(false);
   });
   it("builds a search query", () => {
     expect(searchQueryFor(tr("Daft Punk - Get Lucky (Official Video)", "convar"))).toBe("daft punk get lucky");

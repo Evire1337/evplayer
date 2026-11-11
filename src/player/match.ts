@@ -4,11 +4,14 @@ import type { Track } from "@/types";
 // upload, so they play through our own audio path (equalizer, speed, reverb all work).
 
 const NOISE = /\((?:official|lyrics?|audio|video|music video|hd|hq|4k|visuali[sz]er|клип|текст|премьера)[^)]*\)|\[(?:[^\]]*)\]|official (?:music )?video|lyric video|official audio/gi;
+/** what re-uploaders add to a title: "(ALL CREDITS TO mikeeysmind) not my song" */
+const REUPLOAD = /\(?\s*(?:all )?credits? (?:go(?:es)? )?to [^)]*\)?|\bnot my (?:song|music|track)\b|\bno copyright(?: infringement)?(?: intended)?\b|\bi do not own (?:this|the) (?:song|music)\b/gi;
 
 export function simplify(value: string): string {
   return value
     .toLowerCase()
     .replace(NOISE, " ")
+    .replace(REUPLOAD, " ")
     .replace(/\b(?:feat|ft|prod)\.?\s.*$/i, " ")
     .replace(/[^\p{L}\p{N}]+/gu, " ")
     .trim();
