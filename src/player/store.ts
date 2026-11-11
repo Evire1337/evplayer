@@ -17,6 +17,8 @@ export interface PlayerState {
   error?: string;
   /** the original did not play: a copy of the song from this service is playing */
   route?: "soundcloud" | "youtube" | "local";
+  /** what the sound playing now is ("opus 160 кбит/с"), when the source says */
+  quality?: string;
 }
 
 const VOLUME_KEY = "evplayer.volume";

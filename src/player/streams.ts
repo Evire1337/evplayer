@@ -4,13 +4,17 @@ import { searchYouTubeMusic } from "@/services/youtube/music";
 import { isOriginal, isSameRecording, matchScore, searchQueryFor, simplify, splitTitle } from "./match";
 import { mediaUrl } from "@/files/localFiles";
 import { keptUrl } from "@/offline/store";
-import { resolveYouTubeAudio, videoIdOf } from "@/services/youtube/direct";
+import { resolveYouTubeAudio, videoIdOf, type DirectStream } from "@/services/youtube/direct";
+
+const youTubeQuality = (s: DirectStream) => `${s.codec} ${Math.round(s.bitrate / 1000)} кбит/с`;
 
 export interface PlayableStream {
   url: string;
   hls: boolean;
   /** the same song on the other service, playing because the original did not */
   via?: Track;
+  /** "opus 160 кбит/с": what the sound is, for the person to see */
+  quality?: string;
 }
 
 // remembered per session: searching once per song is enough
@@ -96,7 +100,8 @@ export async function* streamCandidates(track: Track, signal?: AbortSignal): Asy
       const videoId = copy && videoIdOf(copy.id);
       if (copy && videoId) {
         try {
-          yield { url: (await resolveYouTubeAudio(videoId, signal)).url, hls: false, via: copy };
+          const direct = await resolveYouTubeAudio(videoId, signal);
+          yield { url: direct.url, hls: false, via: copy, quality: youTubeQuality(direct) };
           return;
         } catch (e) {
           if (signal?.aborted) throw e;
@@ -112,7 +117,8 @@ export async function* streamCandidates(track: Track, signal?: AbortSignal): Asy
       const videoId = videoIdOf(track.id);
       if (videoId) {
         try {
-          yield { url: (await resolveYouTubeAudio(videoId, signal)).url, hls: false };
+          const direct = await resolveYouTubeAudio(videoId, signal);
+          yield { url: direct.url, hls: false, quality: youTubeQuality(direct) };
         } catch (e) {
           if (signal?.aborted) throw e;
           console.warn("[youtube] direct playback failed, trying SoundCloud:", e);

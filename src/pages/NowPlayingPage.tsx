@@ -31,6 +31,7 @@ export default function NowPlayingPage() {
   const track = usePlayer((s) => currentTrack(s));
   const error = usePlayer((s) => s.error);
   const route = usePlayer((s) => s.route);
+  const quality = usePlayer((s) => s.quality);
   const go = useNavigation((s) => s.go);
   const showSetting = useSettings((s) => s.showQueue);
   // a phone (or a narrow window) has no room for a third column: «Далее» slides up over
@@ -65,6 +66,7 @@ export default function NowPlayingPage() {
               {SOURCE[track.source]}
               {route === "soundcloud" && " · играет копия с SoundCloud"}
               {route === "youtube" && " · играет копия с YouTube"}
+              {quality && ` · ${quality}`}
             </span>
           )}
           <JamBanner />

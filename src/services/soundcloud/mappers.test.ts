@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { artworkUrl, mapScTrack, pickTranscoding, trackAuthorization, transcodingsOf } from "./mappers";
+import { artworkUrl, mapScTrack, pickTranscoding, qualityOf, rankTranscodings, trackAuthorization, transcodingsOf } from "./mappers";
 
 describe("soundcloud mappers", () => {
   it("maps a track and asks for big artwork", () => {
@@ -47,5 +47,18 @@ describe("soundcloud mappers", () => {
     const formats = (duration: number) => ({ full_duration: 200_000, media: { transcodings: [{ url: "u", duration, format: { protocol: "progressive", mime_type: "audio/mpeg" } }] } });
     expect(transcodingsOf(formats(30_000))).toEqual([]);
     expect(transcodingsOf(formats(200_000))).toHaveLength(1);
+  });
+
+  it("tells the person what the sound is, and offers the better encoding first", () => {
+    expect(qualityOf({ mimeType: "audio/mpeg", preset: "mp3_1_0" })).toBe("mp3 ~128 кбит/с");
+    expect(qualityOf({ mimeType: 'audio/ogg; codecs="opus"', preset: "opus_0_0" })).toBe("opus ~64 кбит/с");
+    expect(qualityOf({ mimeType: 'audio/mp4; codecs="mp4a.40.2"', preset: "aac_256k" })).toBe("aac 256 кбит/с");
+    const list = [
+      { url: "a", protocol: "progressive" as const, mimeType: "audio/mpeg", quality: "sq" },
+      { url: "b", protocol: "hls" as const, mimeType: 'audio/mp4; codecs="mp4a.40.2"', quality: "hq" },
+    ];
+    expect(rankTranscodings(list).map((t) => t.url)).toEqual(["b", "a"]);
+    // nothing says "hq": the order stays what it was
+    expect(rankTranscodings(list.map(({ quality, ...t }) => t)).map((t) => t.url)).toEqual(["a", "b"]);
   });
 });

@@ -59,6 +59,18 @@ export interface Transcoding {
   url: string;
   protocol: "progressive" | "hls";
   mimeType: string;
+  /** SoundCloud's name of the encoding: "mp3_1_0", "opus_0_0", "aac_160k" */
+  preset?: string;
+  /** "hq" for the better encoding (Go+ songs), "sq" for the standard one */
+  quality?: string;
+}
+
+/** what a person is told about the sound: "mp3 ~128 кбит/с" (SoundCloud does not say the exact rate) */
+export function qualityOf(t: Pick<Transcoding, "mimeType" | "preset">): string {
+  const codec = /opus|ogg/i.test(t.mimeType) ? "opus" : /mp4|aac/i.test(t.mimeType) || /^aac/i.test(t.preset ?? "") ? "aac" : "mp3";
+  const named = /(\d{2,3})k/i.exec(t.preset ?? "")?.[1];
+  const rate = named ?? { mp3: "128", opus: "64", aac: "160" }[codec];
+  return `${codec} ${named ? "" : "~"}${rate} кбит/с`;
 }
 
 /** every format SoundCloud lists for a song, as "protocol mime" (to tell why none plays) */
@@ -89,7 +101,7 @@ export function transcodingsOf(raw: unknown): Transcoding[] {
     // encrypted streams (premium "ctr-encrypted-hls") cannot be played here, and a preview
     // is not the song (some are not marked as one: they are told by their length)
     if (/encrypted/i.test(protocol) || t.snipped === true || snippedBy(raw, t)) return [];
-    return [{ url, protocol, mimeType }];
+    return [{ url, protocol, mimeType, ...(str(t.preset) && { preset: str(t.preset) }), ...(str(t.quality) && { quality: str(t.quality) }) }];
   });
 }
 
@@ -98,8 +110,9 @@ export function transcodingsOf(raw: unknown): Transcoding[] {
  * everywhere); Opus in HLS comes last: its Ogg pieces are joined into one file by the app
  */
 export function rankTranscodings(list: Transcoding[]): Transcoding[] {
+  // the better encoding of a song comes first when SoundCloud offers one (Go+); then as before
   const rank = (t: Transcoding) =>
-    (t.protocol === "progressive" ? 0 : 10) + (t.mimeType.includes("mpeg") ? 0 : t.mimeType.includes("mp4") ? 1 : 2);
+    (t.quality === "hq" ? 0 : 100) + (t.protocol === "progressive" ? 0 : 10) + (t.mimeType.includes("mpeg") ? 0 : t.mimeType.includes("mp4") ? 1 : 2);
   return [...list].sort((a, b) => rank(a) - rank(b));
 }
 

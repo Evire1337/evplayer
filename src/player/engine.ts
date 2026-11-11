@@ -36,6 +36,7 @@ interface Prepared {
   track: Track;
   /** playing a copy of the song from this service */
   route?: Track["source"];
+  quality?: string;
   ready: boolean;
 }
 
@@ -580,7 +581,7 @@ class PlayerEngine {
     this.dropPrepared();
     this.prepareSkip = null;
     this.unload(this.cur);
-    usePlayer.setState({ status: "loading", positionMs: 0, durationMs: track.durationMs, error: undefined, route: undefined });
+    usePlayer.setState({ status: "loading", positionMs: 0, durationMs: track.durationMs, error: undefined, route: undefined, quality: undefined });
     this.begin(track);
     try {
       // one way after another (another format, the same song on the other service) until
@@ -600,7 +601,7 @@ class PlayerEngine {
           continue;
         }
         started = true;
-        usePlayer.setState({ route: stream.via?.source });
+        usePlayer.setState({ route: stream.via?.source, quality: stream.quality });
         this.applyResume();
         break;
       }
@@ -698,6 +699,7 @@ class PlayerEngine {
       const stream = await resolveStream(track, controller.signal);
       if (this.prepared !== prepared) return;
       if (stream.via) prepared.route = stream.via.source;
+      prepared.quality = stream.quality;
       const deck = this.spare;
       this.unload(deck);
       this.graph.setDeck(deck.audio, 0);
@@ -754,7 +756,7 @@ class PlayerEngine {
       this.graph.setDeck(now.audio, 1);
       this.unload(old);
     }
-    usePlayer.setState({ index: prepared.index, status: "playing", positionMs: 0, durationMs: prepared.track.durationMs, error: undefined, route: prepared.route });
+    usePlayer.setState({ index: prepared.index, status: "playing", positionMs: 0, durationMs: prepared.track.durationMs, error: undefined, route: prepared.route, quality: prepared.quality });
     this.begin(prepared.track);
     void now.audio.play().catch(() => usePlayer.setState({ status: "paused" }));
   }

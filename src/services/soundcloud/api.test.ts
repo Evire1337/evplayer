@@ -31,7 +31,7 @@ describe("resolveSoundCloudStream", () => {
       }),
     );
     const stream = await resolveSoundCloudStream("sc:5");
-    expect(stream).toEqual({ url: "https://cdn/stream.m3u8", hls: true });
+    expect(stream).toEqual({ url: "https://cdn/stream.m3u8", hls: true, quality: "mp3 ~128 кбит/с" });
     expect(calls.some((c) => c.startsWith("/media/p") && c.includes("track_authorization=tok"))).toBe(true);
   });
 
@@ -61,7 +61,7 @@ describe("resolveSoundCloudStream", () => {
     for await (const s of soundCloudStreams("sc:7")) out.push(s);
     const playlist = "https://cf-hls-opus-media.sndcdn.com/playlist/x.m3u8";
     // the playlist behind the joined address is kept too: that is what a download fetches
-    expect(out).toEqual([{ url: `http://127.0.0.1:1/s/joined/${encodeURIComponent(playlist)}`, hls: false, playlist }]);
+    expect(out).toEqual([{ url: `http://127.0.0.1:1/s/joined/${encodeURIComponent(playlist)}`, hls: false, playlist, quality: "opus ~64 кбит/с" }]);
     delete window.__EVPLAYER_MEDIA__;
   });
 });

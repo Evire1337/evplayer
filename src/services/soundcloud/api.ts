@@ -1,6 +1,6 @@
 import type { ArtistSummary, CollectionSummary, Track } from "@/types";
 import { useSettings } from "@/settings/store";
-import { formatsListed, mapScCollection, mapScTrack, mapScUser, rankTranscodings, trackAuthorization, transcodingsOf, type Transcoding } from "./mappers";
+import { formatsListed, mapScCollection, mapScTrack, mapScUser, qualityOf, rankTranscodings, trackAuthorization, transcodingsOf, type Transcoding } from "./mappers";
 import { joinedStream } from "@/platform/net";
 import { isWebDev, webClientId } from "@/platform/web";
 
@@ -66,6 +66,8 @@ export interface ScStream {
   hls: boolean;
   /** the HLS playlist behind a stream the app joins into one file (what a download fetches) */
   playlist?: string;
+  /** "mp3 ~128 кбит/с": what the sound is, for the person to see */
+  quality?: string;
 }
 
 /** the reason a SoundCloud song has nothing this player can use */
@@ -106,11 +108,11 @@ export async function* soundCloudStreams(trackId: string, signal?: AbortSignal):
       const joined = joinedStream(url);
       if (!joined) continue;
       given++;
-      yield { url: joined, hls: false, playlist: url };
+      yield { url: joined, hls: false, playlist: url, quality: qualityOf(option) };
       continue;
     }
     given++;
-    yield { url, hls: option.protocol === "hls" };
+    yield { url, hls: option.protocol === "hls", quality: qualityOf(option) };
   }
   if (!given) throw lastError instanceof Error ? lastError : new Error("SoundCloud не отдал поток");
 }
