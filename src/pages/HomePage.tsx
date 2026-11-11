@@ -35,7 +35,7 @@ function greeting(date = new Date()): string {
 // SoundCloud charts change slowly: keep them for the session instead of asking every visit
 const chartCache = new Map<string, Track[]>();
 
-function useChart(kind: "top" | "trending") {
+function useChart(kind: "trending") {
   const [tracks, setTracks] = useState<Track[]>(() => chartCache.get(kind) ?? []);
   const [state, setState] = useState<"loading" | "ready" | "error">(chartCache.has(kind) ? "ready" : "loading");
   useEffect(() => {
@@ -298,7 +298,6 @@ function NewFromArtists() {
 export default function HomePage() {
   const version = useStatsVersion();
   const trending = useChart("trending");
-  const top = useChart("top");
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const today = useMemo(() => listenedToday(), [version]);
   return (
@@ -318,7 +317,6 @@ export default function HomePage() {
       <Tops version={version} />
       <NewFromArtists />
       <Row title="В тренде на SoundCloud" {...trending} />
-      <Row title="Топ SoundCloud" {...top} ranked />
     </div>
   );
 }

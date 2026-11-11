@@ -52,7 +52,8 @@ export async function searchSoundCloud(query: string, signal?: AbortSignal): Pro
   };
 }
 
-export async function soundCloudCharts(kind: "top" | "trending", signal?: AbortSignal): Promise<Track[]> {
+// SoundCloud answers 404 to the "top" chart since November 2026; only "trending" is left
+export async function soundCloudCharts(kind: "trending", signal?: AbortSignal): Promise<Track[]> {
   const body = await scGet<Collection>("/charts", { kind, genre: "soundcloud:genres:all-music", limit: "20" }, signal);
   return (body.collection ?? []).flatMap((row) => {
     const track = typeof row === "object" && row !== null ? (row as { track?: unknown }).track : undefined;
