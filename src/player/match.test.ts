@@ -19,6 +19,12 @@ describe("match", () => {
     expect(bestMatch(yt, [other, remix, good])?.id).toBe("good");
     expect(bestMatch(yt, [other])).toBeNull();
   });
+  it("does not take a longer title by the same artist for the song", () => {
+    const yt = { ...tr("Love", "Kendrick Lamar", 213000), source: "youtube" as const };
+    expect(isSameRecording(yt, tr("Love Me Harder", "Kendrick Lamar", 214000))).toBe(false);
+    expect(isSameRecording(yt, tr("LOVE.", "Kendrick Lamar", 213500))).toBe(true);
+    expect(isSameRecording(yt, tr("Kendrick Lamar - Love (Official Audio)", "kendricklamar", 213000))).toBe(true);
+  });
   it("builds a search query", () => {
     expect(searchQueryFor(tr("Daft Punk - Get Lucky (Official Video)", "convar"))).toBe("daft punk get lucky");
   });

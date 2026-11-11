@@ -57,7 +57,7 @@ export class NoCopyError extends Error {
  * not play (resolveStream below takes only the first):
  * - SoundCloud: each format of the upload, then the same song on YouTube (some uploads are
  *   only given out protected or as a 30-second preview, which the SoundCloud site can play
- *   and this player cannot); a song known to be preview-only goes to YouTube straight away
+ *   and this player cannot)
  * - YouTube: straight from YouTube, then the song's copy on SoundCloud
  * A copy saved for offline listening goes before all of these.
  */
@@ -71,15 +71,14 @@ export async function* streamCandidates(track: Track, signal?: AbortSignal): Asy
       yield { url: mediaUrl("track", track.id), hls: false };
       return;
     case "soundcloud": {
-      // a preview-only song (SoundCloud Go+) is not asked of SoundCloud at all: its full
-      // recording comes from YouTube Music, with the cover and names of the SoundCloud one
-      if (!track.preview) {
-        try {
-          yield* soundCloudStreams(track.id, signal);
-        } catch (e) {
-          if (signal?.aborted) throw e;
-          lastError = e;
-        }
+      // SoundCloud first, even for a song it listed as a preview: signed in with Go+, it gives
+      // the whole song (only whole songs are taken: a 30-second cut never plays as the song).
+      // Otherwise the full recording comes from YouTube Music, with the SoundCloud cover and names
+      try {
+        yield* soundCloudStreams(track.id, signal);
+      } catch (e) {
+        if (signal?.aborted) throw e;
+        lastError = e;
       }
       const copy = await youTubeMatch(track, signal).catch((e) => {
         if (signal?.aborted) throw e;

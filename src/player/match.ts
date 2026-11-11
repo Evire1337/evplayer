@@ -79,7 +79,13 @@ export function isSameRecording(wanted: Track, candidate: Track): boolean {
 export function matchScore(wanted: Track, candidate: Track): number {
   const w = splitTitle(wanted);
   const c = splitTitle(candidate);
-  const titleScore = overlap(words(w.title), words(`${c.title} ${c.artist}`));
+  // both ways: all of the wanted title is there, and the candidate's title has nothing much
+  // besides ("Love" is not "Love Me Harder" by the same artist, though every word is there)
+  const wantedTitle = words(w.title);
+  const found = overlap(wantedTitle, words(`${c.title} ${c.artist}`));
+  const named = new Set([...words(c.title)].filter((x) => !words(`${c.artist} ${candidate.artists.map((a) => a.name).join(" ")}`).has(x)));
+  const extra = named.size ? [...named].filter((x) => wantedTitle.has(x) || words(w.artist).has(x)).length / named.size : 1;
+  const titleScore = found && extra ? (2 * found * extra) / (found + extra) : 0;
   const artistWords = words(w.artist);
   const artistScore = overlap(artistWords, words(`${candidate.artists.map((a) => a.name).join(" ")} ${candidate.title}`));
   let score = titleScore * 0.6 + artistScore * 0.3;
