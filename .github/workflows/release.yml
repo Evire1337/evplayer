@@ -1,7 +1,7 @@
 name: Release
 
 # Push a tag like v0.4.0 (matching "version" in package.json) and this builds EvPlayer for
-# Windows (x64 and ARM), Linux (x64 and ARM: .deb, .rpm, AppImage) and Android, and publishes
+# Windows (x64), Linux (x64 and ARM: .deb, .rpm, AppImage, and a package for Arch) and Android, and publishes
 # a GitHub release with latest.json for the updater. The release stays a draft until every
 # computer's files are in it.
 # Needs the repository secret TAURI_SIGNING_PRIVATE_KEY (the update signing key).
@@ -51,8 +51,8 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: ${{ github.ref_name }}
           releaseBody: |
-            Windows — EvPlayer_*_x64-setup.exe (для Windows на ARM — EvPlayer_*_arm64-setup.exe).
-            Linux — .AppImage (обновляется сам), .deb или .rpm; amd64/x86_64 — обычные компьютеры, arm64/aarch64 — ARM.
+            Windows — EvPlayer_*_x64-setup.exe.
+            Linux — .AppImage (обновляется сам), .deb, .rpm или пакет для Arch (.pkg.tar.zst, или PKGBUILD для makepkg); amd64/x86_64 — обычные компьютеры, arm64/aarch64 — ARM.
             Android — EvPlayer-*.apk.
             Уже установленные копии обновятся сами.
           releaseDraft: true
@@ -91,10 +91,6 @@ jobs:
       max-parallel: 1
       matrix:
         include:
-          - name: Windows ARM
-            runner: windows-latest
-            rust_target: aarch64-pc-windows-msvc
-            args: --target aarch64-pc-windows-msvc
           - name: Linux x64
             runner: ubuntu-22.04
             args: --bundles deb,rpm,appimage
@@ -144,7 +140,6 @@ jobs:
           echo "$FILES"
           need() { echo "$FILES" | grep -Eq "$1" || { echo "missing: $2"; exit 1; }; }
           need '_x64-setup\.exe$' "the Windows installer"
-          need '_arm64-setup\.exe$' "the Windows ARM installer"
           need '_amd64\.AppImage$' "the Linux x64 AppImage"
           need '_aarch64\.AppImage$' "the Linux ARM AppImage"
           need '_amd64\.deb$' "the Linux x64 .deb"
@@ -152,7 +147,7 @@ jobs:
           need '^latest\.json$' "latest.json"
           need '^latest\.yml$' "latest.yml"
           gh release download "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" -p latest.json -O latest.json
-          for p in windows-x86_64 windows-aarch64 linux-x86_64 linux-aarch64; do
+          for p in windows-x86_64 linux-x86_64 linux-aarch64; do
             jq -e --arg p "$p" '[.platforms | keys[] | select(startswith($p))] | length > 0' latest.json > /dev/null || { echo "latest.json has no $p"; cat latest.json; exit 1; }
           done
           gh release edit "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" --draft=false --latest
@@ -204,5 +199,36 @@ jobs:
           APK=$(ls src-tauri/gen/android/app/build/outputs/apk/universal/release/*.apk | head -1)
           cp "$APK" "EvPlayer-${GITHUB_REF_NAME#v}.apk"
           gh release upload "$GITHUB_REF_NAME" "EvPlayer-${GITHUB_REF_NAME#v}.apk" --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Arch Linux: the x64 .deb of this release, made into a pacman package with makepkg (Arch
+  # images are x64 only; Arch Linux ARM builds the attached PKGBUILD itself)
+  arch:
+    needs: publish
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the package
+        shell: bash
+        run: |
+          pacman -Syu --noconfirm --needed pacman-contrib github-cli
+          VERSION="${GITHUB_REF_NAME#v}"
+          useradd -m builder
+          mkdir /home/builder/pkg
+          sed "s/^pkgver=.*/pkgver=${VERSION}/" packaging/arch/PKGBUILD > /home/builder/pkg/PKGBUILD
+          chown -R builder /home/builder/pkg
+          cd /home/builder/pkg
+          # the real checksums of this release's .deb files, for whoever builds it with makepkg
+          sudo -u builder updpkgsums
+          sudo -u builder makepkg --nodeps --noconfirm
+          cp PKGBUILD "$GITHUB_WORKSPACE/PKGBUILD"
+          cp evplayer-bin-*.pkg.tar.zst "$GITHUB_WORKSPACE/"
+      - name: Add it to the release
+        shell: bash
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          gh release upload "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" PKGBUILD evplayer-bin-*.pkg.tar.zst --clobber
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

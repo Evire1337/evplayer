@@ -1,0 +1,24 @@
+# EvPlayer for Arch Linux (and Arch Linux ARM): the official .deb of a release, unpacked.
+# makepkg -si builds and installs it. The release workflow fills in the version and the
+# checksums and attaches this file and the built package to every release.
+
+pkgname=evplayer-bin
+pkgver=0.0.0
+pkgrel=1
+pkgdesc="Music player for SoundCloud, YouTube Music and your own files"
+arch=('x86_64' 'aarch64')
+url="https://github.com/Evire1337/evplayer"
+license=('MIT')
+depends=('webkit2gtk-4.1' 'gtk3' 'libayatana-appindicator' 'librsvg' 'openssl' 'xdotool')
+provides=('evplayer')
+conflicts=('evplayer')
+options=('!strip' '!debug')
+source_x86_64=("EvPlayer_${pkgver}_amd64.deb::${url}/releases/download/v${pkgver}/EvPlayer_${pkgver}_amd64.deb")
+source_aarch64=("EvPlayer_${pkgver}_arm64.deb::${url}/releases/download/v${pkgver}/EvPlayer_${pkgver}_arm64.deb")
+sha256sums_x86_64=('SKIP')
+sha256sums_aarch64=('SKIP')
+
+package() {
+  # makepkg has already opened the .deb: the program is in data.tar.*
+  bsdtar -xf "${srcdir}"/data.tar.* -C "${pkgdir}"
+}
