@@ -19,7 +19,12 @@ const MB = 1024 * 1024;
 export const mb = (bytes: number) => (bytes < MB ? `${Math.max(1, Math.round(bytes / 1024))} КБ` : `${Math.round(bytes / MB)} МБ`);
 const pct = (share: number) => `${Math.round(share * 100)}%`;
 
-export function advise(s: Sample, o: Knobs): Advice[] {
+/** where the app runs: a phone has no mini player window */
+export interface Place {
+  phone?: boolean;
+}
+
+export function advise(s: Sample, o: Knobs, place: Place = {}): Advice[] {
   const out: Advice[] = [];
   const total = s.processes.reduce((n, p) => n + p.memory, 0);
   const cpu = s.processes.reduce((n, p) => n + p.cpu, 0);
@@ -37,10 +42,12 @@ export function advise(s: Sample, o: Knobs): Advice[] {
   }
 
   const heap = s.heap?.used ?? 0;
-  if (!o.memorySaver && (heap > 180 * MB || total > 700 * MB)) {
+  // `total` is each process's own memory, as Task Manager shows it (the shared libraries of
+  // the browser engine are not counted again for every process)
+  if (!o.memorySaver && (heap > 180 * MB || total > 450 * MB)) {
     out.push({
       id: "memory",
-      level: heap > 300 * MB || total > 1000 * MB ? "high" : "medium",
+      level: heap > 300 * MB || total > 700 * MB ? "high" : "medium",
       title: "Много памяти",
       detail: `Приложение занимает ${mb(total)}${heap ? `, из них данные страницы — ${mb(heap)}` : ""}. Экономия памяти убирает тяжёлые эффекты, держит меньше картинок и отдаёт память системе, когда окно свёрнуто.`,
       fix: { label: "Включить экономию памяти", patch: { memorySaver: true } },
@@ -74,12 +81,12 @@ export function advise(s: Sample, o: Knobs): Advice[] {
     });
   }
 
-  if (o.overlayEnabled) {
+  if (o.overlayEnabled && !place.phone) {
     out.push({
       id: "overlay",
       level: "info",
       title: "Мини-плеер",
-      detail: "Это ещё одно окно со своей страницей: обычно 50–100 МБ памяти. Если им не пользуетесь, его можно выключить.",
+      detail: "Это ещё одно окно со своей страницей. На Windows оно работает в том же процессе, что и главное окно, поэтому обходится дешевле, но тоже держит память. Если им не пользуетесь, его можно выключить.",
       fix: { label: "Выключить мини-плеер", patch: { overlayEnabled: false } },
     });
   }
@@ -111,7 +118,7 @@ export function advise(s: Sample, o: Knobs): Advice[] {
 export function report(s: Sample, advice: Advice[]): string {
   const lines = [
     `EvPlayer — диагностика, ${new Date(s.at).toLocaleString()}`,
-    `Процессы: ${s.processes.map((p) => `${p.name}${p.kind ? ` (${p.kind})` : ""} #${p.pid} ${mb(p.memory)} ЦП ${p.cpu.toFixed(1)}%`).join("; ") || "нет данных"}`,
+    `Процессы (своя память, без общих библиотек): ${s.processes.map((p) => `${p.name}${p.kind ? ` (${p.kind})` : ""} #${p.pid} ${mb(p.memory)} ЦП ${p.cpu.toFixed(1)}%`).join("; ") || "нет данных"}`,
     `Память страницы: ${s.heap ? `${mb(s.heap.used)} из ${mb(s.heap.total)}` : "нет данных"}; элементов на странице: ${s.domNodes}`,
     `Главный поток: занят ${pct(s.busy)}, опоздание таймеров ${Math.round(s.lag)} мс`,
     `Фон: ${Math.round(s.backdrop.fps)} кадров/с, ${s.backdrop.msPerFrame.toFixed(2)} мс на кадр; обработка звука: ${s.soundGraph ? "да" : "нет"}`,

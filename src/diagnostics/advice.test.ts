@@ -41,6 +41,18 @@ describe("diagnostics advice", () => {
     expect(advise(sample({ heap: { used: 400 * MB, total: 500 * MB } }), { ...calm, memorySaver: true }).some((a) => a.id === "memory")).toBe(false);
   });
 
+  it("counts the processes' own memory: a few hundred MB is normal, more is worth a word", () => {
+    const procs = (mbEach: number) => [1, 2, 3].map((pid) => ({ pid, name: "msedgewebview2.exe", memory: mbEach * MB, cpuMs: 0, cpu: 0 }));
+    expect(advise(sample({ processes: procs(100) }), calm).some((a) => a.id === "memory")).toBe(false);
+    expect(advise(sample({ processes: procs(170) }), calm).find((a) => a.id === "memory")?.level).toBe("medium");
+    expect(advise(sample({ processes: procs(250) }), calm).find((a) => a.id === "memory")?.level).toBe("high");
+  });
+
+  it("does not talk about a mini player window on a phone, which has none", () => {
+    expect(advise(sample(), { ...calm, overlayEnabled: true }).some((a) => a.id === "overlay")).toBe(true);
+    expect(advise(sample(), { ...calm, overlayEnabled: true }, { phone: true }).some((a) => a.id === "overlay")).toBe(false);
+  });
+
   it("writes a report to send", () => {
     const text = report(sample(), []);
     expect(text).toContain("evplayer.exe");

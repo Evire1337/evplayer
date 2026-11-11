@@ -4,22 +4,47 @@ import { IconChart } from "@/ui/components/Icons";
 import { toast } from "@/ui/toasts";
 import { Probe, type Sample } from "@/diagnostics/probe";
 import { advise, mb, report } from "@/diagnostics/advice";
+import { isPhone } from "@/platform/device";
+import type { ProcessInfo } from "@/platform/api";
 import { Card, Pill, Row, TabHeader } from "./parts";
 
 const EVERY_MS = 2000;
 
 const KINDS: Record<string, string> = {
-  renderer: "WebView2: страница (окно или мини-плеер)",
-  gpu: "WebView2: графика",
-  browser: "WebView2: менеджер",
-  utility: "WebView2: служебный (сеть, звук, хранилище)",
+  renderer: "страница (окно или мини-плеер)",
+  gpu: "графика",
+  browser: "менеджер",
+  utility: "служебный (сеть, звук, хранилище)",
+  network: "сеть",
 };
+
+/** the browser engine the interface runs in: WebView2 on Windows, WebKit on Linux */
+function engineOf(name: string): string | undefined {
+  if (/msedgewebview2/i.test(name)) return "WebView2";
+  if (/^WebKit/i.test(name)) return "WebKit";
+  return undefined;
+}
 
 /** a process's name as people know it */
 export function processName(name: string, kind?: string): string {
-  if (kind && KINDS[kind]) return KINDS[kind];
-  if (/msedgewebview2/i.test(name)) return "WebView2";
-  return /evplayer/i.test(name) ? "EvPlayer" : name;
+  const engine = engineOf(name);
+  if (kind && KINDS[kind]) return engine ? `${engine}: ${KINDS[kind]}` : KINDS[kind];
+  return engine ?? (/evplayer/i.test(name) ? "EvPlayer" : name);
+}
+
+/** what the total counts, in the words of the system it runs on */
+function totalHint(processes: ProcessInfo[]): string {
+  if (!processes.length) return "Только в приложении";
+  if (isPhone) return "Только сам EvPlayer: интерфейс работает в WebView Android, его память приложению не видна";
+  const count = `${processes.length} процесс(ов) приложения`;
+  return processes.some((p) => engineOf(p.name) === "WebView2") ? `${count}, как «Память» в диспетчере задач` : `${count}, своя память без общих библиотек`;
+}
+
+/** what the list of processes shows */
+function processesHint(processes: ProcessInfo[]): string {
+  if (isPhone) return "Интерфейс работает в WebView Android, в процессах самой системы: здесь виден только EvPlayer";
+  if (processes.some((p) => engineOf(p.name) === "WebKit")) return "WebKit — встроенный браузер, в котором работает интерфейс";
+  return "WebView2 — встроенный браузер, в котором работает интерфейс";
 }
 
 // What the app takes right now and what to do about it. Measures only while this tab is open.
@@ -41,7 +66,7 @@ export default function DiagnosticsTab() {
     };
   }, []);
 
-  const advice = sample ? advise(sample, settings) : [];
+  const advice = sample ? advise(sample, settings, { phone: isPhone }) : [];
   const total = sample?.processes.reduce((n, p) => n + p.memory, 0) ?? 0;
   const cpu = sample?.processes.reduce((n, p) => n + p.cpu, 0) ?? 0;
 
@@ -58,7 +83,7 @@ export default function DiagnosticsTab() {
           <p className="muted small">Замеряю…</p>
         ) : (
           <>
-            <Row title="Память всего" hint={sample.processes.length ? `${sample.processes.length} процесс(ов) приложения` : "Только в приложении"}>{total ? mb(total) : "—"}</Row>
+            <Row title="Память всего" hint={totalHint(sample.processes)}>{total ? mb(total) : "—"}</Row>
             <Row title="Процессор" hint="Доля всего процессора, как в диспетчере задач">{sample.processes.length ? `${cpu.toFixed(1)}%` : "—"}</Row>
             <Row title="Память страницы" hint="Данные интерфейса: библиотека, очередь, картинки">{sample.heap ? mb(sample.heap.used) : "—"}</Row>
             <Row title="Главный поток" hint={`Таймеры опаздывают на ${Math.round(sample.lag)} мс; элементов на странице: ${sample.domNodes}`}>{`${Math.round(sample.busy * 100)}% занят`}</Row>
@@ -76,7 +101,7 @@ export default function DiagnosticsTab() {
         ))}
       </Card>
       {sample && sample.processes.length > 0 && (
-        <Card title="Процессы" hint="WebView2 — встроенный браузер, в котором работает интерфейс">
+        <Card title="Процессы" hint={processesHint(sample.processes)}>
           {sample.processes.map((p) => (
             <Row key={p.pid} title={processName(p.name, p.kind)} hint={`#${p.pid}`}>{`${mb(p.memory)} · ${p.cpu.toFixed(1)}%`}</Row>
           ))}

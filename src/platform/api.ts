@@ -86,7 +86,8 @@ export interface PresenceState {
 export interface ProcessInfo {
   pid: number;
   name: string;
-  /** bytes */
+  /** the process's own memory in bytes, as Task Manager's "Memory" column (shared libraries
+      not counted) */
   memory: number;
   /** processor time since it started */
   cpuMs: number;
