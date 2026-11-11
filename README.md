@@ -225,7 +225,7 @@ pnpm dev          # запуск с горячей перезагрузкой (�
 2. `git tag v0.6.0` → `git push origin v0.6.0`
 3. GitHub Actions соберёт Windows (x64 и ARM), Linux (x64 и ARM) и Android, подпишет обновления и опубликует релиз с `latest.json`, когда все файлы на месте — у всех пользователей обновление придёт само.
 
-Каждый пуш в `tauri` собирает тестовые версии для всех систем (вкладка Actions → Check, файлы внизу запуска).
+Тестовые версии для всех систем собираются вручную: вкладка Actions → Check → Run workflow (файлы внизу запуска). APK отдельно — Actions → Android. Пуши сами ничего не собирают.
 
 Секреты в настройках репозитория (Settings → Secrets and variables → Actions):
 - `TAURI_SIGNING_PRIVATE_KEY` — закрытый ключ обновлений, пара к `pubkey` в `src-tauri/tauri.conf.json`;
