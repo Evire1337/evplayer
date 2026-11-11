@@ -8,6 +8,7 @@ import "@fontsource/onest/600.css";
 import "@fontsource/onest/800.css";
 import "./styles/base.css";
 import "./styles/app.css";
+import "./jam/jam.css";
 import "./styles/phone.css";
 
 const root = ReactDOM.createRoot(document.getElementById("root")!);

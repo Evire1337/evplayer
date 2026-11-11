@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Слушать вместе в EvPlayer</title>
+<!-- Discord's "Слушать вместе" button may only lead to an https page: this one takes the friend
+     into the listening session (evplayer://jam/CODE), and offers the app otherwise -->
+<style>
+  :root { --ink: #eef7f4; --ink-2: rgba(238, 247, 244, 0.68); --accent: #6ff0c4; --ground: #06201d; color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 16px; background: radial-gradient(circle at 25% 30%, #1f8a73, var(--ground) 65%); color: var(--ink); font: 15px/1.5 "Segoe UI", system-ui, sans-serif; }
+  .card { width: min(420px, 100%); padding: 24px; border-radius: 26px; background: rgba(5, 16, 18, 0.6); border: 1px solid rgba(238, 247, 244, 0.12); text-align: center; }
+  img { width: 160px; height: 160px; object-fit: cover; border-radius: 22px; display: none; margin: 0 auto 16px; }
+  h1 { margin: 0; font-size: 22px; overflow-wrap: anywhere; }
+  p { margin: 4px 0 0; color: var(--ink-2); overflow-wrap: anywhere; }
+  .actions { display: flex; flex-direction: column; gap: 8px; margin-top: 20px; }
+  a { display: block; padding: 12px; border-radius: 14px; color: var(--ink); text-decoration: none; background: rgba(238, 247, 244, 0.08); font-weight: 600; }
+  a.primary { background: var(--accent); color: var(--ground); }
+  .hint { font-size: 13px; margin-top: 14px; }
+</style>
+</head>
+<body>
+<main class="card">
+  <h1>Слушать вместе</h1>
+  <p id="code"></p>
+  <div class="actions">
+    <a id="open" class="primary" href="#">Войти в сессию</a>
+    <a href="https://github.com/Evire1337/evplayer/releases/latest">Скачать EvPlayer</a>
+  </div>
+  <p class="hint">Если EvPlayer установлен, он откроется и войдёт в сессию сам.</p>
+</main>
+<script>
+  const code = (new URLSearchParams(location.search).get("code") || "").toUpperCase();
+  if (/^JAM-[2-9A-HJ-NP-Z]{4}-[2-9A-HJ-NP-Z]{4}$/.test(code)) {
+    document.getElementById("code").textContent = "Код сессии: " + code;
+    const app = "evplayer://jam/" + code;
+    document.getElementById("open").href = app;
+    location.href = app;
+  } else {
+    document.getElementById("code").textContent = "Ссылка без кода сессии";
+  }
+</script>
+</body>
+</html>

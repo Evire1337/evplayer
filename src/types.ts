@@ -16,6 +16,8 @@ export interface Track {
   /** plays/views on the service */
   plays?: number;
   permalink?: string;
+  /** the service gives out only a short preview of it (SoundCloud Go+): it plays from elsewhere */
+  preview?: boolean;
 }
 
 export interface ArtistSummary {

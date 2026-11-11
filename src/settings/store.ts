@@ -128,6 +128,8 @@ export interface SettingsState {
   discordShowPaused: boolean;
   discordShowTimeline: boolean;
   discordShowButton: boolean;
+  /** friends may press "Ask to join" on the status to listen along */
+  discordJoin: boolean;
   discordStatusShows: DiscordStatusShows;
   set: (patch: Partial<Omit<SettingsState, "set" | "reset">>) => void;
   reset: () => void;
@@ -178,6 +180,7 @@ const DEFAULTS = {
   discordShowPaused: true,
   discordShowTimeline: true,
   discordShowButton: true,
+  discordJoin: true,
   discordStatusShows: "song" as DiscordStatusShows,
 };
 

@@ -9,6 +9,7 @@ import { IconQueue } from "@/ui/components/Icons";
 import LikeButton from "@/ui/components/LikeButton";
 import { useEffect, useState } from "react";
 import { isPhone } from "@/platform/device";
+import JamBanner from "@/jam/JamBanner";
 
 /** the window is too narrow for the «Далее» column (the same width as in app.css) */
 const NARROW = "(max-width: 1180px)";
@@ -66,6 +67,7 @@ export default function NowPlayingPage() {
               {route === "youtube" && " · играет копия с YouTube"}
             </span>
           )}
+          <JamBanner />
         </div>
         <Progress big />
         <Transport big />

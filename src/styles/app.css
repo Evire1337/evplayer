@@ -37,7 +37,9 @@ img { display: block; max-width: 100%; }
   scrollbar-width: thin;
   scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
 }
-.page-now .content { bottom: 20px; overflow: hidden; }
+/* moved left by as much as the column below is padded: the cover's shadow needs that room
+   inside the clipped area (it used to be cut off along the left edge) */
+.page-now .content { bottom: 20px; overflow: hidden; left: 82px; }
 
 /* ---------- rail ---------- */
 .rail {
@@ -85,6 +87,8 @@ img { display: block; max-width: 100%; }
 
 /* ---------- pages ---------- */
 .page { padding: 18px 8px 24px; display: flex; flex-direction: column; gap: 30px; max-width: 1240px; }
+/* pages of rows of covers use a wide window whole (a full screen used to end in a cut-off row) */
+.page.is-wide { max-width: none; }
 .page-head { padding-top: 6px; }
 .display { margin: 0; font-weight: 800; font-size: clamp(30px, 3.6vw, 46px); letter-spacing: -0.02em; text-wrap: balance; }
 .row { display: flex; flex-direction: column; gap: 14px; }
@@ -235,7 +239,8 @@ img { display: block; max-width: 100%; }
 .toast-pill { padding: 10px 16px; border-radius: 999px; background: rgba(238, 247, 244, 0.95); color: var(--ground); font-weight: 600; font-size: 13.5px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35); }
 .toast-pill.is-error { background: #ffb4b4; color: #2a0808; }
 
-.search-field { display: flex; align-items: center; gap: 10px; padding: 0 16px; height: 56px; border-radius: 22px; color: var(--ink-2); position: sticky; top: 0; z-index: 2; }
+/* it stays on top while the results scroll under it: almost solid, or the covers show through */
+.search-field { display: flex; align-items: center; gap: 10px; padding: 0 16px; height: 56px; border-radius: 22px; color: var(--ink-2); position: sticky; top: 0; z-index: 2; background: rgba(8, 22, 24, 0.9); box-shadow: 0 10px 24px rgba(0, 0, 0, 0.3); }
 .search-field input { flex: 1; min-width: 0; height: 100%; background: transparent; border: 0; outline: none; color: var(--ink); font: 600 16px var(--font); }
 .search-field input::placeholder { color: var(--ink-3); }
 .artist-chip { flex: 0 0 132px; display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; min-width: 0; }
@@ -382,13 +387,17 @@ img { display: block; max-width: 100%; }
 .mini-center { display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 0; }
 .mini-center .round-btn.main { width: 42px; height: 42px; }
 .mini-center .round-btn.soft { width: 36px; height: 36px; }
-.mini-center .progress-times { display: none; }
+/* the times sit above the bar: gone by on the left, the song's length on the right */
+.mini-center .progress { flex-direction: column-reverse; gap: 6px; }
+.mini-center .progress-times { font-size: 11px; padding: 0 2px; line-height: 1; margin-top: -4px; }
 .mini-side { display: flex; align-items: center; justify-content: flex-end; gap: 4px; }
 
 /* ---------- now playing ---------- */
-.now { height: 100%; display: grid; grid-template-columns: minmax(300px, 420px) minmax(0, 1fr) 290px; gap: 28px; padding: 8px 0 0 8px; }
-.now-left { display: flex; flex-direction: column; justify-content: center; gap: 18px; min-width: 0; min-height: 0; overflow-y: auto; scrollbar-width: none; padding-bottom: 4px; }
-.now-art { width: min(100%, calc(100vh - 430px)); min-width: 160px; align-self: center; aspect-ratio: 1; max-width: 100%; border-radius: 36px; overflow: hidden; background: rgba(255, 255, 255, 0.07); box-shadow: 0 40px 90px rgba(0, 0, 0, 0.45); }
+.now { height: 100%; display: grid; grid-template-columns: minmax(300px, 420px) minmax(0, 1fr) 290px; gap: 28px; padding: 8px 0 0 30px; }
+/* the column scrolls, and a scrolling box cuts everything at its edges: the padding (taken
+   back by the margin) is room for the cover's shadow, which used to end in straight lines */
+.now-left { display: flex; flex-direction: column; justify-content: safe center; gap: 18px; min-width: 0; min-height: 0; overflow-y: auto; scrollbar-width: none; padding: 20px 28px 32px; margin: 0 -28px -28px; }
+.now-art { width: min(100%, calc(100vh - 430px)); min-width: 160px; align-self: center; aspect-ratio: 1; max-width: 100%; border-radius: 36px; overflow: hidden; background: rgba(255, 255, 255, 0.07); box-shadow: 0 6px 22px rgba(0, 0, 0, 0.5); }
 .now-art img { width: 100%; height: 100%; object-fit: cover; }
 .now-meta { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .now-title { margin: 0; font-weight: 800; font-size: 28px; line-height: 1.1; letter-spacing: -0.01em; text-wrap: balance; }
@@ -500,7 +509,7 @@ img { display: block; max-width: 100%; }
 .link-btn:hover { color: var(--ink); text-decoration: underline; text-underline-offset: 3px; }
 .icon-btn { width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: var(--ink-2); }
 .icon-btn:hover { background: var(--hover); color: var(--ink); }
-.dialog.is-wide { width: min(640px, 100%); max-height: calc(100vh - 60px); overflow-y: auto; }
+.dialog.is-wide { width: min(640px, 100%); max-height: calc(100vh - 60px); overflow-y: auto; overflow-x: hidden; }
 kbd { font: 600 12px var(--font); padding: 3px 8px; border-radius: 7px; background: rgba(238, 247, 244, 0.1); border: 1px solid var(--edge); white-space: nowrap; }
 
 /* ---------- titlebar back button ---------- */
@@ -541,7 +550,7 @@ kbd { font: 600 12px var(--font); padding: 3px 8px; border-radius: 7px; backgrou
 /* ---------- now playing extras ---------- */
 .now-source { font-size: 12.5px; color: var(--ink-3); }
 .now-art { transition: box-shadow 400ms ease; }
-.app:not(.no-glow) .now-art { box-shadow: 0 40px 90px rgba(0, 0, 0, 0.45), 0 0 120px rgba(111, 240, 196, 0.16); }
+.app:not(.no-glow) .now-art { box-shadow: 0 6px 22px rgba(0, 0, 0, 0.5), 0 0 18px rgba(111, 240, 196, 0.16); }
 .lyrics-s .now-lyrics { --lyric-scale: 4.2; }
 .lyrics-l .now-lyrics { --lyric-scale: 6.6; }
 .no-lyrics-blur .lyric-line, .no-lyrics-blur .lyric-line.is-near { filter: none; }
@@ -928,3 +937,4 @@ html.saver .now-art::before, html.saver .now-art::after { display: none !importa
 .search-history-item span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); }
 .search-history-remove { opacity: 0.6; }
 .search-history-remove:hover { opacity: 1; }
+

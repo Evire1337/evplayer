@@ -104,7 +104,7 @@ export default function ArtistPage() {
   const popular = data?.popular ?? [];
 
   return (
-    <div className="page">
+    <div className="page is-wide">
       <header className="pl-hero artist-hero">
         <span className="artist-photo">{data?.avatar ? <img src={data.avatar} alt="" /> : <IconUser size={64} />}</span>
         <div className="pl-hero-text">

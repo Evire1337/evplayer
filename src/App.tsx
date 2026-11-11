@@ -28,14 +28,19 @@ import LibraryDialogs from "@/library/LibraryDialogs";
 import SpotifyExportDialog from "@/library/SpotifyExportDialog";
 import TrackStatsDialog from "@/stats/TrackStatsDialog";
 import TagEditorDialog from "@/files/tagEditor";
+import JamDialog from "@/jam/JamDialog";
+import JamFloat from "@/jam/JamFloat";
+import JamAsks from "@/jam/JamAsks";
+import { startInvites } from "@/jam/invites";
 import { useSettings } from "@/settings/store";
 import { IconBack } from "@/ui/components/Icons";
 import WindowControls from "@/ui/components/WindowControls";
 import { useVisible } from "@/app/visibility";
 
-/** after this long out of sight the window lets go of its pages (sooner with memory saver) */
-const SLEEP_AFTER_MS = 20_000;
-const SAVER_SLEEP_AFTER_MS = 4_000;
+/** after this long out of sight the window lets go of its pages (a quick look at another app
+    does not cost a rebuild) */
+const SLEEP_AFTER_MS = 5_000;
+const SAVER_SLEEP_AFTER_MS = 2_000;
 
 function useAsleep(): boolean {
   const visible = useVisible((s) => s.visible);
@@ -68,6 +73,7 @@ export default function App() {
   useEffect(() => window.evplayer?.overlay.onVisible(setOverlayOpen), []);
   // songs saved for offline: the index, progress, and lists that keep themselves complete
   useEffect(() => startOffline(), []);
+  useEffect(() => startInvites(), []);
   const asleep = useAsleep();
   const saver = useSettings((s) => s.memorySaver);
   useEffect(() => {
@@ -118,6 +124,9 @@ export default function App() {
       <SpotifyExportDialog />
       <TrackStatsDialog />
       <TagEditorDialog />
+      <JamDialog />
+      <JamFloat />
+      <JamAsks />
     </div>
   );
 }

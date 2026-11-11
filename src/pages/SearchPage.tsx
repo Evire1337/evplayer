@@ -88,6 +88,13 @@ export default function SearchPage() {
     if (!useSearchState.getState().query) inputRef.current?.focus();
   }, []);
 
+  // a new query starts its results from the top, not under the field where the old ones were
+  const typed = useRef(false);
+  useEffect(() => {
+    if (typed.current) inputRef.current?.closest(".content")?.scrollTo({ top: 0 });
+    typed.current = true;
+  }, [query]);
+
   useEffect(() => {
     const q = query.trim();
     if (q.length < 2 || looksLikeLink(q)) {
@@ -135,7 +142,7 @@ export default function SearchPage() {
   const nothing = tracks.length + artists.length + albums.length + playlists.length === 0;
 
   return (
-    <div className="page">
+    <div className="page is-wide">
       <label className="search-field glass" htmlFor="search">
         <IconSearch size={19} />
         <input

@@ -302,7 +302,7 @@ export default function HomePage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const today = useMemo(() => listenedToday(), [version]);
   return (
-    <div className="page">
+    <div className="page is-wide">
       <header className="page-head home-head">
         <h1 className="display">{greeting()}</h1>
         {today >= 60_000 && (

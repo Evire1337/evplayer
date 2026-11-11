@@ -6,10 +6,24 @@ import { useLibrary } from "@/library/store";
 import { runAction, type Command } from "./actions";
 import { useLyricsLine } from "@/ui/lyricsLine";
 import { sendPhoneMedia } from "@/platform/androidMedia";
+import { useJam } from "@/jam/store";
+import { joinUrl, listenUrl } from "./playLink";
+import { JAM_MAX } from "@/jam/types";
 
 // Keeps the main process in step with the page: tray menu and options, global keys,
 // Discord status. Also takes commands from the tray and the global keys.
 
+/**
+ * The listening session in the Discord status: its size ("2 of 16") and the "Слушать вместе"
+ * button, which takes a friend in through a page (Discord takes only https links). Nothing for
+ * a closed session. Discord's own "Ask to join" is not used: next to it Discord shows no link
+ * buttons at all.
+ */
+function discordSession(): { party?: { id: string; size: number; max: number }; joinUrl?: string } {
+  const j = useJam.getState();
+  if (j.status !== "live") return {};
+  return { party: { id: `evp:${j.code}`, size: j.people.length, max: JAM_MAX }, joinUrl: j.access === "closed" ? undefined : joinUrl(j.code) };
+}
 export function startBridge(): void {
   const api = window.evplayer;
   if (!api) return;
@@ -28,7 +42,7 @@ export function startBridge(): void {
       "overlayEnabled", "overlayOnTop", "overlayOnMinimize", "overlayCorner",
     ];
     if (keys.some((k) => s[k] !== prev[k])) pushSettings();
-    const discordKeys: Array<keyof typeof s> = ["discordEnabled", "discordShowArtwork", "discordShowPaused", "discordShowTimeline", "discordShowButton", "discordStatusShows"];
+    const discordKeys: Array<keyof typeof s> = ["discordEnabled", "discordShowArtwork", "discordShowPaused", "discordShowTimeline", "discordShowButton", "discordStatusShows", "discordJoin"];
     if (discordKeys.some((k) => s[k] !== prev[k])) pushPresence(true);
     if (s.overlayShowLyrics !== prev.overlayShowLyrics) pushOverlay();
     if (s.noCache !== prev.noCache) void api.setNoCache(s.noCache);
@@ -45,7 +59,8 @@ export function startBridge(): void {
     const s = usePlayer.getState();
     const track = currentTrack(s);
     const playing = s.status === "playing";
-    const key = `${track?.id}|${playing}`;
+    const jam = useJam.getState();
+    const key = `${track?.id}|${playing}|${jam.status}|${jam.code}|${jam.people.length}|${jam.access}`;
     // a jump in position (seek) also needs a fresh "elapsed" time in Discord
     if (!force && key === lastPresence) return;
     lastPresence = key;
@@ -59,17 +74,30 @@ export function startBridge(): void {
       title: track.title,
       artist: artistLine(track.artists),
       artwork: o.discordShowArtwork ? track.artwork : undefined,
-      url: o.discordShowButton ? track.permalink : undefined,
+      // the button opens the song in EvPlayer (through a page: Discord takes only https links)
+      url: o.discordShowButton ? listenUrl(track) : undefined,
       paused: !playing,
       startedAt: o.discordShowTimeline ? startedAt : undefined,
       endsAt: o.discordShowTimeline && s.durationMs ? startedAt + s.durationMs : undefined,
       statusShows: o.discordStatusShows,
+      positionMs: playing ? undefined : s.positionMs,
+      durationMs: playing ? undefined : s.durationMs || undefined,
+      ...(o.discordJoin ? discordSession() : {}),
     });
   };
 
   // the mini player window gets a small copy of the player state
   let lastOverlay = "";
+  // whether the song is liked, worked out once per song (the likes can be thousands long)
+  let likedOf = { id: "", likes: useLibrary.getState().likes, liked: false };
+  const isLiked = (id: string) => {
+    const likes = useLibrary.getState().likes;
+    if (likedOf.id !== id || likedOf.likes !== likes) likedOf = { id, likes, liked: likes.some((l) => l.track.id === id) };
+    return likedOf.liked;
+  };
   const pushOverlay = () => {
+    // the mini player is off: nothing to keep it up to date for (a ready one asks again)
+    if (!useSettings.getState().overlayEnabled) return;
     const s = usePlayer.getState();
     const track = currentTrack(s);
     const state = {
@@ -77,7 +105,7 @@ export function startBridge(): void {
       status: s.status,
       positionMs: Math.round(s.positionMs / 500) * 500,
       durationMs: s.durationMs,
-      liked: track ? useLibrary.getState().likes.some((l) => l.track.id === track.id) : false,
+      liked: track ? isLiked(track.id) : false,
       line: useSettings.getState().overlayShowLyrics ? useLyricsLine.getState().line : null,
     };
     const key = JSON.stringify(state);
@@ -120,6 +148,9 @@ export function startBridge(): void {
     }
   });
   useLibrary.subscribe(pushPhone);
+
+  // a session started, ended or someone came: the status shows it
+  useJam.subscribe(() => pushPresence());
 
   usePlayer.subscribe((s, prev) => {
     const track = currentTrack(s);

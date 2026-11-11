@@ -4,7 +4,8 @@ import { offlineSupported, useKeepLists, useOffline } from "./store";
 import { tracksOf } from "./scopes";
 
 // Lists marked "keep offline" stay complete: when songs are added to them, or the app
-// starts, the missing ones are fetched. Playlists that were deleted drop out of the list.
+// starts, the missing ones are fetched (but not the ones that could not be kept before).
+// Playlists that were deleted drop out of the list.
 
 let timer: ReturnType<typeof setTimeout> | undefined;
 
@@ -15,7 +16,7 @@ function topUp(): void {
   const gone = lists.filter((l) => !known.has(l));
   if (gone.length) remove(gone);
   const wanted = lists.filter((l) => known.has(l));
-  if (wanted.length && navigator.onLine) keepTracks(tracksOf(wanted));
+  if (wanted.length && navigator.onLine) keepTracks(tracksOf(wanted), { auto: true });
 }
 
 const later = () => {

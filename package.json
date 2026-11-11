@@ -1,7 +1,7 @@
 {
   "name": "evplayer",
   "productName": "EvPlayer",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Music player for SoundCloud, YouTube Music and your own files",
   "author": "Evire1337",
   "license": "MIT",
@@ -19,6 +19,7 @@
     "@fontsource/onest": "^5.3.1",
     "@tauri-apps/cli": "^2.12.4",
     "@types/node": "^26.6.5",
+    "@types/qrcode": "^1.5.6",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.2",
@@ -33,6 +34,8 @@
     "zustand": "^5.0.16"
   },
   "dependencies": {
-    "@tauri-apps/api": "^2.12.4"
+    "@tauri-apps/api": "^2.12.4",
+    "nostr-tools": "^2.26.0",
+    "qrcode": "^1.5.4"
   }
 }

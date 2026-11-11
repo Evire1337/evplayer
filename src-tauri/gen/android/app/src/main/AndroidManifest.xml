@@ -64,7 +64,18 @@
             android:name="android.appwidget.provider"
             android:resource="@xml/player_widget_mini_info" />
         </receiver>
-        <!-- its buttons; only this app can press them -->
+        <!-- the thin strip, half the height of a row -->
+        <receiver
+          android:name=".PlayerWidget$Strip"
+          android:exported="true"
+          android:label="EvPlayer полоска">
+          <intent-filter>
+            <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+          </intent-filter>
+          <meta-data
+            android:name="android.appwidget.provider"
+            android:resource="@xml/player_widget_strip_info" />
+        </receiver>        <!-- its buttons; only this app can press them -->
         <receiver
           android:name=".PlayerWidget$Buttons"
           android:exported="false" />

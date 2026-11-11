@@ -28,11 +28,12 @@ class PlayerWidget : AppWidgetProvider() {
     @Volatile private var cover: Bitmap? = null
     @Volatile private var coverOf: Bitmap? = null
 
-    /** both widgets: the big one and the one-row one, with the same parts in them */
+    /** all the widgets: the big one, the one-row one and the strip, with the same parts in them */
     fun render(context: Context, art: Bitmap? = coverOf) {
       val manager = AppWidgetManager.getInstance(context)
       draw(context, manager, PlayerWidget::class.java, R.layout.widget_player, art)
       draw(context, manager, Mini::class.java, R.layout.widget_player_mini, art)
+      draw(context, manager, Strip::class.java, R.layout.widget_player_strip, art)
     }
 
     private fun draw(context: Context, manager: AppWidgetManager, provider: Class<*>, layout: Int, art: Bitmap?) {
@@ -114,6 +115,13 @@ class PlayerWidget : AppWidgetProvider() {
 
   /** the one-row widget; drawn together with the big one */
   class Mini : AppWidgetProvider() {
+    override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
+      render(context)
+    }
+  }
+
+  /** the thin strip (half a row); drawn together with the others */
+  class Strip : AppWidgetProvider() {
     override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
       render(context)
     }

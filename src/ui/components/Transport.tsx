@@ -3,7 +3,8 @@ import { player } from "@/player/engine";
 import { currentTrack, usePlayer } from "@/player/store";
 import { useEffects } from "@/player/effects";
 import { formatTime } from "../format";
-import { IconNext, IconPause, IconPlay, IconPrev, IconRepeat, IconShuffle, IconSliders, IconVolume, IconMute } from "./Icons";
+import { IconNext, IconPause, IconPlay, IconPrev, IconRepeat, IconShuffle, IconSliders, IconVolume, IconMute, IconJam } from "./Icons";
+import { useJam } from "@/jam/store";
 import Popover from "./Popover";
 import SoundPanel from "./SoundPanel";
 import VolumePanel from "./VolumePanel";
@@ -28,7 +29,8 @@ export function Progress({ big = false }: { big?: boolean }) {
       />
       <div className="progress-times">
         <span>{formatTime(positionMs)}</span>
-        <span>−{formatTime(Math.max(0, durationMs - positionMs))}</span>
+        {/* the big player shows what is left; the bar at the bottom the length, as Spotify does */}
+        <span>{big ? `−${formatTime(Math.max(0, durationMs - positionMs))}` : formatTime(durationMs)}</span>
       </div>
     </div>
   );
@@ -65,8 +67,12 @@ export function Tools() {
   const fx = useEffects();
   const tuned = fx.speed !== 1 || (!fx.linked && fx.pitch !== 0) || fx.reverb;
   const { volume, muted } = usePlayer(useShallow((s) => ({ volume: s.volume, muted: s.muted })));
+  const jamLive = useJam((s) => s.status === "live");
   return (
     <div className="tools">
+      <button type="button" className={`tool-btn${jamLive ? " is-jam" : ""}`} aria-label="Слушать вместе" data-tip="Слушать вместе" onClick={() => useJam.getState().setOpen(true)}>
+        <IconJam size={19} />
+      </button>
       <Popover label="Звук, скорость и тон" icon={<IconSliders size={19} />} width={292} active={tuned}>
         <SoundPanel />
       </Popover>

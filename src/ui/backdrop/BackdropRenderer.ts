@@ -1,11 +1,15 @@
 import { proxied } from "@/platform/net";
+import { isPhone } from "@/platform/device";
 import { FRAGMENT, VERTEX } from "./shaders";
 
 const TEX_SIZE = 64;
 const FADE_MS = 1400;
 const RENDER_SCALE = 0.5;
-/** the background drifts slowly: 30 frames a second look the same as 60 and cost half */
-const FRAME_MS = 1000 / 30 - 2;
+/** the background drifts slowly: 30 frames a second look the same as 60 and cost half (a phone
+    gets 24: its battery matters more) */
+const FRAME_MS = 1000 / (isPhone ? 24 : 30) - 2;
+/** paused, it drifts four times slower: 10 frames a second are just as smooth */
+const PAUSED_FRAME_MS = 1000 / 10 - 2;
 
 /** the default look before anything plays: deep sea green with a cool blue glow */
 function fallbackSource(): HTMLCanvasElement {
@@ -20,6 +24,9 @@ function fallbackSource(): HTMLCanvasElement {
   g.fillRect(0, 0, TEX_SIZE, TEX_SIZE);
   return c;
 }
+
+/** what drawing the background costs, for the diagnostics page: frames drawn, time spent */
+export const backdropStats = { frames: 0, busyMs: 0 };
 
 export class BackdropRenderer {
   private gl: WebGLRenderingContext;
@@ -139,10 +146,11 @@ export class BackdropRenderer {
 
   private frame = (now: number): void => {
     if (!this.running) return;
-    if (this.last && now - this.last < FRAME_MS) {
+    if (this.last && now - this.last < (this.speed < 1 && this.mix >= 1 ? PAUSED_FRAME_MS : FRAME_MS)) {
       this.raf = requestAnimationFrame(this.frame);
       return;
     }
+    const started = performance.now();
     const dt = Math.min(100, now - (this.last || now));
     this.last = now;
     this.time += (dt / 1000) * this.speed;
@@ -161,6 +169,8 @@ export class BackdropRenderer {
     gl.uniform1f(this.loc.uDim, this.dim);
     gl.uniform2f(this.loc.uRes, this.canvas.width, this.canvas.height);
     gl.drawArrays(gl.TRIANGLES, 0, 6);
+    backdropStats.frames++;
+    backdropStats.busyMs += performance.now() - started;
     this.raf = requestAnimationFrame(this.frame);
   };
 
@@ -198,5 +208,8 @@ export class BackdropRenderer {
     gl.deleteTexture(this.from);
     if (this.to !== this.from) gl.deleteTexture(this.to);
     gl.deleteProgram(this.program);
+    // the context itself would hold on to the graphics memory until garbage collection: give it
+    // back now (the app asleep in the tray should take as little as it can)
+    gl.getExtension("WEBGL_lose_context")?.loseContext();
   }
 }

@@ -132,6 +132,13 @@ export function createTauriApi(): EvPlayerApi {
       setAppId: (appId) => fire("discord_set", { appId }),
       update: (presence) => fire("discord_update", { presence }),
       status: () => invoke("discord_status"),
+      onEvent: (cb) => on("discord:event", cb),
+      answer: (userId, accept) => fire("discord_answer", { userId, accept }),
+    },
+    processes: () => invoke("diagnostics_processes"),
+    links: {
+      first: () => invoke("start_link"),
+      onOpen: (cb) => on("link:open", cb),
     },
     migrateFromElectron: () => invoke("migrate_electron"),
   };

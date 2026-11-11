@@ -50,7 +50,10 @@ html.is-phone .mini-center .round-btn.ghost, html.is-phone .mini-center .round-b
 html.is-phone .mini-left { gap: 2px; }
 
 /* now playing: one column, cover and controls first, lyrics below */
-html.is-phone .now { display: flex; flex-direction: column; gap: 18px; padding: calc(var(--safe-top) + 4px) 4px 0; overflow-y: auto; height: 100%; }
+/* the sides leave room for the cover's (smaller) shadow: the page scrolls, so it cuts at its edges */
+html.is-phone .now { display: flex; flex-direction: column; gap: 18px; padding: calc(var(--safe-top) + 4px) 16px 0; overflow-y: auto; height: 100%; }
+html.is-phone .now-left { margin: 0; padding: 0 0 12px; }
+html.is-phone .now-art, html.is-phone .app:not(.no-glow) .now-art { box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5); }
 /* the cover and controls keep their full height: shrunk, they spilled under the lyrics,
    which then covered the buttons (sound and speed could not be opened) */
 html.is-phone .now-left { overflow: visible; justify-content: flex-start; flex: 0 0 auto; min-height: auto; }
@@ -106,3 +109,11 @@ html.is-phone .queue-sheet .queue { padding-bottom: 16px; }
 /* no blur on the lyric lines: every blurred line is redrawn by the phone's graphics chip,
    which costs battery and can make the page stutter */
 html.is-phone .lyric-line { filter: none !important; }
+
+/* listening together: the session opens from the player's tools (the bottom bar is full),
+   and what floats up stays clear of the player and the bar */
+html.is-phone .rail-jam { display: none; }
+html.is-phone .jam-float { right: 12px; bottom: calc(var(--nav-h) + var(--mini-h) + var(--safe-bottom) + 24px); }
+html.is-phone .jam-asks { top: calc(env(safe-area-inset-top, 0px) + 12px); }
+html.is-phone .jam-ask { flex-wrap: wrap; }
+html.is-phone .jam-ask-text { flex-basis: calc(100% - 48px); }

@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- the thinnest home-screen player: half as tall as the one-row one, everything in one line.
+     The cell of the home screen stays its own height; the strip sits in its middle -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <LinearLayout
+        android:id="@+id/widget_root"
+        android:layout_width="match_parent"
+        android:layout_height="44dp"
+        android:layout_gravity="center_vertical"
+        android:background="@drawable/widget_bg_strip"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="6dp"
+        android:paddingEnd="6dp">
+
+        <ImageView
+            android:id="@+id/widget_cover"
+            android:layout_width="32dp"
+            android:layout_height="32dp"
+            android:contentDescription="@null"
+            android:scaleType="fitCenter"
+            android:src="@drawable/widget_cover_empty" />
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:layout_marginEnd="4dp"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/widget_title"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:ellipsize="end"
+                android:fontFamily="sans-serif-medium"
+                android:includeFontPadding="false"
+                android:maxLines="1"
+                android:text="EvPlayer"
+                android:textColor="#FFFFFFFF"
+                android:textSize="13sp" />
+
+            <TextView
+                android:id="@+id/widget_artist"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="1dp"
+                android:ellipsize="end"
+                android:includeFontPadding="false"
+                android:maxLines="1"
+                android:text="@string/widget_idle"
+                android:textColor="#B3FFFFFF"
+                android:textSize="11sp" />
+        </LinearLayout>
+
+        <ImageButton
+            android:id="@+id/widget_prev"
+            android:layout_width="32dp"
+            android:layout_height="32dp"
+            android:background="@drawable/widget_btn_strip"
+            android:contentDescription="Предыдущий"
+            android:padding="7dp"
+            android:scaleType="fitCenter"
+            android:src="@drawable/ic_w_prev" />
+        <ImageButton
+            android:id="@+id/widget_toggle"
+            android:layout_width="32dp"
+            android:layout_height="32dp"
+            android:layout_marginStart="2dp"
+            android:background="@drawable/widget_btn_strip"
+            android:contentDescription="Играть"
+            android:padding="7dp"
+            android:scaleType="fitCenter"
+            android:src="@drawable/ic_w_play" />
+        <ImageButton
+            android:id="@+id/widget_next"
+            android:layout_width="32dp"
+            android:layout_height="32dp"
+            android:layout_marginStart="2dp"
+            android:background="@drawable/widget_btn_strip"
+            android:contentDescription="Следующий"
+            android:padding="7dp"
+            android:scaleType="fitCenter"
+            android:src="@drawable/ic_w_next" />
+        <ImageButton
+            android:id="@+id/widget_like"
+            android:layout_width="32dp"
+            android:layout_height="32dp"
+            android:layout_marginStart="2dp"
+            android:background="@drawable/widget_btn_strip"
+            android:contentDescription="Нравится"
+            android:padding="7dp"
+            android:scaleType="fitCenter"
+            android:src="@drawable/ic_heart" />
+    </LinearLayout>
+</FrameLayout>
