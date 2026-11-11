@@ -92,12 +92,16 @@ export default function TrackRow({ track, queue, index, addedAt, menu, number, r
       >
         {liked ? <IconHeartFill size={17} /> : <IconHeart size={17} />}
       </button>
-      {(kept || saving !== undefined) && (
-        <span className={`row-kept${kept ? "" : " is-saving"}`} data-tip={kept ? "Скачан, играет без интернета" : "Скачивается…"}>
-          {kept ? <IconOffline size={15} /> : <span className="spinner" aria-hidden="true" />}
-        </span>
-      )}
-      <span className="track-time">{track.durationMs > 0 ? formatTime(track.durationMs) : ""}</span>
+      {/* the mark sits in the time cell: as a cell of its own it was one more than the grid has
+          columns, and a downloaded song's row grew to two lines */}
+      <span className="track-time">
+        {(kept || saving !== undefined) && (
+          <span className={`row-kept${kept ? "" : " is-saving"}`} data-tip={kept ? "Скачан, играет без интернета" : "Скачивается…"}>
+            {kept ? <IconOffline size={15} /> : <span className="spinner" aria-hidden="true" />}
+          </span>
+        )}
+        {track.durationMs > 0 ? formatTime(track.durationMs) : ""}
+      </span>
       <button
         type="button"
         className="row-icon"

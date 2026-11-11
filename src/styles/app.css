@@ -169,6 +169,7 @@ img { display: block; max-width: 100%; }
 .track-title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .track-artist { color: var(--ink-2); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .track-plays, .track-time, .track-date { color: var(--ink-3); font-size: 13px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.track-time { display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
 .track-plays { max-width: 220px; overflow: hidden; text-overflow: ellipsis; text-align: right; }
 .track-time { text-align: right; }
 .row-icon { width: 34px; height: 34px; border-radius: 11px; display: flex; align-items: center; justify-content: center; color: var(--ink-3); opacity: 0; transition: opacity 120ms ease, background 120ms ease, color 120ms ease; }
@@ -176,6 +177,7 @@ img { display: block; max-width: 100%; }
 .row-icon:hover { background: var(--hover); color: var(--ink); }
 .row-icon.is-liked { color: var(--accent); }
 .row-kept { width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; color: var(--accent); flex-shrink: 0; }
+.track-time .row-kept { width: 16px; }
 .row-kept.is-saving { color: var(--ink-3); }
 .row-kept .spinner { width: 13px; height: 13px; border-width: 2px; }
 .track-head {
