@@ -1,7 +1,8 @@
 //! What the app's processes take, for the diagnostics page: memory and processor time. On
 //! Windows the app is this process plus the WebView2 processes it started (the page, the
-//! graphics, the network…), found as children of this one; elsewhere only this process is read
-//! (on a phone the page runs in Android's own WebView processes, which an app cannot look into).
+//! graphics, the network…), found as children of this one; on Linux likewise the WebKitGTK
+//! processes it started. On a phone only this process is read: the page runs in Android's own
+//! WebView processes, which an app cannot look into.
 
 use serde::Serialize;
 
@@ -107,26 +108,89 @@ unsafe fn own_memory(handle: windows_sys::Win32::Foundation::HANDLE) -> u64 {
     }
 }
 
-/// A "VmRSS:   1234 kB" line of /proc/self/status, in bytes.
+/// A "RssAnon:   1234 kB" line of /proc/<pid>/status, in bytes.
 #[cfg(not(windows))]
 fn status_kb(status: &str, key: &str) -> Option<u64> {
     status.lines().find_map(|l| l.strip_prefix(key)).and_then(|v| v.trim().trim_end_matches("kB").trim().parse::<u64>().ok()).map(|kb| kb * 1024)
 }
 
+/// The parent and processor time of a process, from /proc/<pid>/stat: the fields after the
+/// name in brackets, where the parent is the 2nd and utime and stime the 12th and 13th.
 #[cfg(not(windows))]
-pub fn processes() -> Vec<ProcessInfo> {
-    // /proc/self: the process's own resident memory (not the libraries it shares) from status,
-    // processor time from stat (in clock ticks)
-    let status = std::fs::read_to_string("/proc/self/status").unwrap_or_default();
-    let memory = status_kb(&status, "RssAnon:").or_else(|| status_kb(&status, "VmRSS:")).unwrap_or(0);
-    let stat = std::fs::read_to_string("/proc/self/stat").unwrap_or_default();
-    // fields after the name in brackets: utime and stime are the 12th and 13th of them
-    let after = stat.rsplit_once(')').map(|(_, rest)| rest).unwrap_or("");
+fn parent_and_cpu(stat: &str) -> Option<(u32, u64)> {
+    let after = stat.rsplit_once(')')?.1;
     let fields: Vec<&str> = after.split_whitespace().collect();
+    let parent = fields.get(1)?.parse::<u32>().ok()?;
     let tick = |i: usize| fields.get(i).and_then(|v| v.parse::<u64>().ok()).unwrap_or(0);
     // 100 ticks a second is what Linux and Android use
-    let cpu_ms = (tick(11) + tick(12)) * 10;
-    vec![ProcessInfo { pid: std::process::id(), name: "evplayer".into(), memory, cpu_ms, kind: None }]
+    Some((parent, (tick(11) + tick(12)) * 10))
+}
+
+/// What a WebKitGTK helper does, by its program name.
+#[cfg(not(windows))]
+fn webkit_kind(name: &str) -> Option<String> {
+    let kind = if name.starts_with("WebKitWebProcess") {
+        "renderer"
+    } else if name.starts_with("WebKitNetworkProcess") {
+        "network"
+    } else if name.starts_with("WebKitGPUProcess") {
+        "gpu"
+    } else {
+        return None;
+    };
+    Some(kind.to_string())
+}
+
+/// Linux: this process and everything started from it, read from /proc. WebKitGTK runs the page
+/// and the network in processes of its own (sometimes inside its bubblewrap sandbox), all
+/// started from this one. On Android the page runs in the system WebView's own processes, which
+/// belong to another app and cannot be read: only this process shows.
+///
+/// Memory is the resident memory that is not file-backed (RssAnon): the libraries every process
+/// maps, and the shared buffers WebKit passes between its processes, are left out, so nothing
+/// is counted twice. That is close to what a system monitor shows as a process's memory.
+#[cfg(not(windows))]
+pub fn processes() -> Vec<ProcessInfo> {
+    use std::collections::HashMap;
+
+    let me = std::process::id();
+    let read = |pid: u32, file: &str| std::fs::read_to_string(format!("/proc/{pid}/{file}")).ok();
+    // every process with its parent (only those this user may read)
+    let mut parents: HashMap<u32, u32> = HashMap::new();
+    if let Ok(dir) = std::fs::read_dir("/proc") {
+        for entry in dir.flatten() {
+            let Some(pid) = entry.file_name().to_str().and_then(|n| n.parse::<u32>().ok()) else { continue };
+            if let Some((parent, _)) = read(pid, "stat").as_deref().and_then(parent_and_cpu) {
+                parents.insert(pid, parent);
+            }
+        }
+    }
+    let mut ours = vec![me];
+    let mut at = 0;
+    while at < ours.len() {
+        let pid = ours[at];
+        let mut kids: Vec<u32> = parents.iter().filter(|(child, parent)| **parent == pid && !ours.contains(*child)).map(|(child, _)| *child).collect();
+        kids.sort_unstable();
+        ours.extend(kids);
+        at += 1;
+    }
+
+    ours.into_iter()
+        .filter_map(|pid| {
+            let status = read(pid, "status")?;
+            let cpu_ms = read(pid, "stat").as_deref().and_then(parent_and_cpu).map(|(_, cpu)| cpu).unwrap_or(0);
+            let memory = status_kb(&status, "RssAnon:").or_else(|| status_kb(&status, "VmRSS:")).unwrap_or(0);
+            // the program's own name: "comm" is cut at 15 letters (WebKitWebProces)
+            let program = read(pid, "cmdline")
+                .and_then(|c| c.split('\0').next().map(|arg0| arg0.rsplit('/').next().unwrap_or(arg0).to_string()))
+                .filter(|n| !n.is_empty())
+                .or_else(|| read(pid, "comm").map(|c| c.trim().to_string()))
+                .unwrap_or_default();
+            let name = if pid == me { "evplayer".to_string() } else { program };
+            let kind = webkit_kind(&name);
+            Some(ProcessInfo { pid, name, memory, cpu_ms, kind })
+        })
+        .collect()
 }
 
 /// What each WebView2 process is for, as WebView2 itself tells: a page, the graphics, the
@@ -190,5 +254,17 @@ mod tests {
         let list = super::processes();
         let me = list.iter().find(|p| p.pid == std::process::id()).expect("this process");
         assert!(me.memory > 0);
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn reads_proc_stat() {
+        // a name with spaces and brackets must not shift the fields
+        let stat = "4242 (Web Content (x)) S 100 4242 4242 0 -1 4194560 10 0 0 0 250 50 0 0 20 0 1 0 1 1 1";
+        assert_eq!(super::parent_and_cpu(stat), Some((100, 3000)));
+        assert_eq!(super::status_kb("Name:\tx\nRssAnon:\t  2048 kB\n", "RssAnon:"), Some(2048 * 1024));
+        assert_eq!(super::webkit_kind("WebKitWebProcess").as_deref(), Some("renderer"));
+        assert_eq!(super::webkit_kind("WebKitNetworkProcess").as_deref(), Some("network"));
+        assert_eq!(super::webkit_kind("bwrap"), None);
     }
 }
