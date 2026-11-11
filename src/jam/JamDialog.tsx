@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import QRCode from "qrcode";
 import Dialog from "@/ui/components/Dialog";
 import { Segmented, Toggle } from "@/ui/components/Controls";
@@ -29,6 +29,7 @@ export default function JamDialog() {
   const controlMode = useJam((s) => s.controlMode);
   const participants = useJam((s) => s.participants);
   const myProfile = useJam((s) => s.myProfile);
+  const chatMessages = useJam((s) => s.chatMessages);
   const setProfile = useJam((s) => s.setProfile);
   const setOpen = useJam((s) => s.setOpen);
 
@@ -38,6 +39,16 @@ export default function JamDialog() {
   const [showQr, setShowQr] = useState(false);
   const [qrDataUrl, setQrDataUrl] = useState("");
   const [chatInput, setChatInput] = useState("");
+  const [lastClickedEmoji, setLastClickedEmoji] = useState<string | null>(null);
+
+  const chatEndRef = useRef<HTMLDivElement | null>(null);
+
+  // Auto-scroll chat to latest message
+  useEffect(() => {
+    if (chatEndRef.current) {
+      chatEndRef.current.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [chatMessages.length, isOpen]);
 
   // Generate QR code when active
   useEffect(() => {
@@ -46,7 +57,7 @@ export default function JamDialog() {
       QRCode.toDataURL(shareUrl, {
         margin: 1,
         width: 180,
-        color: { dark: "#06201d", light: "#ffffff" },
+        color: { dark: "#06201d", light: "#eef7f4" },
       })
         .then(setQrDataUrl)
         .catch(() => setQrDataUrl(""));
@@ -86,6 +97,12 @@ export default function JamDialog() {
     });
   };
 
+  const handleReactionClick = (emoji: string) => {
+    setLastClickedEmoji(emoji);
+    jamEngine.sendReaction(emoji);
+    setTimeout(() => setLastClickedEmoji(null), 400);
+  };
+
   const handleSendChat = (e: React.FormEvent) => {
     e.preventDefault();
     if (!chatInput.trim()) return;
@@ -98,16 +115,16 @@ export default function JamDialog() {
       {!active ? (
         <div className="jam-dialog-body">
           <p className="jam-intro">
-            Слушайте музыку вместе с друзьями в реальном времени, как в <strong>Spotify Jam</strong>. Синхронное воспроизведение, общая очередь и живые реакции!
+            Слушайте музыку синхронно с друзьями в реальном времени. Общая очередь воспроизведения, мгновенное переключение, живые реакции и чат.
           </p>
 
-          <div className="jam-profile-section">
-            <label className="jam-field-label" htmlFor="jam-user-name">Ваш профиль в сессии</label>
+          <div className="set-card jam-profile-card">
+            <span className="jam-card-label">Ваш профиль в сессии</span>
             <div className="jam-profile-row">
               <input
                 id="jam-user-name"
                 type="text"
-                className="input jam-name-input"
+                className="filter-input jam-name-input"
                 placeholder="Ваше имя"
                 maxLength={24}
                 value={myProfile.name}
@@ -142,97 +159,111 @@ export default function JamDialog() {
 
           {tab === "host" ? (
             <div className="jam-tab-content">
-              <div className="jam-setting-box">
+              <div className="set-card jam-setting-box">
                 <Toggle
                   id="jam-ctrl-mode"
                   title="Все участники могут управлять музыкой"
-                  hint="Если выключено — только вы можете переключать треки и ставить на паузу, а друзья только добавляют музыку в очередь."
+                  hint="Если выключено — только вы можете переключать треки и ставить на паузу, а друзья только добавляют треки в очередь."
                   checked={hostControlMode === "anyone"}
                   onChange={(checked) => setHostControlMode(checked ? "anyone" : "host_only")}
                 />
               </div>
 
-              <button
-                type="button"
-                className="btn primary jam-action-btn"
-                disabled={status === "hosting"}
-                onClick={handleStartHost}
-              >
-                {status === "hosting" ? <span className="spinner" /> : <><IconJam size={18} /> Создать сессию Jam</>}
-              </button>
+              <div className="dialog-actions">
+                <button
+                  type="button"
+                  className="btn primary jam-action-btn"
+                  disabled={status === "hosting"}
+                  onClick={handleStartHost}
+                >
+                  {status === "hosting" ? (
+                    <span className="spinner small-spin" />
+                  ) : (
+                    <>
+                      <IconJam size={18} /> Создать сессию Jam
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
           ) : (
             <div className="jam-tab-content">
-              <div className="jam-field">
-                <label className="jam-field-label" htmlFor="jam-join-input">Код сессии</label>
-                <input
-                  id="jam-join-input"
-                  type="text"
-                  className="input jam-code-input"
-                  placeholder="Например: JAM-7K9P"
-                  value={joinCode}
-                  maxLength={16}
-                  onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
-                  onKeyDown={(e) => e.key === "Enter" && handleJoin()}
-                />
-                <span className="jam-field-hint">Введите 4-буквенный код или полный код JAM-XXXX от друга</span>
+              <div className="set-card jam-setting-box">
+                <label className="field">
+                  <span>Код сессии</span>
+                  <input
+                    id="jam-join-input"
+                    type="text"
+                    className="filter-input jam-code-input"
+                    placeholder="Например: JAM-7K9P"
+                    value={joinCode}
+                    maxLength={16}
+                    onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
+                    onKeyDown={(e) => e.key === "Enter" && handleJoin()}
+                  />
+                  <span className="jam-field-hint">Введите код комнаты или код из ссылки приглашения</span>
+                </label>
               </div>
 
-              <button
-                type="button"
-                className="btn primary jam-action-btn"
-                disabled={status === "joining"}
-                onClick={handleJoin}
-              >
-                {status === "joining" ? <span className="spinner" /> : "Присоединиться к сессии"}
-              </button>
+              <div className="dialog-actions">
+                <button
+                  type="button"
+                  className="btn primary jam-action-btn"
+                  disabled={status === "joining"}
+                  onClick={handleJoin}
+                >
+                  {status === "joining" ? <span className="spinner small-spin" /> : "Присоединиться"}
+                </button>
+              </div>
             </div>
           )}
         </div>
       ) : (
         <div className="jam-dialog-body jam-session-active">
           {/* Active session top card */}
-          <div className="jam-room-card glass">
-            <div className="jam-room-status">
-              <span className="jam-live-pulse" />
-              <div className="jam-room-meta">
-                <span className="jam-room-state-text">Сессия активна</span>
-                <span className="jam-room-host-sub">
-                  {isHost ? "Вы организатор сессии" : `Организатор: ${hostName}`}
-                </span>
+          <div className="set-card jam-room-card">
+            <div className="jam-room-header">
+              <div className="jam-room-status">
+                <span className="jam-live-pulse" />
+                <div className="jam-room-meta">
+                  <span className="jam-room-state-text">Сессия активна</span>
+                  <span className="jam-room-host-sub">
+                    {isHost ? "Вы организатор сессии" : `Организатор: ${hostName}`}
+                  </span>
+                </div>
               </div>
-            </div>
 
-            <div className="jam-code-display">
-              <span className="jam-code-text">{roomCode}</span>
-              <div className="jam-code-buttons">
-                <button
-                  type="button"
-                  className="round-btn soft"
-                  aria-label="Копировать код"
-                  data-tip="Копировать код"
-                  onClick={copyCode}
-                >
-                  <IconCopy size={17} />
-                </button>
-                <button
-                  type="button"
-                  className="round-btn soft"
-                  aria-label="Копировать ссылку"
-                  data-tip="Копировать ссылку"
-                  onClick={copyLink}
-                >
-                  <IconLink size={17} />
-                </button>
-                <button
-                  type="button"
-                  className={`round-btn soft${showQr ? " is-on" : ""}`}
-                  aria-label="QR-код для подключения"
-                  data-tip="QR-код для подключения"
-                  onClick={() => setShowQr(!showQr)}
-                >
-                  <IconQr size={17} />
-                </button>
+              <div className="jam-code-display">
+                <span className="jam-code-text">{roomCode}</span>
+                <div className="jam-code-buttons">
+                  <button
+                    type="button"
+                    className="icon-btn"
+                    aria-label="Копировать код"
+                    data-tip="Копировать код"
+                    onClick={copyCode}
+                  >
+                    <IconCopy size={16} />
+                  </button>
+                  <button
+                    type="button"
+                    className="icon-btn"
+                    aria-label="Копировать ссылку"
+                    data-tip="Копировать ссылку"
+                    onClick={copyLink}
+                  >
+                    <IconLink size={16} />
+                  </button>
+                  <button
+                    type="button"
+                    className={`icon-btn${showQr ? " is-active" : ""}`}
+                    aria-label="QR-код для подключения"
+                    data-tip="QR-код для подключения"
+                    onClick={() => setShowQr(!showQr)}
+                  >
+                    <IconQr size={16} />
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -245,15 +276,15 @@ export default function JamDialog() {
           </div>
 
           {/* Quick Reaction buttons */}
-          <div className="jam-section">
-            <span className="jam-section-title">Быстрые реакции</span>
+          <div className="jam-reactions-bar">
+            <span className="jam-section-subtitle">Быстрые реакции:</span>
             <div className="jam-reactions-row">
               {JAM_REACTIONS.map((emoji) => (
                 <button
                   key={emoji}
                   type="button"
-                  className="jam-reaction-btn"
-                  onClick={() => jamEngine.sendReaction(emoji)}
+                  className={`jam-reaction-btn${lastClickedEmoji === emoji ? " is-clicked" : ""}`}
+                  onClick={() => handleReactionClick(emoji)}
                   aria-label={`Отправить ${emoji}`}
                 >
                   {emoji}
@@ -262,81 +293,133 @@ export default function JamDialog() {
             </div>
           </div>
 
-          {/* Participants list */}
-          <div className="jam-section">
-            <span className="jam-section-title">
-              Участники ({participants.length})
-            </span>
-            <div className="jam-participants-list">
-              {participants.map((p) => {
-                const isMe = isHost ? p.isHost : p.name === myProfile.name;
-                return (
-                  <div key={p.id} className="jam-participant-item">
-                    <span
-                      className="jam-participant-avatar"
-                      style={{ backgroundColor: p.avatarColor }}
-                    >
-                      {p.name.slice(0, 1).toUpperCase()}
-                    </span>
-                    <span className="jam-participant-name">
-                      {p.name}
-                      {isMe && <span className="jam-badge self">Вы</span>}
-                      {p.isHost && <span className="jam-badge host">👑 Хост</span>}
-                    </span>
-
-                    {isHost && !p.isHost && (
-                      <button
-                        type="button"
-                        className="jam-kick-btn"
-                        aria-label={`Исключить ${p.name}`}
-                        data-tip="Исключить из сессии"
-                        onClick={() => jamEngine.kickParticipant(p.id)}
+          {/* Grid layout: Participants on left, Live Chat on right */}
+          <div className="jam-columns-layout">
+            {/* Participants column */}
+            <div className="jam-column jam-participants-column">
+              <span className="jam-section-subtitle">Участники ({participants.length})</span>
+              <div className="jam-participants-list">
+                {participants.map((p) => {
+                  const isMe = isHost ? p.isHost : p.name === myProfile.name;
+                  return (
+                    <div key={p.id} className="jam-participant-item">
+                      <span
+                        className="jam-participant-avatar"
+                        style={{ backgroundColor: p.avatarColor }}
                       >
-                        <IconClose size={14} />
-                      </button>
-                    )}
-                  </div>
-                );
-              })}
+                        {p.name.slice(0, 1).toUpperCase()}
+                      </span>
+                      <div className="jam-participant-info">
+                        <span className="jam-participant-name">{p.name}</span>
+                        <div className="jam-participant-badges">
+                          {p.isHost && <span className="jam-badge host">👑 Организатор</span>}
+                          {isMe && <span className="jam-badge self">Вы</span>}
+                        </div>
+                      </div>
+
+                      {isHost && !p.isHost && (
+                        <button
+                          type="button"
+                          className="icon-btn jam-kick-btn"
+                          aria-label={`Исключить ${p.name}`}
+                          data-tip="Исключить из сессии"
+                          onClick={() => jamEngine.kickParticipant(p.id)}
+                        >
+                          <IconClose size={14} />
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Live Chat column */}
+            <div className="jam-column jam-chat-column">
+              <span className="jam-section-subtitle">Чат сессии</span>
+              <div className="jam-chat-box">
+                <div className="jam-chat-messages">
+                  {chatMessages.length === 0 ? (
+                    <div className="jam-chat-empty">
+                      Напишите сообщение или отправьте реакцию участникам!
+                    </div>
+                  ) : (
+                    chatMessages.map((m) => {
+                      const isMyMsg = m.fromName === myProfile.name;
+                      const timeStr = new Date(m.timestamp).toLocaleTimeString([], {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      });
+                      return (
+                        <div
+                          key={m.id}
+                          className={`jam-chat-item${isMyMsg ? " is-self" : ""}`}
+                        >
+                          <div className="jam-chat-item-header">
+                            <span className="jam-chat-item-author">{m.fromName}</span>
+                            <span className="jam-chat-item-time">{timeStr}</span>
+                          </div>
+                          <div className="jam-chat-item-body">{m.text}</div>
+                        </div>
+                      );
+                    })
+                  )}
+                  <div ref={chatEndRef} />
+                </div>
+
+                <form className="jam-chat-form" onSubmit={handleSendChat}>
+                  <input
+                    type="text"
+                    className="filter-input jam-chat-input"
+                    placeholder="Написать сообщение…"
+                    maxLength={150}
+                    value={chatInput}
+                    onChange={(e) => setChatInput(e.target.value)}
+                  />
+                  <button
+                    type="submit"
+                    className="btn primary jam-chat-send-btn"
+                    disabled={!chatInput.trim()}
+                  >
+                    Отправить
+                  </button>
+                </form>
+              </div>
             </div>
           </div>
 
           {/* Host session settings */}
           {isHost && (
-            <div className="jam-section jam-host-controls">
+            <div className="set-card jam-host-controls">
               <Toggle
                 id="jam-host-ctrl-toggle"
                 title="Все участники управляют музыкой"
-                hint={controlMode === "anyone" ? "Участники могут переключать треки и ставить на паузу" : "Только вы управляете воспроизведением, другие только добавляют в очередь"}
+                hint={
+                  controlMode === "anyone"
+                    ? "Участники могут переключать треки и ставить на паузу"
+                    : "Только вы управляете воспроизведением, другие только добавляют музыку в очередь"
+                }
                 checked={controlMode === "anyone"}
                 onChange={(checked) => jamEngine.setControlMode(checked ? "anyone" : "host_only")}
               />
             </div>
           )}
 
-          {/* Quick chat message */}
-          <form className="jam-chat-form" onSubmit={handleSendChat}>
-            <input
-              type="text"
-              className="input jam-chat-input"
-              placeholder="Отправить сообщение участникам…"
-              maxLength={150}
-              value={chatInput}
-              onChange={(e) => setChatInput(e.target.value)}
-            />
-            <button type="submit" className="btn soft" disabled={!chatInput.trim()}>
-              Отправить
-            </button>
-          </form>
-
-          {/* Leave / End button */}
-          <div className="jam-footer-actions">
+          {/* Footer Actions */}
+          <div className="dialog-actions jam-dialog-actions">
             <button
               type="button"
-              className="btn danger jam-leave-btn"
+              className="btn ghost"
+              onClick={() => setOpen(false)}
+            >
+              Свернуть
+            </button>
+            <button
+              type="button"
+              className="btn danger"
               onClick={() => jamEngine.leaveOrEndSession()}
             >
-              {isHost ? "Завершить сессию для всех" : "Покинуть сессию"}
+              {isHost ? "Завершить сессию" : "Выйти из сессии"}
             </button>
           </div>
         </div>

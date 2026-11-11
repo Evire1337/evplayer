@@ -14,8 +14,8 @@ export default function ReactionOverlay() {
   }, [reactions.length, chatMessages.length]);
 
   const now = Date.now();
-  const visibleReactions = reactions.filter((r) => now - r.timestamp < 4500);
-  const visibleChat = chatMessages.filter((m) => now - m.timestamp < 6000);
+  const visibleReactions = reactions.filter((r) => now - (r.receivedAt || r.timestamp) < 4500);
+  const visibleChat = chatMessages.filter((m) => now - (m.receivedAt || m.timestamp) < 6000);
 
   if (visibleReactions.length === 0 && visibleChat.length === 0) return null;
 
@@ -24,8 +24,8 @@ export default function ReactionOverlay() {
       {/* Floating emoji reactions */}
       <div className="jam-reactions-stream">
         {visibleReactions.map((r, index) => {
-          const age = now - r.timestamp;
-          const leftOffset = (index * 28) % 120;
+          const age = now - (r.receivedAt || r.timestamp);
+          const leftOffset = (index * 26) % 110;
           return (
             <div
               key={r.id}
@@ -46,7 +46,7 @@ export default function ReactionOverlay() {
       {/* Floating chat messages */}
       <div className="jam-chat-stream">
         {visibleChat.map((m) => {
-          const age = now - m.timestamp;
+          const age = now - (m.receivedAt || m.timestamp);
           return (
             <div
               key={m.id}

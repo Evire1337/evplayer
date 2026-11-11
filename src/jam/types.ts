@@ -16,6 +16,7 @@ export interface JamReaction {
   emoji: string;
   fromName: string;
   timestamp: number;
+  receivedAt?: number;
 }
 
 export interface JamChatMessage {
@@ -23,6 +24,7 @@ export interface JamChatMessage {
   text: string;
   fromName: string;
   timestamp: number;
+  receivedAt?: number;
 }
 
 export interface JamSyncPayload {
@@ -60,19 +62,20 @@ export type JamMessage = JamMessageContent & { senderId: string };
 
 export const DEFAULT_JAM_RELAYS = [
   "wss://relay.primal.net",
-  "wss://nostr.wine",
+  "wss://relay.snort.social",
+  "wss://offchain.pub",
 ];
 
 export const JAM_AVATAR_COLORS = [
-  "#1db954", // Spotify green
-  "#ff5500", // SoundCloud orange
+  "#6ff0c4", // evplayer accent mint
+  "#ff9a3c", // Amber / orange
   "#3b82f6", // Blue
   "#8b5cf6", // Violet
   "#ec4899", // Pink
   "#10b981", // Emerald
-  "#f59e0b", // Amber
   "#06b6d4", // Cyan
-  "#ef4444", // Red
+  "#ef4444", // Coral red
+  "#f59e0b", // Warm amber
   "#a855f7", // Purple
 ];
 

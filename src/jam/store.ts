@@ -118,16 +118,29 @@ export const useJam = create<JamStoreState>((set) => ({
 
   addReaction: (reaction) =>
     set((state) => {
-      // keep last 10 reactions, filter out older than 10 seconds
       const now = Date.now();
-      const reactions = [...state.reactions.filter((r) => now - r.timestamp < 10000), reaction].slice(-10);
+      const withLocalTime = {
+        ...reaction,
+        receivedAt: reaction.receivedAt || now,
+      };
+      // keep last 20 reactions, prune older than 12 seconds
+      const reactions = [
+        ...state.reactions.filter((r) => now - (r.receivedAt || r.timestamp) < 12000),
+        withLocalTime,
+      ].slice(-20);
       return { reactions };
     }),
 
   addChatMessage: (msg) =>
-    set((state) => ({
-      chatMessages: [...state.chatMessages.slice(-29), msg],
-    })),
+    set((state) => {
+      const withLocalTime = {
+        ...msg,
+        receivedAt: msg.receivedAt || Date.now(),
+      };
+      return {
+        chatMessages: [...state.chatMessages.slice(-49), withLocalTime],
+      };
+    }),
 
   recordTrackAddedBy: (trackId, addedBy) =>
     set((state) => ({

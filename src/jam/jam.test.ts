@@ -82,7 +82,10 @@ describe("jam store and flow", () => {
       timestamp: Date.now(),
     };
     useJam.getState().addReaction(reaction);
-    expect(useJam.getState().reactions).toContainEqual(reaction);
+    const r = useJam.getState().reactions[0];
+    expect(r.emoji).toBe("🔥");
+    expect(r.fromName).toBe("Alice");
+    expect(r.receivedAt).toBeGreaterThan(0);
   });
 
   it("records track attribution in shared queue", () => {

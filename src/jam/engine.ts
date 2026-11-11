@@ -27,6 +27,7 @@ class JamEngine {
   private myId: string = "";
   private currentRoomTag: string = "";
   private seenEvents = new Set<string>();
+  private seenMsgIds = new Set<string>();
   private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
   private isRemoteAction = false;
   private joinTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -314,15 +315,20 @@ class JamEngine {
   // --- CONNECTING TO RELAYS ---
 
   private async ensureRelaysConnected(): Promise<Relay[]> {
-    if (this.relays.some((r) => r.connected)) {
-      return this.relays.filter((r) => r.connected);
-    }
+    const live = this.relays.filter((r) => r.connected);
+    if (live.length >= 2) return live;
 
-    const connected: Relay[] = [];
+    const connected: Relay[] = [...live];
+    const existingUrls = new Set(live.map((r) => r.url));
+    const toConnect = DEFAULT_JAM_RELAYS.filter((u) => !existingUrls.has(u));
+
     await Promise.all(
-      DEFAULT_JAM_RELAYS.map(async (url) => {
+      toConnect.map(async (url) => {
         try {
-          const r = await Relay.connect(url);
+          const r = await Promise.race([
+            Relay.connect(url),
+            new Promise<never>((_, reject) => setTimeout(() => reject(new Error("timeout")), 4000)),
+          ]);
           connected.push(r);
         } catch {
           // fallback relay if one is down
@@ -354,7 +360,7 @@ class JamEngine {
       );
 
       this.seenEvents.add(event.id);
-      await Promise.any(activeRelays.map((r) => r.publish(event)));
+      await Promise.allSettled(activeRelays.map((r) => r.publish(event)));
     } catch {
       // ignore transient send failures
     }
@@ -376,6 +382,14 @@ class JamEngine {
           try {
             const msg = JSON.parse(event.content) as JamMessage;
             if (msg.senderId === this.myId) return; // skip own messages
+            if ("id" in msg && typeof msg.id === "string") {
+              if (this.seenMsgIds.has(msg.id)) return;
+              this.seenMsgIds.add(msg.id);
+              if (this.seenMsgIds.size > 800) {
+                const first = this.seenMsgIds.values().next().value;
+                if (first) this.seenMsgIds.delete(first);
+              }
+            }
             this.handleIncomingMessage(msg);
           } catch {
             // ignore malformed message
@@ -590,11 +604,13 @@ class JamEngine {
 
       case "reaction": {
         jam.addReaction(msg);
+        void this.publish(msg);
         break;
       }
 
       case "chat": {
         jam.addChatMessage(msg);
+        void this.publish(msg);
         break;
       }
 
@@ -796,8 +812,10 @@ class JamEngine {
       emoji,
       fromName: jam.myProfile.name,
       timestamp: Date.now(),
+      receivedAt: Date.now(),
     };
 
+    this.seenMsgIds.add(reaction.id);
     jam.addReaction(reaction);
     void this.publish(reaction);
   }
@@ -812,8 +830,10 @@ class JamEngine {
       text: text.trim().slice(0, 200),
       fromName: jam.myProfile.name,
       timestamp: Date.now(),
+      receivedAt: Date.now(),
     };
 
+    this.seenMsgIds.add(msg.id);
     jam.addChatMessage(msg);
     void this.publish(msg);
   }
@@ -924,6 +944,7 @@ class JamEngine {
     this.relays = [];
     this.currentRoomTag = "";
     this.seenEvents.clear();
+    this.seenMsgIds.clear();
 
     useJam.getState().resetSession();
   }
