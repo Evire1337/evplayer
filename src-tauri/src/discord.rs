@@ -221,16 +221,57 @@ impl Pipe for std::fs::File {
     }
 }
 
+/// the Unix socket with what was read ahead to see whether anything came (`peek` is not in
+/// stable Rust): reads serve that first
 #[cfg(unix)]
-impl Pipe for std::os::unix::net::UnixStream {
+struct UnixPipe {
+    stream: std::os::unix::net::UnixStream,
+    ahead: std::collections::VecDeque<u8>,
+}
+
+#[cfg(unix)]
+impl Read for UnixPipe {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        if self.ahead.is_empty() {
+            return self.stream.read(buf);
+        }
+        let n = buf.len().min(self.ahead.len());
+        for (slot, byte) in buf.iter_mut().zip(self.ahead.drain(..n)) {
+            *slot = byte;
+        }
+        Ok(n)
+    }
+}
+
+#[cfg(unix)]
+impl Write for UnixPipe {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.stream.write(buf)
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.stream.flush()
+    }
+}
+
+#[cfg(unix)]
+impl Pipe for UnixPipe {
     fn pending(&mut self) -> bool {
-        let mut byte = [0u8; 1];
-        if self.set_nonblocking(true).is_err() {
+        if !self.ahead.is_empty() {
+            return true;
+        }
+        if self.stream.set_nonblocking(true).is_err() {
             return false;
         }
-        let seen = self.peek(&mut byte);
-        let _ = self.set_nonblocking(false);
-        matches!(seen, Ok(n) if n > 0)
+        let mut chunk = [0u8; 4096];
+        let got = self.stream.read(&mut chunk);
+        let _ = self.stream.set_nonblocking(false);
+        match got {
+            Ok(n) if n > 0 => {
+                self.ahead.extend(&chunk[..n]);
+                true
+            }
+            _ => false,
+        }
     }
 }
 
@@ -252,7 +293,7 @@ fn open_pipe() -> Option<Box<dyn Pipe>> {
             for dir in [base.clone(), format!("{base}/app/com.discordapp.Discord"), format!("{base}/snap.discord")] {
                 if let Ok(s) = std::os::unix::net::UnixStream::connect(format!("{dir}/discord-ipc-{i}")) {
                     let _ = s.set_read_timeout(Some(Duration::from_secs(10)));
-                    return Some(Box::new(s));
+                    return Some(Box::new(UnixPipe { stream: s, ahead: Default::default() }));
                 }
             }
         }
