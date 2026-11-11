@@ -41,7 +41,7 @@ export default function LibraryPage() {
     [likes, version],
   );
   return (
-    <div className="page">
+    <div className="page is-wide">
       <header className="page-head with-actions">
         <h1 className="display">Библиотека</h1>
         <div className="head-actions">

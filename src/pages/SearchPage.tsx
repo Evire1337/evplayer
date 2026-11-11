@@ -142,7 +142,7 @@ export default function SearchPage() {
   const nothing = tracks.length + artists.length + albums.length + playlists.length === 0;
 
   return (
-    <div className="page">
+    <div className="page is-wide">
       <label className="search-field glass" htmlFor="search">
         <IconSearch size={19} />
         <input
