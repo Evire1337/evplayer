@@ -7,6 +7,7 @@ import { jam } from "./engine";
 import { useJam } from "./store";
 import { inviteLink } from "./protocol";
 import { JAM_COLORS, JAM_REACTIONS, type JamPerson } from "./types";
+import { listeners } from "./JamBanner";
 
 export default function JamDialog() {
   const open = useJam((s) => s.open);
@@ -25,13 +26,27 @@ function copy(text: string, done: string): void {
 
 function Start() {
   const status = useJam((s) => s.status);
+  const waiting = useJam((s) => s.waiting);
   const name = useJam((s) => s.name);
   const color = useJam((s) => s.color);
-  const control = useJam((s) => s.control);
   const setProfile = useJam((s) => s.setProfile);
   const [tab, setTab] = useState<"host" | "join">("host");
   const [code, setCode] = useState("");
   const busy = status === "starting" || status === "joining";
+
+  if (waiting) {
+    return (
+      <div className="jam-body">
+        <div className="set-card jam-waiting">
+          <span className="spinner small-spin" />
+          <span>Организатор решает, пустить ли вас в сессию {useJam.getState().code}…</span>
+        </div>
+        <div className="dialog-actions">
+          <button type="button" className="btn ghost" onClick={() => void jam.leave()}>Не ждать</button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="jam-body">
@@ -52,15 +67,7 @@ function Start() {
       <Segmented label="Что сделать" value={tab} onChange={setTab} options={[{ value: "host", label: "Создать сессию" }, { value: "join", label: "Присоединиться" }]} />
       {tab === "host" ? (
         <>
-          <div className="set-card">
-            <Toggle
-              id="jam-control"
-              title="Все участники управляют музыкой"
-              hint="Если выключено, переключать треки и ставить паузу можете только вы, а друзья добавляют песни в очередь."
-              checked={control === "anyone"}
-              onChange={(on) => useJam.setState({ control: on ? "anyone" : "host" })}
-            />
-          </div>
+          <SessionSettings />
           <div className="dialog-actions">
             <button type="button" className="btn primary" disabled={busy} onClick={() => void jam.start()}>
               {status === "starting" ? <span className="spinner small-spin" /> : <><IconJam size={18} /> Создать сессию</>}
@@ -73,8 +80,8 @@ function Start() {
             <span>Код или ссылка приглашения</span>
             <input
               className="filter-input jam-code-input"
-              placeholder="JAM-7K9P2Q"
-              maxLength={40}
+              placeholder="JAM-7K9P-2QXZ"
+              maxLength={60}
               value={code}
               onChange={(e) => setCode(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && void jam.join(code)}
@@ -85,16 +92,102 @@ function Start() {
               {status === "joining" ? <span className="spinner small-spin" /> : "Присоединиться"}
             </button>
           </div>
+          <PublicList busy={busy} />
         </>
       )}
     </div>
   );
 }
 
+const ACCESS_HINT = {
+  open: "Заходит любой, у кого есть код, ссылка или QR-код",
+  ask: "Каждый, кто пришёл по коду, ждёт, пока вы его пустите",
+  closed: "Новые люди не войдут ни по коду, ни по ссылке",
+} as const;
+
+/** how the session is set up: before it starts (remembered) and, for the host, while it is on */
+function SessionSettings() {
+  const live = useJam((s) => s.status === "live");
+  const control = useJam((s) => (live ? s.control : s.setup.control));
+  const access = useJam((s) => (live ? s.access : s.setup.access));
+  const listed = useJam((s) => (live ? s.listed : s.setup.listed));
+  return (
+    <div className="set-card jam-settings">
+      <Toggle
+        id="jam-control"
+        title="Все участники управляют музыкой"
+        hint={control === "anyone" ? "Друзья включают треки, переключают их и ставят паузу" : "Управляете только вы; друзья добавляют песни в очередь, а своё у них не играет"}
+        checked={control === "anyone"}
+        onChange={(on) => jam.setControl(on ? "anyone" : "host")}
+      />
+      <div className="jam-setting">
+        <span className="jam-setting-title">Вход</span>
+        <Segmented label="Вход" value={access} onChange={(a) => jam.setAccess(a)} options={[{ value: "open", label: "Открыт" }, { value: "ask", label: "По запросу" }, { value: "closed", label: "Закрыт" }]} />
+        <span className="muted small">{ACCESS_HINT[access]}</span>
+      </div>
+      <Toggle
+        id="jam-listed"
+        title="Показывать в общем списке"
+        hint={access === "closed" ? "Закрытая сессия в списке не видна" : "Сессию увидят все, кто открыл «Присоединиться», вместе с числом участников"}
+        checked={listed}
+        onChange={(on) => jam.setListed(on)}
+      />
+    </div>
+  );
+}
+
+/** open sessions others put in the public list (looked at only while this is on screen) */
+function PublicList({ busy }: { busy: boolean }) {
+  const browse = useJam((s) => s.browse);
+  const lobby = useJam((s) => s.lobby);
+  useEffect(() => {
+    if (!browse) return;
+    void jam.browse(true);
+    return () => void jam.browse(false);
+  }, [browse]);
+  return (
+    <div className="jam-public">
+      <Toggle id="jam-browse" title="Открытые сессии" hint="Сессии, которые их организаторы показали всем" checked={browse} onChange={(on) => useJam.setState({ browse: on })} />
+      {browse && (
+        <div className="jam-public-list">
+          {lobby.length === 0 && <p className="muted small jam-public-empty">Пока никого: открытые сессии появятся здесь сами</p>}
+          {lobby.map((l) => (
+            <div key={l.code} className="jam-public-item">
+              <span className="jam-public-text">
+                <span className="jam-public-host">{l.host}</span>
+                <span className="muted small">{listeners(l.people)}{l.song ? ` · ${l.song}` : ""}</span>
+              </span>
+              {l.access === "ask" && <span className="jam-badge">по запросу</span>}
+              <button type="button" className="btn primary" disabled={busy} onClick={() => void jam.join(l.code)}>Войти</button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** people waiting to be let in, for the host */
+function Knocks() {
+  const knocks = useJam((s) => s.knocks);
+  if (!knocks.length) return null;
+  return (
+    <div className="jam-knocks">
+      <span className="jam-label">Хотят войти</span>
+      {knocks.map((k) => (
+        <div key={k.id} className="jam-knock">
+          <span className="jam-avatar" style={{ background: k.color }}>{k.name.slice(0, 1).toUpperCase()}</span>
+          <span className="jam-person-name">{k.name}</span>
+          <button type="button" className="btn primary" onClick={() => jam.admit(k.id)}>Пустить</button>
+          <button type="button" className="btn ghost" onClick={() => jam.turnAway(k.id)}>Нет</button>
+        </div>
+      ))}
+    </div>
+  );
+}
 function Session() {
   const host = useJam((s) => s.host);
   const code = useJam((s) => s.code);
-  const control = useJam((s) => s.control);
   const people = useJam((s) => s.people);
   const setOpen = useJam((s) => s.setOpen);
   const [showQr, setShowQr] = useState(false);
@@ -180,15 +273,10 @@ function Session() {
       </div>
 
       {host && (
-        <div className="set-card">
-          <Toggle
-            id="jam-control-live"
-            title="Все участники управляют музыкой"
-            hint={control === "anyone" ? "Друзья переключают треки и ставят паузу" : "Управляете только вы, друзья добавляют песни в очередь"}
-            checked={control === "anyone"}
-            onChange={(on) => jam.setControl(on ? "anyone" : "host")}
-          />
-        </div>
+        <>
+          <Knocks />
+          <SessionSettings />
+        </>
       )}
 
       <div className="dialog-actions">

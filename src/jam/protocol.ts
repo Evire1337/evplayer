@@ -5,24 +5,32 @@ import type { JamMessage, JamNow, JamQueue } from "./types";
 // where the host's song is right now, and how much of the queue fits in one message.
 
 const CODE_CHARS = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
-const CODE_LENGTH = 6;
+const CODE_LENGTH = 8;
 export const LINK_PREFIX = "evplayer://jam/";
 
-/** a code that is easy to read out (no 0/O, 1/I): JAM-7K9P2Q */
+/** a code that is easy to read out (no 0/O, 1/I), with a trillion of them: JAM-7K9P-2QXZ */
 export function newCode(random: () => number = Math.random): string {
   let code = "";
   for (let i = 0; i < CODE_LENGTH; i++) code += CODE_CHARS[Math.floor(random() * CODE_CHARS.length)];
-  return `JAM-${code}`;
+  return `JAM-${code.slice(0, 4)}-${code.slice(4)}`;
 }
 
 /** a typed or pasted code, or an invite link, as a code ("" when it is not one) */
 export function normalizeCode(input: string): string {
-  const raw = input.trim().replace(/^evplayer:\/\/jam\/?/i, "");
+  const raw = input.trim().replace(/^evplayer:\/\/jam\/?/i, "").split("~")[0];
   const chars = raw.toUpperCase().replace(/[^A-Z0-9]/g, "").replace(/^JAM/, "");
-  return chars.length === CODE_LENGTH ? `JAM-${chars}` : "";
+  return chars.length === CODE_LENGTH ? `JAM-${chars.slice(0, 4)}-${chars.slice(4)}` : "";
+}
+
+/** what comes after "~" in an invite from Discord: the host's pass past "ask first" */
+export function ticketOf(input: string): string | undefined {
+  return input.split("~")[1]?.trim() || undefined;
 }
 
 export const inviteLink = (code: string) => `${LINK_PREFIX}${code}`;
+
+/** the public list of open sessions: a room everyone knows the key of */
+export const LOBBY = "EVPLAYER-LOBBY";
 
 async function sha256(text: string): Promise<Uint8Array> {
   return new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text)));
@@ -72,7 +80,7 @@ export function fitTracks(tracks: Track[], startIndex: number): { tracks: Track[
 /** names count as the same regardless of case and spaces around */
 export const sameName = (a: string, b: string) => a.trim().toLocaleLowerCase() === b.trim().toLocaleLowerCase();
 
-const KINDS = new Set(["join", "here", "leave", "ask", "state", "refuse", "kick", "moved", "end", "chat", "react"]);
+const KINDS = new Set(["join", "here", "leave", "ask", "resync", "state", "refuse", "wait", "kick", "moved", "end", "note", "chat", "react", "open", "gone"]);
 
 /** a message as read off a relay, or null when it is not one of ours */
 export function readMessage(text: string): JamMessage | null {

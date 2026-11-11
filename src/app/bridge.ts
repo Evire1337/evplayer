@@ -8,6 +8,7 @@ import { useLyricsLine } from "@/ui/lyricsLine";
 import { sendPhoneMedia } from "@/platform/androidMedia";
 import { useJam } from "@/jam/store";
 import { JAM_MAX } from "@/jam/types";
+import { jam } from "@/jam/engine";
 
 // Keeps the main process in step with the page: tray menu and options, global keys,
 // Discord status. Also takes commands from the tray and the global keys.
@@ -21,7 +22,9 @@ const SOLO_PARTY = `evplayer-${Math.random().toString(36).slice(2, 10)}`;
  */
 function discordParty() {
   const j = useJam.getState();
-  if (j.status === "live") return { id: j.code, size: j.people.length, max: JAM_MAX, join: j.code };
+  // Discord refuses a join secret that equals the party id. The host's secret carries a pass:
+  // whoever Discord lets in comes in without asking, even when the session lets in on request
+  if (j.status === "live") return { id: `evp:${j.code}`, size: j.people.length, max: JAM_MAX, join: jam.discordPass ? `${j.code}~${jam.discordPass}` : j.code };
   return { id: SOLO_PARTY, size: 1, max: JAM_MAX, join: "evplayer" };
 }
 

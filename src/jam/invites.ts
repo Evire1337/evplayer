@@ -18,7 +18,8 @@ export function openInvite(text: string): void {
   if (!code) return;
   const s = useJam.getState();
   s.setOpen(true);
-  if (s.status === "idle") void jam.join(code);
+  // the whole text: an invite from Discord carries the host's pass after the code
+  if (s.status === "idle") void jam.join(text);
   else if (s.code !== code) toast("Чтобы войти в другую сессию, сначала выйдите из этой");
 }
 

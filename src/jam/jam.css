@@ -71,7 +71,8 @@
 }
 
 /* reactions and messages float up in the corner while the dialog is closed */
-.jam-float { position: fixed; right: 28px; bottom: 110px; z-index: 25; pointer-events: none; display: flex; flex-direction: column; align-items: flex-end; gap: 10px; }
+/* above the dialog too: a reaction is seen whether the session is open or not */
+.jam-float { position: fixed; right: 28px; bottom: 110px; z-index: 45; pointer-events: none; display: flex; flex-direction: column; align-items: flex-end; gap: 10px; }
 .jam-float-reactions { position: relative; width: 140px; height: 180px; }
 .jam-float-reaction { position: absolute; bottom: 0; display: flex; flex-direction: column; align-items: center; animation: jam-float-up 4s ease-out forwards; }
 .jam-float-emoji { font-size: 38px; filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.6)); }
@@ -109,8 +110,25 @@
 html.saver .jam-pulse, html.saver .jam-float-reaction { animation: none; }
 
 /* a friend asked to join in Discord */
-.jam-asks { position: fixed; left: 50%; top: 52px; transform: translateX(-50%); z-index: 26; display: flex; flex-direction: column; gap: 8px; width: min(460px, calc(100vw - 32px)); }
+.jam-asks { position: fixed; left: 50%; top: 52px; transform: translateX(-50%); z-index: 45; display: flex; flex-direction: column; gap: 8px; width: min(460px, calc(100vw - 32px)); }
 .jam-ask { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 18px; box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4); }
 .jam-ask img.jam-avatar { object-fit: cover; }
 .jam-ask-text { flex: 1; min-width: 0; font-size: 13px; overflow-wrap: anywhere; }
 .jam-ask .btn { height: 34px; padding: 0 14px; font-size: 13px; }
+
+/* who gets in, and the public list */
+.jam-settings { display: flex; flex-direction: column; gap: 14px; }
+.jam-setting { display: flex; flex-direction: column; gap: 8px; }
+.jam-setting-title { font-weight: 600; }
+.jam-waiting { display: flex; align-items: center; gap: 12px; }
+.jam-public { display: flex; flex-direction: column; gap: 10px; }
+.jam-public-list { display: flex; flex-direction: column; gap: 6px; max-height: 260px; overflow-y: auto; scrollbar-width: thin; }
+.jam-public-empty { text-align: center; padding: 12px 0; }
+.jam-public-item { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 8px 10px; border-radius: 14px; background: rgba(238, 247, 244, 0.04); border: 1px solid var(--edge); }
+.jam-public-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.jam-public-text > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.jam-public-host { font-weight: 600; }
+.jam-public-item .btn, .jam-knock .btn { height: 32px; padding: 0 12px; font-size: 13px; flex: none; }
+.jam-knocks { display: flex; flex-direction: column; gap: 6px; }
+.jam-knock { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 8px 10px; border-radius: 14px; background: rgba(111, 240, 196, 0.08); border: 1px solid rgba(111, 240, 196, 0.25); }
+.jam-knock .jam-person-name { flex: 1; min-width: 0; }

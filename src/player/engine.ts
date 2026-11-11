@@ -121,10 +121,17 @@ class PlayerEngine {
   // someone else leads the player for now (a shared listening session)
   private steer: Steer | null = null;
   private unsteeredDepth = 0;
+  /** this player follows another one: it moves on to the next song only when told */
+  private following = false;
 
-  /** hand the person's actions to `steer` first (null: the player is its own again) */
-  steerWith(steer: Steer | null): void {
+  /**
+   * Hand the person's actions to `steer` first (null: the player is its own again).
+   * `follows`: someone else's player leads, so this one never moves on by itself (no
+   * crossfade into the next song, no autoplay top-up); it still gets the next song ready.
+   */
+  steerWith(steer: Steer | null, follows = false): void {
     this.steer = steer;
+    this.following = steer !== null && follows;
   }
 
   /** do what the steer itself decided: these calls are not handed back to it */
@@ -220,7 +227,7 @@ class PlayerEngine {
       if (deck === this.spare && this.prepared) this.prepared.ready = true;
     });
     a.addEventListener("ended", () => {
-      if (!isCur()) return;
+      if (!isCur() || this.steered({ type: "ended" })) return;
       if (this.prepared?.ready && usePlayer.getState().repeat !== "one") this.transition(0);
       else this.advance(false);
     });
@@ -539,8 +546,8 @@ class PlayerEngine {
     setLevelingTrack(track.id);
     this.firstTrack = false;
     const st = usePlayer.getState();
-    // a steered player follows someone else's queue: it is theirs to top up
-    if (!this.steer && st.index >= st.queue.length - 2 && st.repeat === "off" && useSettings.getState().autoplay) void this.extendWithSimilar(false);
+    // a following player plays someone else's queue: it is theirs to top up
+    if (!this.following && st.index >= st.queue.length - 2 && st.repeat === "off" && useSettings.getState().autoplay) void this.extendWithSimilar(false);
   }
 
   private attach(deck: Deck, stream: { url: string; hls: boolean }, onFatal: () => void): void {
@@ -666,7 +673,7 @@ class PlayerEngine {
     const fade = useSettings.getState().crossfade;
     // the spare deck still holds the song fading out: prepare once the fade is over
     if (left < PREPARE_BEFORE_MS + fade * 1000 && !this.prepared && !this.transitioning) void this.prepareNext();
-    if (fade > 0 && !this.transitioning && this.prepared?.ready && left <= fade * 1000 && usePlayer.getState().repeat !== "one") {
+    if (fade > 0 && !this.following && !this.transitioning && this.prepared?.ready && left <= fade * 1000 && usePlayer.getState().repeat !== "one") {
       this.transition(Math.min(fade, left / 1000));
     }
   }

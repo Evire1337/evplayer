@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Track } from "@/types";
-import { fitTracks, inviteLink, newCode, normalizeCode, positionNow, queueWindow, readMessage, roomSecrets, sameName } from "./protocol";
+import { fitTracks, inviteLink, newCode, normalizeCode, positionNow, queueWindow, readMessage, roomSecrets, sameName, ticketOf } from "./protocol";
 
 const track = (i: number, extra = 0): Track => ({
   id: `sc:${i}`,
@@ -13,15 +13,20 @@ const track = (i: number, extra = 0): Track => ({
 describe("codes", () => {
   it("makes readable codes and reads them back from anything typed or pasted", () => {
     const code = newCode();
-    expect(code).toMatch(/^JAM-[2-9A-HJ-NP-Z]{6}$/);
+    expect(code).toMatch(/^JAM-[2-9A-HJ-NP-Z]{4}-[2-9A-HJ-NP-Z]{4}$/);
     expect(normalizeCode(code)).toBe(code);
-    expect(normalizeCode(" jam - 7k9p2q ")).toBe("JAM-7K9P2Q");
-    expect(normalizeCode("7k9p2q")).toBe("JAM-7K9P2Q");
-    expect(normalizeCode(inviteLink("JAM-7K9P2Q"))).toBe("JAM-7K9P2Q");
-    expect(normalizeCode("JAM-7K9P")).toBe("");
+    expect(normalizeCode(" jam - 7k9p 2qxz ")).toBe("JAM-7K9P-2QXZ");
+    expect(normalizeCode("7k9p2qxz")).toBe("JAM-7K9P-2QXZ");
+    expect(normalizeCode(inviteLink("JAM-7K9P-2QXZ"))).toBe("JAM-7K9P-2QXZ");
+    expect(normalizeCode("JAM-7K9P-2Q")).toBe("");
     expect(normalizeCode("")).toBe("");
   });
 
+  it("reads the host's pass from a Discord invite", () => {
+    expect(normalizeCode("JAM-7K9P-2QXZ~a1b2")).toBe("JAM-7K9P-2QXZ");
+    expect(ticketOf("JAM-7K9P-2QXZ~a1b2")).toBe("a1b2");
+    expect(ticketOf("JAM-7K9P-2QXZ")).toBeUndefined();
+  });
   it("hides the code: the tag and the key differ per code and do not contain it", async () => {
     const a = await roomSecrets("JAM-7K9P2Q");
     const b = await roomSecrets("JAM-7K9P2R");
