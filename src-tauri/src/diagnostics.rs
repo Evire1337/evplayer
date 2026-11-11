@@ -128,9 +128,12 @@ pub async fn webview_kinds(app: &tauri::AppHandle) -> std::collections::HashMap<
                 let core = webview.controller().CoreWebView2()?;
                 let environment = core.cast::<ICoreWebView2_2>()?.Environment()?.cast::<ICoreWebView2Environment8>()?;
                 let infos = environment.GetProcessInfos()?;
-                for i in 0..infos.Count()? {
+                let mut count = 0u32;
+                infos.Count(&mut count)?;
+                for i in 0..count {
                     let info = infos.GetValueAtIndex(i)?;
-                    let kind = info.Kind()?;
+                    let mut kind = COREWEBVIEW2_PROCESS_KIND_BROWSER;
+                    info.Kind(&mut kind)?;
                     let name = if kind == COREWEBVIEW2_PROCESS_KIND_RENDERER {
                         "renderer"
                     } else if kind == COREWEBVIEW2_PROCESS_KIND_GPU {
@@ -140,7 +143,9 @@ pub async fn webview_kinds(app: &tauri::AppHandle) -> std::collections::HashMap<
                     } else {
                         "utility"
                     };
-                    out.insert(info.ProcessId()? as u32, name.to_string());
+                    let mut pid = 0i32;
+                    info.ProcessId(&mut pid)?;
+                    out.insert(pid as u32, name.to_string());
                 }
             }
             Ok(out)
