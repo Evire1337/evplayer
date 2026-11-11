@@ -135,6 +135,7 @@ export function createTauriApi(): EvPlayerApi {
       onEvent: (cb) => on("discord:event", cb),
       answer: (userId, accept) => fire("discord_answer", { userId, accept }),
     },
+    processes: () => invoke("diagnostics_processes"),
     links: {
       first: () => invoke("start_link"),
       onOpen: (cb) => on("link:open", cb),

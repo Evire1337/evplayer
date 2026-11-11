@@ -82,6 +82,16 @@ export interface PresenceState {
   joinUrl?: string;
 }
 
+/** one of the app's processes, as the diagnostics page shows it */
+export interface ProcessInfo {
+  pid: number;
+  name: string;
+  /** bytes */
+  memory: number;
+  /** processor time since it started */
+  cpuMs: number;
+}
+
 /** a friend asked to listen along, or this person was let into a friend's session */
 export type DiscordEvent = { kind: "request"; user: DiscordUser } | { kind: "join"; secret: string };
 
@@ -206,6 +216,8 @@ export interface EvPlayerApi {
     /** let a friend who asked in (true) or not */
     answer: (userId: string, accept: boolean) => void;
   };
+  /** the app's processes with their memory and processor time */
+  processes: () => Promise<ProcessInfo[]>;
   /** evplayer:// links: the one the app started with, then each one opened while it runs */
   links: { first: () => Promise<string | null>; onOpen: (cb: (url: string) => void) => () => void };
   /** the saved state of the Electron version (read once, on the first start) */

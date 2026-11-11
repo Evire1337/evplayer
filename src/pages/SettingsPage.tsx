@@ -13,13 +13,14 @@ import { recommendationsCacheBytes } from "@/home/recommendations";
 import { newFromArtistsCacheBytes } from "@/home/newFromArtists";
 import { radioCacheBytes } from "@/player/radio";
 import {
-  IconChat, IconDatabase, IconHeartFill, IconEq, IconInfo, IconKeyboard, IconPalette, IconPip, IconPlayCircle, IconPlug, IconRefresh,
+  IconChart, IconChat, IconDatabase, IconHeartFill, IconEq, IconInfo, IconKeyboard, IconPalette, IconPip, IconPlayCircle, IconPlug, IconRefresh,
 } from "@/ui/components/Icons";
 import EqualizerSection from "./settings/EqualizerSection";
 import KeysTab from "./settings/KeysTab";
 import DiscordTab from "./settings/DiscordTab";
 import ServicesTab from "./settings/ServicesTab";
 import OverlayTab from "./settings/OverlayTab";
+import DiagnosticsTab from "./settings/DiagnosticsTab";
 import { Card, Row, SwitchRow, TabHeader } from "./settings/parts";
 import Dialog from "@/ui/components/Dialog";
 import { askPhoneToKeepRunning, onPhoneVisible, phoneKeepsRunning } from "@/platform/androidMedia";
@@ -92,7 +93,7 @@ function KeepRunningCard() {
   );
 }
 
-type Tab = "playback" | "sound" | "appearance" | "keys" | "overlay" | "services" | "discord" | "data" | "about";
+type Tab = "playback" | "sound" | "appearance" | "keys" | "overlay" | "services" | "discord" | "data" | "diagnostics" | "about";
 
 const TABS: Array<{ id: Tab; label: string; icon: (p: { size?: number }) => ReactNode; group: string }> = [
   { id: "playback", label: "Воспроизведение", icon: IconPlayCircle, group: "Музыка" },
@@ -103,6 +104,7 @@ const TABS: Array<{ id: Tab; label: string; icon: (p: { size?: number }) => Reac
   { id: "overlay", label: "Мини-плеер", icon: IconPip, group: "Приложение" },
   { id: "discord", label: "Discord", icon: IconChat, group: "Приложение" },
   { id: "data", label: "Данные и копия", icon: IconDatabase, group: "Прочее" },
+  { id: "diagnostics", label: "Диагностика", icon: IconChart, group: "Прочее" },
   { id: "about", label: "О программе", icon: IconInfo, group: "Прочее" },
 ];
 
@@ -452,6 +454,7 @@ export default function SettingsPage() {
           {tab === "services" && <ServicesTab />}
           {tab === "discord" && <DiscordTab />}
           {tab === "data" && <DataTab />}
+          {tab === "diagnostics" && <DiagnosticsTab />}
           {tab === "about" && <About />}
         </section>
       </div>

@@ -25,6 +25,9 @@ function fallbackSource(): HTMLCanvasElement {
   return c;
 }
 
+/** what drawing the background costs, for the diagnostics page: frames drawn, time spent */
+export const backdropStats = { frames: 0, busyMs: 0 };
+
 export class BackdropRenderer {
   private gl: WebGLRenderingContext;
   private program: WebGLProgram;
@@ -147,6 +150,7 @@ export class BackdropRenderer {
       this.raf = requestAnimationFrame(this.frame);
       return;
     }
+    const started = performance.now();
     const dt = Math.min(100, now - (this.last || now));
     this.last = now;
     this.time += (dt / 1000) * this.speed;
@@ -165,6 +169,8 @@ export class BackdropRenderer {
     gl.uniform1f(this.loc.uDim, this.dim);
     gl.uniform2f(this.loc.uRes, this.canvas.width, this.canvas.height);
     gl.drawArrays(gl.TRIANGLES, 0, 6);
+    backdropStats.frames++;
+    backdropStats.busyMs += performance.now() - started;
     this.raf = requestAnimationFrame(this.frame);
   };
 

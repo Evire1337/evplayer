@@ -161,6 +161,11 @@ class PlayerEngine {
     return this.graph.latencyMs;
   }
 
+  /** the sound goes through the page's sound graph (equalizer, effects): it costs processor time */
+  get soundGraphOn(): boolean {
+    return this.graph.active;
+  }
+
   /** the element that is playing (for code that only needs to read it) */
   get audio(): HTMLAudioElement {
     return this.cur.audio;

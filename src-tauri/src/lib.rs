@@ -3,6 +3,7 @@
 //! JavaScript side (src/platform/tauri.ts) offers them to the app as `window.evplayer`,
 //! the same interface the Electron version had.
 
+mod diagnostics;
 mod discord;
 mod library;
 mod media_server;
@@ -529,6 +530,12 @@ fn discord_status(state: tauri::State<'_, AppState>) -> discord::Status {
     state.discord.status()
 }
 
+/// the memory and processor time of the app's processes (the diagnostics page)
+#[tauri::command]
+async fn diagnostics_processes() -> Vec<diagnostics::ProcessInfo> {
+    tauri::async_runtime::spawn_blocking(diagnostics::processes).await.unwrap_or_default()
+}
+
 /// the link the app was started with (evplayer://jam/...), if any
 #[tauri::command]
 fn start_link(app: AppHandle) -> Option<String> {
@@ -683,6 +690,7 @@ pub fn run() {
             discord_status,
             discord_answer,
             start_link,
+            diagnostics_processes,
             migrate_electron,
             updates::updates_get,
             updates::updates_check,
