@@ -1,83 +1,90 @@
 import { describe, expect, it } from "vitest";
-import {
-  calculateTargetPosition,
-  generateRoomCode,
-  normalizeRoomCode,
-  shouldResyncPosition,
-  buildSyncPayload,
-} from "./protocol";
-import type { PlayerState } from "@/player/store";
 import type { Track } from "@/types";
+import { fitTracks, inviteLink, newCode, normalizeCode, positionNow, queueWindow, readMessage, roomSecrets, sameName } from "./protocol";
 
-describe("jam protocol", () => {
-  it("generates valid room codes", () => {
-    const code = generateRoomCode();
-    expect(code).toMatch(/^JAM-[2-9A-Z]{4}$/);
+const track = (i: number, extra = 0): Track => ({
+  id: `sc:${i}`,
+  source: "soundcloud",
+  title: `Song ${i}${"x".repeat(extra)}`,
+  artists: [{ id: "a", name: "Artist" }],
+  durationMs: 200_000,
+});
+
+describe("codes", () => {
+  it("makes readable codes and reads them back from anything typed or pasted", () => {
+    const code = newCode();
+    expect(code).toMatch(/^JAM-[2-9A-HJ-NP-Z]{6}$/);
+    expect(normalizeCode(code)).toBe(code);
+    expect(normalizeCode(" jam - 7k9p2q ")).toBe("JAM-7K9P2Q");
+    expect(normalizeCode("7k9p2q")).toBe("JAM-7K9P2Q");
+    expect(normalizeCode(inviteLink("JAM-7K9P2Q"))).toBe("JAM-7K9P2Q");
+    expect(normalizeCode("JAM-7K9P")).toBe("");
+    expect(normalizeCode("")).toBe("");
   });
 
-  it("normalizes room codes", () => {
-    expect(normalizeRoomCode("7k9p")).toBe("JAM-7K9P");
-    expect(normalizeRoomCode("jam-7k9p")).toBe("JAM-7K9P");
-    expect(normalizeRoomCode("  JAM 7K9P  ")).toBe("JAM-7K9P");
-    expect(normalizeRoomCode("abc123xyz")).toBe("ABC123XYZ");
+  it("hides the code: the tag and the key differ per code and do not contain it", async () => {
+    const a = await roomSecrets("JAM-7K9P2Q");
+    const b = await roomSecrets("JAM-7K9P2R");
+    expect(a.tag).not.toBe(b.tag);
+    expect(a.tag).not.toContain("7K9P2Q");
+    expect(a.key).toHaveLength(32);
+    expect(await roomSecrets("JAM-7K9P2Q")).toEqual(a);
+  });
+});
+
+describe("positionNow", () => {
+  const now = { index: 0, trackId: "sc:1", playing: true, positionMs: 10_000, at: 1_000 };
+
+  it("moves on with the clock while playing, stands still while paused", () => {
+    expect(positionNow(now, 4_000)).toBe(13_000);
+    expect(positionNow({ ...now, playing: false }, 4_000)).toBe(10_000);
   });
 
-  it("calculates target position with playback progress compensation", () => {
-    const baseMs = 10_000;
-    const sentAt = 1_000_000;
-    const receivedAt = 1_002_000; // 2 seconds later
+  it("stays within the song, and a clock that is behind does not go back", () => {
+    expect(positionNow(now, 999_000, 60_000)).toBe(60_000);
+    expect(positionNow(now, 0)).toBe(10_000);
+  });
+});
 
-    // when playing, target should advance by 2000ms
-    const targetPlaying = calculateTargetPosition(baseMs, sentAt, receivedAt, "playing", 100_000);
-    expect(targetPlaying).toBe(12_000);
+describe("queueWindow", () => {
+  const queue = Array.from({ length: 500 }, (_, i) => track(i));
 
-    // when paused, target should not advance
-    const targetPaused = calculateTargetPosition(baseMs, sentAt, receivedAt, "paused", 100_000);
-    expect(targetPaused).toBe(10_000);
-
-    // does not exceed duration
-    const clamped = calculateTargetPosition(99_000, sentAt, receivedAt, "playing", 100_000);
-    expect(clamped).toBe(100_000);
+  it("sends a few songs back and the next ones, not the whole queue", () => {
+    const w = queueWindow(queue, 100, 7);
+    expect(w.rev).toBe(7);
+    expect(w.offset).toBe(95);
+    expect(w.tracks[0].id).toBe("sc:95");
+    expect(w.tracks[100 - w.offset].id).toBe("sc:100");
+    expect(w.tracks.length).toBeLessThan(80);
   });
 
-  it("checks whether resync is needed based on threshold", () => {
-    expect(shouldResyncPosition(10_000, 10_500, 1500)).toBe(false); // 500ms diff, no jitter seek
-    expect(shouldResyncPosition(10_000, 11_400, 1500)).toBe(false); // 1400ms diff
-    expect(shouldResyncPosition(10_000, 11_600, 1500)).toBe(true);  // 1600ms diff, seek needed
+  it("starts at the beginning near the start of the queue", () => {
+    expect(queueWindow(queue, 2, 0).offset).toBe(0);
   });
 
-  it("builds sync payload correctly", () => {
-    const dummyTrack: Track = {
-      id: "sc:123",
-      source: "soundcloud",
-      title: "Song",
-      artists: [{ id: "1", name: "Artist" }],
-      durationMs: 180_000,
-    };
-    const playerState: PlayerState = {
-      queue: [dummyTrack],
-      index: 0,
-      status: "playing",
-      positionMs: 30_000,
-      durationMs: 180_000,
-      volume: 0.8,
-      muted: false,
-      repeat: "off",
-      shuffle: false,
-    };
-    const payload = buildSyncPayload(
-      playerState,
-      "anyone",
-      [],
-      "Alex",
-      "JAM-1234",
-      dummyTrack,
-      1234567,
-    );
-    expect(payload.roomCode).toBe("JAM-1234");
-    expect(payload.hostName).toBe("Alex");
-    expect(payload.status).toBe("playing");
-    expect(payload.positionMs).toBe(30_000);
-    expect(payload.timestamp).toBe(1234567);
+  it("takes fewer songs when they would not fit in one message", () => {
+    const big = Array.from({ length: 200 }, (_, i) => track(i, 2000));
+    const w = queueWindow(big, 50, 0);
+    expect(JSON.stringify(w).length).toBeLessThanOrEqual(48_000);
+    expect(w.tracks[50 - w.offset].id).toBe("sc:50");
+  });
+
+  it("keeps the pressed song when a long list is cut", () => {
+    const fit = fitTracks(queue, 300);
+    expect(fit.tracks[fit.startIndex].id).toBe("sc:300");
+  });
+});
+
+describe("messages", () => {
+  it("takes only messages of a session", () => {
+    expect(readMessage(JSON.stringify({ t: "chat", id: "1", text: "hi" }))).toEqual({ t: "chat", id: "1", text: "hi" });
+    expect(readMessage(JSON.stringify({ t: "hack" }))).toBeNull();
+    expect(readMessage("not json")).toBeNull();
+    expect(readMessage("null")).toBeNull();
+  });
+
+  it("treats names as the same regardless of case and spaces", () => {
+    expect(sameName(" Вася ", "вася")).toBe(true);
+    expect(sameName("Вася", "Вася2")).toBe(false);
   });
 });

@@ -42,6 +42,26 @@ interface Prepared {
 /** how long before the end the next song starts loading */
 const PREPARE_BEFORE_MS = 25_000;
 
+/** what the person asked the player to do (handed to a steer before it happens) */
+export type PlayerAction =
+  | { type: "toggle" }
+  | { type: "next" }
+  | { type: "prev"; force: boolean }
+  | { type: "seek"; ms: number }
+  | { type: "playIndex"; index: number }
+  | { type: "playQueue"; tracks: Track[]; startIndex: number }
+  | { type: "add"; track: Track; next: boolean }
+  | { type: "remove"; index: number }
+  | { type: "move"; from: number; to: number }
+  | { type: "clearUpcoming" }
+  | { type: "shuffle" }
+  | { type: "repeat" }
+  /** the song came to its end (or could not be played) and the player would go on */
+  | { type: "ended" };
+
+/** takes an action over (returns true) or lets the player do it as usual */
+export type Steer = (action: PlayerAction) => boolean;
+
 function makeDeck(volume: number): Deck {
   const audio = new Audio();
   audio.crossOrigin = "anonymous";
@@ -98,6 +118,28 @@ class PlayerEngine {
   private playWhenExtended = false;
   /** a restored session starts at this position */
   private resumeAt = 0;
+  // someone else leads the player for now (a shared listening session)
+  private steer: Steer | null = null;
+  private unsteeredDepth = 0;
+
+  /** hand the person's actions to `steer` first (null: the player is its own again) */
+  steerWith(steer: Steer | null): void {
+    this.steer = steer;
+  }
+
+  /** do what the steer itself decided: these calls are not handed back to it */
+  unsteered<T>(fn: () => T): T {
+    this.unsteeredDepth++;
+    try {
+      return fn();
+    } finally {
+      this.unsteeredDepth--;
+    }
+  }
+
+  private steered(action: PlayerAction): boolean {
+    return this.steer !== null && this.unsteeredDepth === 0 && this.steer(action);
+  }
 
   private get cur(): Deck {
     return this.decks[this.active];
@@ -243,7 +285,7 @@ class PlayerEngine {
    * so it shows up in "Недавно слушали"
    */
   async playQueue(tracks: Track[], startIndex = 0, source: PlaySource | null = currentSource()): Promise<void> {
-    if (tracks.length === 0) return;
+    if (tracks.length === 0 || this.steered({ type: "playQueue", tracks, startIndex })) return;
     this.source = source;
     this.sourceIds = new Set(source ? tracks.map((t) => t.id) : []);
     this.resumeAt = 0;
@@ -269,6 +311,8 @@ class PlayerEngine {
       void this.playQueue(tracks, index);
       return;
     }
+    if (this.steered({ type: "toggle" })) return;
+    if (this.steered({ type: "toggle" })) return;
     if (!sameQueue(s.queue, tracks)) {
       const queue = s.shuffle ? shuffledQueue(tracks, track.id) : tracks;
       usePlayer.setState({ queue, index: s.shuffle ? 0 : index });
@@ -289,7 +333,7 @@ class PlayerEngine {
 
   async playIndex(index: number): Promise<void> {
     const track = usePlayer.getState().queue[index];
-    if (!track) return;
+    if (!track || this.steered({ type: "playIndex", index })) return;
     this.resumeAt = 0;
     // "next" onto the song that is already waiting: switch at once
     if (this.prepared?.ready && this.prepared.index === index && this.prepared.track.id === track.id) {
@@ -302,6 +346,7 @@ class PlayerEngine {
 
   /** put a track right after the current one */
   playNext(track: Track): void {
+    if (this.steered({ type: "add", track, next: true })) return;
     const s = usePlayer.getState();
     if (s.queue.length === 0) {
       void this.playQueue([track], 0, null);
@@ -313,6 +358,7 @@ class PlayerEngine {
   }
 
   addToQueue(track: Track): void {
+    if (this.steered({ type: "add", track, next: false })) return;
     const s = usePlayer.getState();
     if (s.queue.length === 0) {
       void this.playQueue([track], 0, null);
@@ -322,6 +368,7 @@ class PlayerEngine {
   }
 
   removeFromQueue(index: number): void {
+    if (this.steered({ type: "remove", index })) return;
     const s = usePlayer.getState();
     if (index === s.index || index < 0 || index >= s.queue.length) return;
     const queue = s.queue.filter((_, i) => i !== index);
@@ -329,6 +376,7 @@ class PlayerEngine {
   }
 
   moveInQueue(from: number, to: number): void {
+    if (this.steered({ type: "move", from, to })) return;
     const s = usePlayer.getState();
     if (from === to || from < 0 || from >= s.queue.length) return;
     const queue = [...s.queue];
@@ -345,12 +393,14 @@ class PlayerEngine {
   }
 
   clearUpcoming(): void {
+    if (this.steered({ type: "clearUpcoming" })) return;
     const s = usePlayer.getState();
     usePlayer.setState({ queue: s.queue.slice(0, s.index + 1) });
   }
 
   /** start a station from one song: the song, then similar ones */
   async startRadio(seed: Track): Promise<void> {
+    if (this.steered({ type: "playQueue", tracks: [seed], startIndex: 0 })) return;
     await this.playQueue([seed], 0, null);
     const more = await similarTracks(seed, new Set([seed.id])).catch(() => []);
     const s = usePlayer.getState();
@@ -358,6 +408,7 @@ class PlayerEngine {
   }
 
   toggle(): void {
+    if (this.steered({ type: "toggle" })) return;
     const { status } = usePlayer.getState();
     if (status === "playing") this.pause();
     else if (status === "paused") this.resume();
@@ -379,10 +430,12 @@ class PlayerEngine {
   }
 
   next(): void {
+    if (this.steered({ type: "next" })) return;
     this.advance(true);
   }
 
   prev(force = false): void {
+    if (this.steered({ type: "prev", force })) return;
     // like most players: a few seconds in, "previous" restarts the song
     if (!force && usePlayer.getState().positionMs > 4000) {
       this.seek(0);
@@ -393,6 +446,10 @@ class PlayerEngine {
   }
 
   seek(ms: number): void {
+    if (!this.steered({ type: "seek", ms })) this.seekTo(ms);
+  }
+
+  private seekTo(ms: number): void {
     if (!Number.isFinite(ms)) return;
     const target = Math.max(0, ms);
     this.cur.audio.currentTime = target / 1000;
@@ -405,6 +462,7 @@ class PlayerEngine {
   }
 
   toggleShuffle(): void {
+    if (this.steered({ type: "shuffle" })) return;
     const state = usePlayer.getState();
     const track = currentTrack(state);
     if (!state.shuffle) {
@@ -416,11 +474,13 @@ class PlayerEngine {
   }
 
   cycleRepeat(): void {
+    if (this.steered({ type: "repeat" })) return;
     const order = { off: "all", all: "one", one: "off" } as const;
     usePlayer.setState((s) => ({ repeat: order[s.repeat] }));
   }
 
   private advance(manual: boolean): void {
+    if (!manual && this.steered({ type: "ended" })) return;
     const state = usePlayer.getState();
     const i = nextIndex(state, manual);
     if (i < 0) {
@@ -430,7 +490,7 @@ class PlayerEngine {
       return;
     }
     if (i === state.index && !manual) {
-      this.seek(0);
+      this.seekTo(0);
       this.resume();
       return;
     }
@@ -479,7 +539,8 @@ class PlayerEngine {
     setLevelingTrack(track.id);
     this.firstTrack = false;
     const st = usePlayer.getState();
-    if (st.index >= st.queue.length - 2 && st.repeat === "off" && useSettings.getState().autoplay) void this.extendWithSimilar(false);
+    // a steered player follows someone else's queue: it is theirs to top up
+    if (!this.steer && st.index >= st.queue.length - 2 && st.repeat === "off" && useSettings.getState().autoplay) void this.extendWithSimilar(false);
   }
 
   private attach(deck: Deck, stream: { url: string; hls: boolean }, onFatal: () => void): void {
@@ -591,7 +652,7 @@ class PlayerEngine {
     usePlayer.setState({ status: "error", error: `${message} — включаю следующий` });
     clearTimeout(this.skipTimer);
     this.skipTimer = setTimeout(() => {
-      if (token === this.loadToken && usePlayer.getState().status === "error") this.advance(true);
+      if (token === this.loadToken && usePlayer.getState().status === "error" && !this.steered({ type: "ended" })) this.advance(true);
     }, SKIP_BROKEN_AFTER_MS);
   }
 
@@ -698,7 +759,7 @@ class PlayerEngine {
     if (!this.resumeAt) return;
     const at = this.resumeAt;
     this.resumeAt = 0;
-    this.seek(at);
+    this.seekTo(at);
   }
 
   private unload(deck: Deck): void {

@@ -1,6 +1,8 @@
-//! "Listening to …" in the Discord profile. Talks to the Discord desktop app over its local
-//! RPC pipe. Discord only answers what it is asked (no subscriptions), so a single worker
-//! thread writes a command and reads the answer; nothing else touches the pipe.
+//! "Listening to …" in the Discord profile, with "Ask to join" on it. Talks to the Discord
+//! desktop app over its local RPC pipe from one worker thread: it writes a command and reads
+//! frames until the answer to that command comes. Events (a friend asks to join; this
+//! person accepted an invite) can arrive in between and while nothing is being sent, so a
+//! connected worker also looks at the pipe twice a second.
 
 use std::io::{Read, Write};
 use std::sync::mpsc::{channel, RecvTimeoutError, Sender};
@@ -21,9 +23,24 @@ pub struct PresenceState {
     pub ends_at: Option<f64>,
     pub paused: Option<bool>,
     pub status_shows: Option<String>,
+    /// where a paused song stands, shown in words (Discord can only show a running clock)
+    pub position_ms: Option<f64>,
+    pub duration_ms: Option<f64>,
+    /// friends may ask to listen along
+    pub party: Option<Party>,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Party {
+    pub id: String,
+    pub size: u32,
+    pub max: u32,
+    /// handed to the friend's app when they are let in
+    pub join: String,
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct DiscordUser {
     pub id: String,
@@ -39,6 +56,16 @@ pub struct Status {
     pub status: &'static str,
     pub user: Option<DiscordUser>,
     pub error: Option<String>,
+}
+
+/// what Discord tells the app on its own
+#[derive(Clone, Debug, Serialize, PartialEq)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum DiscordEvent {
+    /// a friend pressed "Ask to join"
+    Request { user: DiscordUser },
+    /// this person was let into a friend's session: the friend's join secret
+    Join { secret: String },
 }
 
 const OP_HANDSHAKE: i32 = 0;
@@ -62,11 +89,21 @@ fn text(value: &str) -> String {
     }
 }
 
+/// 83 000 ms -> "1:23"
+fn clock(ms: f64) -> String {
+    let s = (ms.max(0.0) / 1000.0) as u64;
+    format!("{}:{:02}", s / 60, s % 60)
+}
+
 pub fn activity_for(state: &PresenceState, plain: bool) -> Value {
     let paused = state.paused.unwrap_or(false);
     let artist = if state.artist.is_empty() { "EvPlayer" } else { &state.artist };
-    // paused: said in words, and no running clock (Discord would keep counting)
-    let line = if paused { format!("На паузе · {artist}") } else { artist.to_string() };
+    // paused: no timestamps (a clock would run on), so where the song stands is said in words
+    let line = match (paused, state.position_ms, state.duration_ms) {
+        (true, Some(at), Some(of)) if of > 0.0 => format!("На паузе {} / {} · {artist}", clock(at), clock(of)),
+        (true, ..) => format!("На паузе · {artist}"),
+        _ => artist.to_string(),
+    };
     let mut activity = json!({
         "type": 2,
         "details": text(&state.title),
@@ -94,20 +131,86 @@ pub fn activity_for(state: &PresenceState, plain: bool) -> Value {
     if let Some(art) = state.artwork.as_deref().filter(|a| a.starts_with("https:")) {
         activity["assets"]["large_image"] = json!(art);
     }
-    if let Some(url) = state.url.as_deref().filter(|u| u.starts_with("https:")) {
+    if let Some(party) = &state.party {
+        let size = party.size.max(1);
+        activity["party"] = json!({ "id": party.id, "size": [size, party.max.max(size)] });
+        activity["secrets"] = json!({ "join": party.join });
+    } else if let Some(url) = state.url.as_deref().filter(|u| u.starts_with("https:")) {
+        // Discord does not take link buttons together with a join secret
         activity["buttons"] = json!([{ "label": "Слушать", "url": url }]);
     }
     activity
 }
 
+fn user_of(u: &Value) -> Option<DiscordUser> {
+    let id = u["id"].as_str()?;
+    Some(DiscordUser {
+        id: id.to_string(),
+        username: u["username"].as_str().unwrap_or("").to_string(),
+        global_name: u["global_name"].as_str().filter(|s| !s.is_empty()).map(str::to_string),
+        avatar: u["avatar"].as_str().map(|a| {
+            let ext = if a.starts_with("a_") { "gif" } else { "png" };
+            format!("https://cdn.discordapp.com/avatars/{id}/{a}.{ext}?size=128")
+        }),
+    })
+}
+
+pub fn event_of(data: &Value) -> Option<DiscordEvent> {
+    if data["cmd"] != "DISPATCH" {
+        return None;
+    }
+    match data["evt"].as_str()? {
+        "ACTIVITY_JOIN_REQUEST" => Some(DiscordEvent::Request { user: user_of(&data["data"]["user"])? }),
+        "ACTIVITY_JOIN" => Some(DiscordEvent::Join { secret: data["data"]["secret"].as_str()?.to_string() }),
+        _ => None,
+    }
+}
+
 enum Msg {
     AppId(Option<String>),
     Update(Option<PresenceState>),
+    /// let a friend in (true) or turn them down
+    Answer(String, bool),
     Quit,
 }
 
-trait Pipe: Read + Write + Send {}
-impl<T: Read + Write + Send> Pipe for T {}
+trait Pipe: Read + Write + Send {
+    /// whether something waits to be read (without waiting for it)
+    fn pending(&mut self) -> bool;
+}
+
+#[cfg(windows)]
+impl Pipe for std::fs::File {
+    fn pending(&mut self) -> bool {
+        use std::os::windows::io::AsRawHandle;
+        let mut available = 0u32;
+        // SAFETY: a valid pipe handle owned by this file; no buffer is read into
+        let ok = unsafe {
+            windows_sys::Win32::System::Pipes::PeekNamedPipe(
+                self.as_raw_handle(),
+                std::ptr::null_mut(),
+                0,
+                std::ptr::null_mut(),
+                &mut available,
+                std::ptr::null_mut(),
+            )
+        };
+        ok != 0 && available > 0
+    }
+}
+
+#[cfg(unix)]
+impl Pipe for std::os::unix::net::UnixStream {
+    fn pending(&mut self) -> bool {
+        let mut byte = [0u8; 1];
+        if self.set_nonblocking(true).is_err() {
+            return false;
+        }
+        let seen = self.peek(&mut byte);
+        let _ = self.set_nonblocking(false);
+        matches!(seen, Ok(n) if n > 0)
+    }
+}
 
 fn open_pipe() -> Option<Box<dyn Pipe>> {
     for i in 0..10 {
@@ -148,29 +251,93 @@ fn read_frame(pipe: &mut dyn Pipe) -> Option<(i32, Value)> {
     Some((op, serde_json::from_slice(&body).unwrap_or(Value::Null)))
 }
 
+type Listener = Arc<Mutex<Option<Box<dyn Fn(DiscordEvent) + Send>>>>;
+
+/// the open pipe: commands and their answers, with events handed on as they come
+struct Conn {
+    pipe: Box<dyn Pipe>,
+    nonce: u64,
+    listener: Listener,
+}
+
+impl Conn {
+    fn hand_on(&self, data: &Value) {
+        if let Some(event) = event_of(data) {
+            if let Some(listen) = self.listener.lock().unwrap().as_ref() {
+                listen(event);
+            }
+        }
+    }
+
+    /// send a command and wait for its answer (None: the pipe is gone)
+    fn call(&mut self, cmd: &str, args: Value, evt: Option<&str>) -> Option<Value> {
+        self.nonce += 1;
+        let nonce = self.nonce.to_string();
+        let mut body = json!({ "cmd": cmd, "args": args, "nonce": nonce });
+        if let Some(evt) = evt {
+            body["evt"] = json!(evt);
+        }
+        self.pipe.write_all(&encode_frame(OP_FRAME, &body)).ok()?;
+        loop {
+            let (op, data) = read_frame(self.pipe.as_mut())?;
+            if op == OP_CLOSE {
+                return None;
+            }
+            // Discord echoes the nonce; some builds leave it out of the answer
+            if data["nonce"].as_str() == Some(nonce.as_str()) || (data["cmd"] == cmd && data["nonce"].is_null()) {
+                return Some(data);
+            }
+            self.hand_on(&data);
+        }
+    }
+
+    /// read whatever came in on its own; false when the pipe closed
+    fn drain(&mut self) -> bool {
+        while self.pipe.pending() {
+            match read_frame(self.pipe.as_mut()) {
+                Some((OP_FRAME, data)) => self.hand_on(&data),
+                _ => return false,
+            }
+        }
+        true
+    }
+}
+
 pub struct Discord {
     tx: Sender<Msg>,
     status: Arc<Mutex<Status>>,
+    listener: Listener,
 }
 
 impl Discord {
     pub fn new() -> Self {
         let (tx, rx) = channel::<Msg>();
         let status = Arc::new(Mutex::new(Status { status: "off", user: None, error: None }));
+        let listener: Listener = Arc::new(Mutex::new(None));
         let shared = status.clone();
+        let events = listener.clone();
         std::thread::spawn(move || {
             let mut app_id: Option<String> = None;
             let mut state: Option<PresenceState> = None;
-            let mut pipe: Option<Box<dyn Pipe>> = None;
+            let mut conn: Option<Conn> = None;
             let mut plain = false;
-            let mut nonce = 0u64;
             let mut was_paused = false;
+            // the activity has to be sent again (new state, or just connected)
+            let mut dirty = false;
+            let mut answers: Vec<(String, bool)> = Vec::new();
             let set = |s: &'static str, user: Option<DiscordUser>, error: Option<String>| {
                 *shared.lock().unwrap() = Status { status: s, user, error };
             };
+            let lost = |conn: &mut Option<Conn>| {
+                *conn = None;
+                let mut st = shared.lock().unwrap();
+                if st.status != "error" {
+                    *st = Status { status: "no-discord", user: None, error: None };
+                }
+            };
             loop {
                 // connect when needed (Discord may be started later: try again every 15 s)
-                if pipe.is_none() {
+                if conn.is_none() {
                     if let Some(id) = &app_id {
                         set("connecting", None, None);
                         match open_pipe() {
@@ -179,18 +346,18 @@ impl Discord {
                                 let ok = p.write_all(&encode_frame(OP_HANDSHAKE, &json!({ "v": 1, "client_id": id }))).is_ok();
                                 match ok.then(|| read_frame(p.as_mut())).flatten() {
                                     Some((OP_FRAME, data)) if data["evt"] == "READY" => {
-                                        let u = &data["data"]["user"];
-                                        let user = u["id"].as_str().map(|uid| DiscordUser {
-                                            id: uid.to_string(),
-                                            username: u["username"].as_str().unwrap_or("").to_string(),
-                                            global_name: u["global_name"].as_str().filter(|s| !s.is_empty()).map(str::to_string),
-                                            avatar: u["avatar"].as_str().map(|a| {
-                                                let ext = if a.starts_with("a_") { "gif" } else { "png" };
-                                                format!("https://cdn.discordapp.com/avatars/{uid}/{a}.{ext}?size=128")
-                                            }),
-                                        });
-                                        set("connected", user, None);
-                                        pipe = Some(p);
+                                        let mut c = Conn { pipe: p, nonce: 0, listener: events.clone() };
+                                        // "Ask to join": the requests, and the invites this person accepts
+                                        let subscribed = c.call("SUBSCRIBE", json!({}), Some("ACTIVITY_JOIN_REQUEST")).is_some()
+                                            && c.call("SUBSCRIBE", json!({}), Some("ACTIVITY_JOIN")).is_some();
+                                        if subscribed {
+                                            set("connected", user_of(&data["data"]["user"]), None);
+                                            conn = Some(c);
+                                            dirty = true;
+                                            was_paused = false;
+                                        } else {
+                                            set("no-discord", None, None);
+                                        }
                                     }
                                     Some((OP_CLOSE, data)) => {
                                         let msg = data["message"].as_str().unwrap_or("Discord закрыл соединение").to_string();
@@ -202,84 +369,108 @@ impl Discord {
                         }
                     }
                 }
-                // send the current activity
-                if let Some(p) = pipe.as_mut() {
-                    // just paused: drop the playing activity first, so Discord starts the paused
-                    // one fresh instead of carrying on the playing one's clock
-                    let now_paused = state.as_ref().is_some_and(|s| s.paused.unwrap_or(false));
-                    if now_paused && !was_paused {
-                        nonce += 1;
-                        let clear = encode_frame(OP_FRAME, &json!({ "cmd": "SET_ACTIVITY", "args": { "pid": std::process::id(), "activity": null }, "nonce": nonce.to_string() }));
-                        if p.write_all(&clear).is_err() || read_frame(p.as_mut()).is_none() {
-                            pipe = None;
-                            continue;
-                        }
+                if let Some(c) = conn.as_mut() {
+                    if !c.drain() {
+                        lost(&mut conn);
+                        continue;
                     }
-                    was_paused = now_paused;
-                    let mut resend = true;
-                    while resend {
-                        resend = false;
-                        nonce += 1;
-                        let activity = state.as_ref().map(|s| activity_for(s, plain));
-                        let frame = encode_frame(OP_FRAME, &json!({
-                            "cmd": "SET_ACTIVITY",
-                            "args": { "pid": std::process::id(), "activity": activity },
-                            "nonce": nonce.to_string(),
-                        }));
-                        let reply = if p.write_all(&frame).is_ok() { read_frame(p.as_mut()) } else { None };
-                        match reply {
-                            None => {
-                                pipe = None;
-                                let mut st = shared.lock().unwrap();
-                                if st.status != "error" {
-                                    *st = Status { status: "no-discord", user: None, error: None };
-                                }
-                                break;
-                            }
-                            Some((_, data)) if data["evt"] == "ERROR" => {
-                                let msg = data["data"]["message"].as_str().unwrap_or("Discord не принял статус").to_string();
-                                // older Discord builds reject the newer "status_display_type" field
-                                if !plain && msg.to_lowercase().contains("status_display_type") {
-                                    plain = true;
-                                    resend = true;
-                                } else {
-                                    shared.lock().unwrap().error = Some(msg);
-                                }
-                            }
-                            Some(_) => shared.lock().unwrap().error = None,
+                }
+                // friends let in or turned down
+                if let Some(c) = conn.as_mut() {
+                    for (user_id, accept) in answers.drain(..) {
+                        let cmd = if accept { "SEND_ACTIVITY_JOIN_INVITE" } else { "CLOSE_ACTIVITY_REQUEST" };
+                        if c.call(cmd, json!({ "user_id": user_id }), None).is_none() {
+                            break;
                         }
                     }
                 }
-                let wait = if pipe.is_none() && app_id.is_some() { Duration::from_secs(15) } else { Duration::from_secs(3600) };
-                match rx.recv_timeout(wait) {
-                    Ok(Msg::AppId(id)) => {
-                        if id != app_id {
-                            app_id = id;
-                            pipe = None;
-                            if app_id.is_none() {
-                                set("off", None, None);
+                // send the current activity
+                if dirty {
+                    if let Some(c) = conn.as_mut() {
+                        dirty = false;
+                        // just paused: drop the playing activity first, so Discord starts the paused
+                        // one fresh instead of carrying on the playing one's clock
+                        let now_paused = state.as_ref().is_some_and(|s| s.paused.unwrap_or(false));
+                        let pid = std::process::id();
+                        if now_paused && !was_paused && c.call("SET_ACTIVITY", json!({ "pid": pid, "activity": null }), None).is_none() {
+                            lost(&mut conn);
+                            continue;
+                        }
+                        was_paused = now_paused;
+                        let mut resend = true;
+                        while resend {
+                            resend = false;
+                            let activity = state.as_ref().map(|s| activity_for(s, plain));
+                            match c.call("SET_ACTIVITY", json!({ "pid": pid, "activity": activity }), None) {
+                                None => {
+                                    lost(&mut conn);
+                                    break;
+                                }
+                                Some(data) if data["evt"] == "ERROR" => {
+                                    let msg = data["data"]["message"].as_str().unwrap_or("Discord не принял статус").to_string();
+                                    // older Discord builds reject the newer "status_display_type" field
+                                    if !plain && msg.to_lowercase().contains("status_display_type") {
+                                        plain = true;
+                                        resend = true;
+                                    } else {
+                                        shared.lock().unwrap().error = Some(msg);
+                                    }
+                                }
+                                Some(_) => shared.lock().unwrap().error = None,
                             }
                         }
                     }
-                    Ok(Msg::Update(s)) => state = s,
-                    Ok(Msg::Quit) | Err(RecvTimeoutError::Disconnected) => break,
+                }
+                let wait = if conn.is_some() {
+                    Duration::from_millis(500)
+                } else if app_id.is_some() {
+                    Duration::from_secs(15)
+                } else {
+                    Duration::from_secs(3600)
+                };
+                let mut handle = |m: Msg| -> bool {
+                    match m {
+                        Msg::AppId(id) => {
+                            if id != app_id {
+                                app_id = id;
+                                conn = None;
+                                if app_id.is_none() {
+                                    set("off", None, None);
+                                }
+                            }
+                        }
+                        Msg::Update(s) => {
+                            state = s;
+                            dirty = true;
+                        }
+                        Msg::Answer(user, accept) => answers.push((user, accept)),
+                        Msg::Quit => return false,
+                    }
+                    true
+                };
+                match rx.recv_timeout(wait) {
+                    Ok(m) => {
+                        if !handle(m) {
+                            return;
+                        }
+                    }
+                    Err(RecvTimeoutError::Disconnected) => return,
                     Err(RecvTimeoutError::Timeout) => {}
                 }
                 // several updates in a row: only the last one matters
                 while let Ok(m) = rx.try_recv() {
-                    match m {
-                        Msg::AppId(id) if id != app_id => {
-                            app_id = id;
-                            pipe = None;
-                        }
-                        Msg::Update(s) => state = s,
-                        Msg::Quit => return,
-                        _ => {}
+                    if !handle(m) {
+                        return;
                     }
                 }
             }
         });
-        Self { tx, status }
+        Self { tx, status, listener }
+    }
+
+    /// who gets the events (the page)
+    pub fn on_event(&self, listen: impl Fn(DiscordEvent) + Send + 'static) {
+        *self.listener.lock().unwrap() = Some(Box::new(listen));
     }
 
     pub fn set_app_id(&self, id: Option<String>) {
@@ -289,6 +480,13 @@ impl Discord {
 
     pub fn update(&self, state: Option<PresenceState>) {
         let _ = self.tx.send(Msg::Update(state));
+    }
+
+    /// a friend's "Ask to join": let them in, or not
+    pub fn answer(&self, user_id: String, accept: bool) {
+        if !user_id.is_empty() && user_id.chars().all(|c| c.is_ascii_digit()) {
+            let _ = self.tx.send(Msg::Answer(user_id, accept));
+        }
     }
 
     pub fn status(&self) -> Status {
@@ -305,6 +503,22 @@ impl Discord {
 mod tests {
     use super::*;
 
+    fn song() -> PresenceState {
+        PresenceState {
+            title: "A".into(),
+            artist: "B".into(),
+            artwork: Some("https://i1.sndcdn.com/x.jpg".into()),
+            url: Some("https://soundcloud.com/x".into()),
+            started_at: Some(1000.4),
+            ends_at: Some(2000.6),
+            paused: Some(false),
+            status_shows: Some("artist".into()),
+            position_ms: Some(83_000.0),
+            duration_ms: Some(200_000.0),
+            party: None,
+        }
+    }
+
     #[test]
     fn frame_layout() {
         let f = encode_frame(1, &json!({ "a": 1 }));
@@ -315,24 +529,39 @@ mod tests {
 
     #[test]
     fn activity_rounds_times_and_pads_short_text() {
-        let s = PresenceState {
-            title: "A".into(),
-            artist: "B".into(),
-            artwork: Some("https://i1.sndcdn.com/x.jpg".into()),
-            url: Some("https://soundcloud.com/x".into()),
-            started_at: Some(1000.4),
-            ends_at: Some(2000.6),
-            paused: Some(false),
-            status_shows: Some("artist".into()),
-        };
+        let s = song();
         let a = activity_for(&s, false);
         assert_eq!(a["details"], "A  ");
         assert_eq!(a["timestamps"]["start"], 1000);
         assert_eq!(a["timestamps"]["end"], 2001);
         assert_eq!(a["status_display_type"], 1);
         assert!(activity_for(&s, true).get("status_display_type").is_none());
-        let paused = activity_for(&PresenceState { paused: Some(true), ..s }, false);
-        assert!(paused.get("timestamps").is_none());
+    }
+
+    #[test]
+    fn paused_has_no_clock_and_says_where_it_stands() {
+        let a = activity_for(&PresenceState { paused: Some(true), ..song() }, false);
+        assert!(a.get("timestamps").is_none());
+        assert_eq!(a["state"], "На паузе 1:23 / 3:20 · B");
+    }
+
+    #[test]
+    fn a_party_can_be_joined_and_has_no_link_button() {
+        let party = Party { id: "p1".into(), size: 2, max: 16, join: "JAM-7K9P2Q".into() };
+        let a = activity_for(&PresenceState { party: Some(party), ..song() }, false);
+        assert_eq!(a["party"]["size"], json!([2, 16]));
+        assert_eq!(a["secrets"]["join"], "JAM-7K9P2Q");
+        assert!(a.get("buttons").is_none());
+        assert!(activity_for(&song(), false)["buttons"].is_array());
+    }
+
+    #[test]
+    fn reads_join_events() {
+        let request = json!({ "cmd": "DISPATCH", "evt": "ACTIVITY_JOIN_REQUEST", "data": { "user": { "id": "42", "username": "friend" } } });
+        assert!(matches!(event_of(&request), Some(DiscordEvent::Request { user }) if user.id == "42"));
+        let join = json!({ "cmd": "DISPATCH", "evt": "ACTIVITY_JOIN", "data": { "secret": "JAM-7K9P2Q" } });
+        assert_eq!(event_of(&join), Some(DiscordEvent::Join { secret: "JAM-7K9P2Q".into() }));
+        assert_eq!(event_of(&json!({ "cmd": "SET_ACTIVITY" })), None);
     }
 }
 
@@ -340,9 +569,9 @@ mod tests {
 mod pipe_tests {
     use super::*;
     use std::io::{Read, Write};
-    use std::os::unix::net::UnixListener;
+    use std::os::unix::net::{UnixListener, UnixStream};
 
-    fn read(stream: &mut std::os::unix::net::UnixStream) -> (i32, Value) {
+    fn read(stream: &mut UnixStream) -> (i32, Value) {
         let mut h = [0u8; 8];
         stream.read_exact(&mut h).unwrap();
         let len = i32::from_le_bytes(h[4..8].try_into().unwrap()) as usize;
@@ -351,37 +580,74 @@ mod pipe_tests {
         (i32::from_le_bytes(h[0..4].try_into().unwrap()), serde_json::from_slice(&body).unwrap())
     }
 
-    /// a pretend Discord: the paused state must reach it without the running clock
+    /// answer a command the way Discord does: with its nonce
+    fn reply(stream: &mut UnixStream, to: &Value) {
+        stream.write_all(&encode_frame(OP_FRAME, &json!({ "cmd": to["cmd"], "nonce": to["nonce"], "data": {} }))).unwrap();
+    }
+
+    /// a pretend Discord: subscriptions, the paused state without a clock, a join request
     #[test]
-    fn pause_reaches_discord_without_timestamps() {
+    fn talks_to_discord() {
         let dir = std::env::temp_dir().join(format!("evplayer-discord-{}", std::process::id()));
         let _ = std::fs::create_dir_all(&dir);
         std::env::set_var("XDG_RUNTIME_DIR", &dir);
         let listener = UnixListener::bind(dir.join("discord-ipc-0")).unwrap();
         let discord = Discord::new();
+        let (got, events) = std::sync::mpsc::channel();
+        discord.on_event(move |e| {
+            let _ = got.send(e);
+        });
         discord.set_app_id(Some("1564485226267279360".into()));
         let (mut s, _) = listener.accept().unwrap();
         let (op, hello) = read(&mut s);
         assert_eq!(op, OP_HANDSHAKE);
         assert_eq!(hello["client_id"], "1564485226267279360");
         s.write_all(&encode_frame(OP_FRAME, &json!({ "evt": "READY", "data": { "user": { "id": "1", "username": "u" } } }))).unwrap();
+        for evt in ["ACTIVITY_JOIN_REQUEST", "ACTIVITY_JOIN"] {
+            let (_, sub) = read(&mut s);
+            assert_eq!(sub["cmd"], "SUBSCRIBE");
+            assert_eq!(sub["evt"], evt);
+            reply(&mut s, &sub);
+        }
         // first activity after READY (nothing playing yet)
         let (_, first) = read(&mut s);
         assert_eq!(first["cmd"], "SET_ACTIVITY");
-        s.write_all(&encode_frame(OP_FRAME, &json!({ "cmd": "SET_ACTIVITY", "data": {} }))).unwrap();
-        let playing = PresenceState { title: "Song".into(), artist: "Artist".into(), artwork: None, url: None, started_at: Some(1000.0), ends_at: Some(5000.0), paused: Some(false), status_shows: None };
+        reply(&mut s, &first);
+        let playing = PresenceState {
+            title: "Song".into(),
+            artist: "Artist".into(),
+            artwork: None,
+            url: None,
+            started_at: Some(1000.0),
+            ends_at: Some(5000.0),
+            paused: Some(false),
+            status_shows: None,
+            position_ms: Some(1000.0),
+            duration_ms: Some(4000.0),
+            party: None,
+        };
         discord.update(Some(playing.clone()));
         let (_, a) = read(&mut s);
         assert!(a["args"]["activity"]["timestamps"].is_object());
-        s.write_all(&encode_frame(OP_FRAME, &json!({ "cmd": "SET_ACTIVITY", "data": {} }))).unwrap();
+        reply(&mut s, &a);
         discord.update(Some(PresenceState { paused: Some(true), ..playing }));
         let (_, cleared) = read(&mut s);
         assert!(cleared["args"]["activity"].is_null());
-        s.write_all(&encode_frame(OP_FRAME, &json!({ "cmd": "SET_ACTIVITY", "data": {} }))).unwrap();
+        reply(&mut s, &cleared);
         let (_, b) = read(&mut s);
         let act = &b["args"]["activity"];
         assert!(act.get("timestamps").is_none(), "{act}");
-        assert!(act["state"].as_str().unwrap().contains("пауз"), "{act}");
+        assert!(act["state"].as_str().unwrap().contains("паузе"), "{act}");
+        reply(&mut s, &b);
+        // a friend asks to join while nothing is being sent; the answer goes back
+        s.write_all(&encode_frame(OP_FRAME, &json!({ "cmd": "DISPATCH", "evt": "ACTIVITY_JOIN_REQUEST", "data": { "user": { "id": "42", "username": "friend" } } }))).unwrap();
+        let event = events.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert!(matches!(event, DiscordEvent::Request { ref user } if user.id == "42"));
+        discord.answer("42".into(), true);
+        let (_, invite) = read(&mut s);
+        assert_eq!(invite["cmd"], "SEND_ACTIVITY_JOIN_INVITE");
+        assert_eq!(invite["args"]["user_id"], "42");
+        reply(&mut s, &invite);
         discord.quit();
         let _ = std::fs::remove_dir_all(&dir);
     }

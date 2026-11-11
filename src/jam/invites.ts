@@ -1,0 +1,69 @@
+import type { DiscordUser } from "@/platform/api";
+import { toast } from "@/ui/toasts";
+import { jam } from "./engine";
+import { normalizeCode } from "./protocol";
+import { useJam } from "./store";
+
+// The ways into a session from outside the dialog: an evplayer://jam/... link (a QR code,
+// a link sent in a chat) and Discord's "Ask to join" on the status.
+
+/** Discord needs a little time to show the status with the session's code before it hands
+    that code to the friend */
+const STATUS_SETTLES_MS = 1500;
+const ASKS_KEPT = 5;
+
+/** a link or a code from outside: open the session dialog and go in */
+export function openInvite(text: string): void {
+  const code = normalizeCode(text);
+  if (!code) return;
+  const s = useJam.getState();
+  s.setOpen(true);
+  if (s.status === "idle") void jam.join(code);
+  else if (s.code !== code) toast("Чтобы войти в другую сессию, сначала выйдите из этой");
+}
+
+/** the name for the session when there is none yet: the one from Discord */
+function nameFrom(user: DiscordUser | null | undefined): void {
+  if (user && !useJam.getState().name.trim()) useJam.getState().setProfile({ name: user.globalName ?? user.username });
+}
+
+/** let a friend from Discord in: start a session if there is none, then send the invite */
+export async function letIn(user: DiscordUser): Promise<void> {
+  const api = window.evplayer;
+  useJam.setState((s) => ({ asks: s.asks.filter((a) => a.id !== user.id) }));
+  if (!api) return;
+  if (useJam.getState().status === "idle") {
+    nameFrom((await api.discord.status().catch(() => null))?.user);
+    await jam.start();
+    if (useJam.getState().status !== "live") return;
+    await new Promise((r) => setTimeout(r, STATUS_SETTLES_MS));
+  }
+  api.discord.answer(user.id, true);
+  toast(`${user.globalName ?? user.username} сейчас подключится`);
+}
+
+export function turnDown(user: DiscordUser): void {
+  useJam.setState((s) => ({ asks: s.asks.filter((a) => a.id !== user.id) }));
+  window.evplayer?.discord.answer(user.id, false);
+}
+
+/** call once when the app starts */
+export function startInvites(): () => void {
+  const api = window.evplayer;
+  if (!api) return () => undefined;
+  const offDiscord = api.discord.onEvent((event) => {
+    if (event.kind === "request") {
+      useJam.setState((s) => ({ asks: [...s.asks.filter((a) => a.id !== event.user.id), event.user].slice(-ASKS_KEPT) }));
+    } else if (normalizeCode(event.secret)) {
+      void api.discord.status().then((st) => nameFrom(st.user)).catch(() => undefined).finally(() => openInvite(event.secret));
+    } else {
+      toast("Друг ещё не начал сессию: попросите его прислать код", "error");
+    }
+  });
+  void api.links.first().then((url) => url && openInvite(url)).catch(() => undefined);
+  const offLinks = api.links.onOpen(openInvite);
+  return () => {
+    offDiscord();
+    offLinks();
+  };
+}

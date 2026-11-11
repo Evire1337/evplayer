@@ -6,9 +6,24 @@ import { useLibrary } from "@/library/store";
 import { runAction, type Command } from "./actions";
 import { useLyricsLine } from "@/ui/lyricsLine";
 import { sendPhoneMedia } from "@/platform/androidMedia";
+import { useJam } from "@/jam/store";
+import { JAM_MAX } from "@/jam/types";
 
 // Keeps the main process in step with the page: tray menu and options, global keys,
 // Discord status. Also takes commands from the tray and the global keys.
+
+/** this app's party for Discord's "Ask to join" when no session is on yet */
+const SOLO_PARTY = `evplayer-${Math.random().toString(36).slice(2, 10)}`;
+
+/**
+ * What friends see in Discord to ask to join: the session's code while one is on (they are
+ * let in with it), otherwise a placeholder; a session is started when someone is let in.
+ */
+function discordParty() {
+  const j = useJam.getState();
+  if (j.status === "live") return { id: j.code, size: j.people.length, max: JAM_MAX, join: j.code };
+  return { id: SOLO_PARTY, size: 1, max: JAM_MAX, join: "evplayer" };
+}
 
 export function startBridge(): void {
   const api = window.evplayer;
@@ -28,7 +43,7 @@ export function startBridge(): void {
       "overlayEnabled", "overlayOnTop", "overlayOnMinimize", "overlayCorner",
     ];
     if (keys.some((k) => s[k] !== prev[k])) pushSettings();
-    const discordKeys: Array<keyof typeof s> = ["discordEnabled", "discordShowArtwork", "discordShowPaused", "discordShowTimeline", "discordShowButton", "discordStatusShows"];
+    const discordKeys: Array<keyof typeof s> = ["discordEnabled", "discordShowArtwork", "discordShowPaused", "discordShowTimeline", "discordShowButton", "discordStatusShows", "discordJoin"];
     if (discordKeys.some((k) => s[k] !== prev[k])) pushPresence(true);
     if (s.overlayShowLyrics !== prev.overlayShowLyrics) pushOverlay();
     if (s.noCache !== prev.noCache) void api.setNoCache(s.noCache);
@@ -45,7 +60,8 @@ export function startBridge(): void {
     const s = usePlayer.getState();
     const track = currentTrack(s);
     const playing = s.status === "playing";
-    const key = `${track?.id}|${playing}`;
+    const jam = useJam.getState();
+    const key = `${track?.id}|${playing}|${jam.status}|${jam.code}|${jam.people.length}`;
     // a jump in position (seek) also needs a fresh "elapsed" time in Discord
     if (!force && key === lastPresence) return;
     lastPresence = key;
@@ -64,12 +80,24 @@ export function startBridge(): void {
       startedAt: o.discordShowTimeline ? startedAt : undefined,
       endsAt: o.discordShowTimeline && s.durationMs ? startedAt + s.durationMs : undefined,
       statusShows: o.discordStatusShows,
+      positionMs: playing ? undefined : s.positionMs,
+      durationMs: playing ? undefined : s.durationMs || undefined,
+      party: o.discordJoin ? discordParty() : undefined,
     });
   };
 
   // the mini player window gets a small copy of the player state
   let lastOverlay = "";
+  // whether the song is liked, worked out once per song (the likes can be thousands long)
+  let likedOf = { id: "", likes: useLibrary.getState().likes, liked: false };
+  const isLiked = (id: string) => {
+    const likes = useLibrary.getState().likes;
+    if (likedOf.id !== id || likedOf.likes !== likes) likedOf = { id, likes, liked: likes.some((l) => l.track.id === id) };
+    return likedOf.liked;
+  };
   const pushOverlay = () => {
+    // the mini player is off: nothing to keep it up to date for (a ready one asks again)
+    if (!useSettings.getState().overlayEnabled) return;
     const s = usePlayer.getState();
     const track = currentTrack(s);
     const state = {
@@ -77,7 +105,7 @@ export function startBridge(): void {
       status: s.status,
       positionMs: Math.round(s.positionMs / 500) * 500,
       durationMs: s.durationMs,
-      liked: track ? useLibrary.getState().likes.some((l) => l.track.id === track.id) : false,
+      liked: track ? isLiked(track.id) : false,
       line: useSettings.getState().overlayShowLyrics ? useLyricsLine.getState().line : null,
     };
     const key = JSON.stringify(state);
@@ -120,6 +148,9 @@ export function startBridge(): void {
     }
   });
   useLibrary.subscribe(pushPhone);
+
+  // a session started, ended or someone came: the status shows it
+  useJam.subscribe(() => pushPresence());
 
   usePlayer.subscribe((s, prev) => {
     const track = currentTrack(s);

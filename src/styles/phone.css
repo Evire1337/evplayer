@@ -106,3 +106,11 @@ html.is-phone .queue-sheet .queue { padding-bottom: 16px; }
 /* no blur on the lyric lines: every blurred line is redrawn by the phone's graphics chip,
    which costs battery and can make the page stutter */
 html.is-phone .lyric-line { filter: none !important; }
+
+/* listening together: the session opens from the player's tools (the bottom bar is full),
+   and what floats up stays clear of the player and the bar */
+html.is-phone .rail-jam { display: none; }
+html.is-phone .jam-float { right: 12px; bottom: calc(var(--nav-h) + var(--mini-h) + var(--safe-bottom) + 24px); }
+html.is-phone .jam-asks { top: calc(env(safe-area-inset-top, 0px) + 12px); }
+html.is-phone .jam-ask { flex-wrap: wrap; }
+html.is-phone .jam-ask-text { flex-basis: calc(100% - 48px); }

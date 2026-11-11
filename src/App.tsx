@@ -29,7 +29,9 @@ import SpotifyExportDialog from "@/library/SpotifyExportDialog";
 import TrackStatsDialog from "@/stats/TrackStatsDialog";
 import TagEditorDialog from "@/files/tagEditor";
 import JamDialog from "@/jam/JamDialog";
-import ReactionOverlay from "@/jam/ReactionOverlay";
+import JamFloat from "@/jam/JamFloat";
+import JamAsks from "@/jam/JamAsks";
+import { startInvites } from "@/jam/invites";
 import { useSettings } from "@/settings/store";
 import { IconBack } from "@/ui/components/Icons";
 import WindowControls from "@/ui/components/WindowControls";
@@ -70,6 +72,7 @@ export default function App() {
   useEffect(() => window.evplayer?.overlay.onVisible(setOverlayOpen), []);
   // songs saved for offline: the index, progress, and lists that keep themselves complete
   useEffect(() => startOffline(), []);
+  useEffect(() => startInvites(), []);
   const asleep = useAsleep();
   const saver = useSettings((s) => s.memorySaver);
   useEffect(() => {
@@ -121,7 +124,8 @@ export default function App() {
       <TrackStatsDialog />
       <TagEditorDialog />
       <JamDialog />
-      <ReactionOverlay />
+      <JamFloat />
+      <JamAsks />
     </div>
   );
 }

@@ -97,6 +97,7 @@ export default function DiscordTab() {
           <SwitchRow title="Обложка" hint="Картинка трека рядом со статусом" checked={o.discordShowArtwork} onChange={(v) => o.set({ discordShowArtwork: v })} />
           <SwitchRow title="Время" hint="Полоска прогресса и сколько осталось" checked={o.discordShowTimeline} onChange={(v) => o.set({ discordShowTimeline: v })} />
           <SwitchRow title="Кнопка «Слушать»" hint="Друзья откроют трек на SoundCloud или YouTube" checked={o.discordShowButton} onChange={(v) => o.set({ discordShowButton: v })} />
+          <SwitchRow title="Слушать вместе" hint="Друзья нажмут «Попросить присоединиться» в вашем профиле; вы примете — и начнётся совместная сессия. Вместо кнопки «Слушать»" checked={o.discordJoin} onChange={(v) => o.set({ discordJoin: v })} />
           <SwitchRow title="Показывать на паузе" hint="Иначе статус исчезает, пока музыка стоит" checked={o.discordShowPaused} onChange={(v) => o.set({ discordShowPaused: v })} />
           <Row title="В списке участников" hint="Что написано под вашим именем на сервере">
             <Segmented<DiscordStatusShows>

@@ -1,1080 +1,579 @@
-import { finalizeEvent, generateSecretKey, getPublicKey, Relay } from "nostr-tools";
-import { player } from "@/player/engine";
-import { currentTrack, nextIndex, prevIndex, usePlayer, type PlayerStatus } from "@/player/store";
+import { player, type PlayerAction } from "@/player/engine";
+import { currentTrack, usePlayer } from "@/player/store";
 import type { Track } from "@/types";
 import { toast } from "@/ui/toasts";
-import {
-  buildSyncPayload,
-  calculateTargetPosition,
-  generateRoomCode,
-  normalizeRoomCode,
-  shouldResyncPosition,
-} from "./protocol";
-import { useJam } from "./store";
-import {
-  DEFAULT_JAM_RELAYS,
-  type JamControlMode,
-  type JamMessage,
-  type JamMessageContent,
-  type JamParticipant,
-  type JamSyncPayload,
-} from "./types";
+import type { JamLink } from "./link";
+import { DRIFT_MS, fitTracks, newCode, normalizeCode, positionNow, queueWindow, sameName } from "./protocol";
+import { addChat, addReaction, nameOf, noteAddedBy, resetJam, useJam } from "./store";
+import { JAM_MAX, type JamControl, type JamMessage, type JamNow, type JamPerson, type JamRequest } from "./types";
+
+// A listening session. The host's player is the one that counts: it plays as usual and
+// tells everyone what it is doing a few times a second at most (and every few seconds
+// anyway). Guests follow it, and what a guest presses goes to the host as a request, so
+// there is one queue and one clock. Guests say they are still there every few seconds;
+// whoever goes quiet (closed the app, lost the network) drops out of the list.
+
+/** the host repeats where it is this often, even when nothing changes */
+const BEAT_MS = 4000;
+/** and the whole visible queue every this many beats (a guest may have missed a change) */
+const FULL_EVERY = 6;
+const HERE_MS = 10_000;
+/** a guest not heard from for this long is gone */
+const GUEST_GONE_MS = 40_000;
+/** the host not heard from for this long: the session is over for this guest */
+const HOST_GONE_MS = 30_000;
+const JOIN_TIMEOUT_MS = 12_000;
+/** time to get "I'm leaving" out before the connection closes */
+const GOODBYE_MS = 1500;
+
+interface Before {
+  queue: Track[];
+  index: number;
+  positionMs: number;
+}
+
+const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 class JamEngine {
-  private relays: Relay[] = [];
-  private subscriptions: Array<{ close: () => void }> = [];
-  private secretKey: Uint8Array = generateSecretKey();
-  private myId: string = "";
-  private currentRoomTag: string = "";
-  private seenEvents = new Set<string>();
-  private seenMsgIds = new Set<string>();
-  private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
-  private isRemoteAction = false;
-  private joinTimeout: ReturnType<typeof setTimeout> | null = null;
-
-  private origMethods: {
-    toggle: () => void;
-    next: () => void;
-    prev: (force?: boolean) => void;
-    seek: (ms: number) => void;
-    playIndex: (index: number) => Promise<void>;
-    playQueue: (tracks: Track[], startIndex?: number, source?: any) => Promise<void>;
-    playFrom: (tracks: Track[], index: number) => void;
-    addToQueue: (track: Track) => void;
-    playNext: (track: Track) => void;
-    removeFromQueue: (index: number) => void;
-    moveInQueue: (from: number, to: number) => void;
-    clearUpcoming: () => void;
-  };
+  // the network part (and its cryptography) loads only when a session starts: most people
+  // never open one, and it would cost them memory and start-up time
+  private link: JamLink | null = null;
+  private timers: Array<ReturnType<typeof setInterval>> = [];
+  private stopWatching: (() => void) | null = null;
+  // host
+  private heard = new Map<string, number>();
+  private banned = new Set<string>();
+  private rev = 0;
+  private sentRev = -1;
+  private beats = 0;
+  private sendTimer: ReturnType<typeof setTimeout> | undefined;
+  // guest
+  private hostId = "";
+  private lastFromHost = 0;
+  private offset = 0;
+  private queueRev = -1;
+  private before: Before | null = null;
+  private joinTimer: ReturnType<typeof setTimeout> | undefined;
+  private warnedLocal = "";
+  /** the song this guest's player was told to play (the queue may already show the next one) */
+  private playingId = "";
 
   constructor() {
-    this.myId = getPublicKey(this.secretKey);
-    this.origMethods = {
-      toggle: player.toggle.bind(player),
-      next: player.next.bind(player),
-      prev: player.prev.bind(player),
-      seek: player.seek.bind(player),
-      playIndex: player.playIndex.bind(player),
-      playQueue: player.playQueue.bind(player),
-      playFrom: player.playFrom.bind(player),
-      addToQueue: player.addToQueue.bind(player),
-      playNext: player.playNext.bind(player),
-      removeFromQueue: player.removeFromQueue.bind(player),
-      moveInQueue: player.moveInQueue.bind(player),
-      clearUpcoming: player.clearUpcoming.bind(player),
+    // closing the app: say goodbye, so the others do not wait for the timeout
+    const bye = () => {
+      const s = useJam.getState();
+      if (s.status === "live") void this.link?.send(s.host ? { t: "end" } : { t: "leave" });
     };
-
-    this.interceptPlayer();
-    this.listenToPlayerChanges();
+    window.addEventListener("beforeunload", bye);
+    // a phone closes the page without asking first
+    window.addEventListener("pagehide", bye);
   }
 
-  // Intercept player controls to route them through Jam when active
-  private interceptPlayer(): void {
-    player.toggle = () => {
-      const jam = useJam.getState();
-      if (!jam.active) return this.origMethods.toggle();
-      if (jam.isHost) return this.origMethods.toggle();
-
-      if (jam.controlMode === "host_only") {
-        toast("Только организатор может управлять воспроизведением");
-        return;
-      }
-      const state = usePlayer.getState();
-      const newStatus = state.status === "playing" ? "paused" : "playing";
-      void this.publish({
-        type: "playback_state",
-        status: newStatus,
-        positionMs: state.positionMs,
-        timestamp: Date.now(),
-      });
-    };
-
-    player.next = () => {
-      const jam = useJam.getState();
-      if (!jam.active) return this.origMethods.next();
-      if (jam.isHost) return this.origMethods.next();
-
-      if (jam.controlMode === "host_only") {
-        toast("Только организатор может переключать треки");
-        return;
-      }
-      const state = usePlayer.getState();
-      const idx = nextIndex(state, true);
-      if (idx >= 0 && state.queue[idx]) {
-        void this.publish({
-          type: "track_change",
-          track: state.queue[idx],
-          index: idx,
-          positionMs: 0,
-          status: "playing",
-          timestamp: Date.now(),
-        });
-      }
-    };
-
-    player.prev = (force?: boolean) => {
-      const jam = useJam.getState();
-      if (!jam.active) return this.origMethods.prev(force);
-      if (jam.isHost) return this.origMethods.prev(force);
-
-      if (jam.controlMode === "host_only") {
-        toast("Только организатор может переключать треки");
-        return;
-      }
-      const state = usePlayer.getState();
-      if (!force && state.positionMs > 4000) {
-        void this.publish({ type: "seek", positionMs: 0, timestamp: Date.now() });
-        return;
-      }
-      const idx = prevIndex(state);
-      if (idx >= 0 && state.queue[idx]) {
-        void this.publish({
-          type: "track_change",
-          track: state.queue[idx],
-          index: idx,
-          positionMs: 0,
-          status: "playing",
-          timestamp: Date.now(),
-        });
-      }
-    };
-
-    player.seek = (ms: number) => {
-      const jam = useJam.getState();
-      if (!jam.active) return this.origMethods.seek(ms);
-      if (jam.isHost) return this.origMethods.seek(ms);
-
-      if (jam.controlMode === "host_only") {
-        toast("Только организатор может перематывать");
-        return;
-      }
-      void this.publish({ type: "seek", positionMs: ms, timestamp: Date.now() });
-    };
-
-    player.playIndex = async (index: number) => {
-      const jam = useJam.getState();
-      if (!jam.active) return this.origMethods.playIndex(index);
-      if (jam.isHost) return this.origMethods.playIndex(index);
-
-      if (jam.controlMode === "host_only") {
-        toast("Только организатор может переключать треки");
-        return;
-      }
-      const state = usePlayer.getState();
-      const track = state.queue[index];
-      if (track) {
-        void this.publish({
-          type: "track_change",
-          track,
-          index,
-          positionMs: 0,
-          status: "playing",
-          timestamp: Date.now(),
-        });
-      }
-    };
-
-    player.playQueue = async (tracks: Track[], startIndex = 0, source?: any) => {
-      const jam = useJam.getState();
-      if (!jam.active) return this.origMethods.playQueue(tracks, startIndex, source);
-      if (jam.isHost) {
-        const startTrack = tracks[startIndex] ?? tracks[0];
-        if (startTrack) {
-          useJam.getState().recordTrackAddedBy(startTrack.id, jam.myProfile.name);
-        }
-        return this.origMethods.playQueue(tracks, startIndex, source);
-      }
-
-      // Participant trying to play a track or list
-      const targetTrack = tracks[startIndex] ?? tracks[0];
-      if (!targetTrack) return;
-
-      if (jam.controlMode === "host_only") {
-        useJam.getState().recordTrackAddedBy(targetTrack.id, jam.myProfile.name);
-        void this.publish({
-          type: "queue_add",
-          track: targetTrack,
-          addedBy: jam.myProfile.name,
-          playNext: false,
-        });
-        toast("Только организатор переключает треки. Трек добавлен в очередь Jam.");
-        return;
-      }
-
-      // Control mode is 'anyone' (toggle ON): play immediately in Jam!
-      useJam.getState().recordTrackAddedBy(targetTrack.id, jam.myProfile.name);
-      toast(`Включаем в Jam: ${targetTrack.title}`);
-
-      void this.publish({
-        type: "play_track",
-        track: targetTrack,
-        addedBy: jam.myProfile.name,
-        queue: tracks.slice(0, 50),
-        startIndex,
-      });
-    };
-
-    player.playFrom = (tracks: Track[], index: number) => {
-      const jam = useJam.getState();
-      if (!jam.active) return this.origMethods.playFrom(tracks, index);
-      const s = usePlayer.getState();
-      const track = tracks[index];
-      if (!track) return;
-      if (currentTrack(s)?.id === track.id) {
-        player.toggle();
-        return;
-      }
-      void player.playQueue(tracks, index);
-    };
-
-    player.addToQueue = (track: Track) => {
-      const jam = useJam.getState();
-      if (!jam.active) return this.origMethods.addToQueue(track);
-      if (jam.isHost) {
-        useJam.getState().recordTrackAddedBy(track.id, jam.myProfile.name);
-        this.origMethods.addToQueue(track);
-        return;
-      }
-      // Listener adding to shared Jam queue
-      void this.publish({
-        type: "queue_add",
-        track,
-        addedBy: jam.myProfile.name,
-        playNext: false,
-      });
-      toast(`Добавлено в очередь Jam: ${track.title}`);
-    };
-
-    player.playNext = (track: Track) => {
-      const jam = useJam.getState();
-      if (!jam.active) return this.origMethods.playNext(track);
-      if (jam.isHost) {
-        useJam.getState().recordTrackAddedBy(track.id, jam.myProfile.name);
-        this.origMethods.playNext(track);
-        return;
-      }
-      void this.publish({
-        type: "queue_add",
-        track,
-        addedBy: jam.myProfile.name,
-        playNext: true,
-      });
-      toast(`Будет играть следующим в Jam: ${track.title}`);
-    };
-
-    player.removeFromQueue = (index: number) => {
-      const jam = useJam.getState();
-      if (!jam.active) return this.origMethods.removeFromQueue(index);
-      if (jam.isHost) return this.origMethods.removeFromQueue(index);
-
-      if (jam.controlMode === "host_only") {
-        toast("Только организатор может удалять из очереди");
-        return;
-      }
-      void this.publish({ type: "queue_remove", index });
-    };
-
-    player.moveInQueue = (from: number, to: number) => {
-      const jam = useJam.getState();
-      if (!jam.active) return this.origMethods.moveInQueue(from, to);
-      if (jam.isHost) return this.origMethods.moveInQueue(from, to);
-
-      if (jam.controlMode === "host_only") {
-        toast("Только организатор может менять порядок в очереди");
-        return;
-      }
-      void this.publish({ type: "queue_move", from, to });
-    };
-
-    player.clearUpcoming = () => {
-      const jam = useJam.getState();
-      if (!jam.active) return this.origMethods.clearUpcoming();
-      if (jam.isHost) return this.origMethods.clearUpcoming();
-
-      if (jam.controlMode === "host_only") {
-        toast("Только организатор может очищать очередь");
-        return;
-      }
-      const s = usePlayer.getState();
-      void this.publish({
-        type: "queue_update",
-        queue: s.queue.slice(0, s.index + 1),
-        index: s.index,
-      });
-    };
-  }
-
-  // Monitor host player actions to broadcast to listeners
-  private listenToPlayerChanges(): void {
-    let prevTrackId = "";
-    let prevStatus: PlayerStatus = "idle";
-    let prevIndex = -1;
-    let prevQueueLength = 0;
-    let lastSeekPos = 0;
-
-    usePlayer.subscribe((state) => {
-      if (this.isRemoteAction) return;
-      const jam = useJam.getState();
-      if (!jam.active || !jam.isHost) return;
-
-      const track = currentTrack(state);
-      const trackChanged = track?.id !== prevTrackId || state.index !== prevIndex;
-      const statusChanged = state.status !== prevStatus && state.status !== "loading";
-      const queueChanged = state.queue.length !== prevQueueLength;
-
-      if (trackChanged && track) {
-        prevTrackId = track.id;
-        prevIndex = state.index;
-        void this.publish({
-          type: "track_change",
-          track,
-          index: state.index,
-          positionMs: state.positionMs,
-          status: state.status,
-          timestamp: Date.now(),
-        });
-      }
-
-      if (statusChanged) {
-        prevStatus = state.status;
-        void this.publish({
-          type: "playback_state",
-          status: state.status,
-          positionMs: state.positionMs,
-          timestamp: Date.now(),
-        });
-      }
-
-      if (queueChanged) {
-        prevQueueLength = state.queue.length;
-        void this.publish({
-          type: "queue_update",
-          queue: state.queue,
-          index: state.index,
-        });
-      }
-
-      // Check for manual seek (jump of > 2500ms)
-      const seekJump = Math.abs(state.positionMs - lastSeekPos);
-      if (seekJump > 2500 && !trackChanged && state.status === "playing") {
-        void this.publish({
-          type: "seek",
-          positionMs: state.positionMs,
-          timestamp: Date.now(),
-        });
-      }
-      lastSeekPos = state.positionMs;
-    });
-  }
-
-  // --- CONNECTING TO RELAYS ---
-
-  private async ensureRelaysConnected(): Promise<Relay[]> {
-    const live = this.relays.filter((r) => r.connected);
-    if (live.length >= 2) return live;
-
-    const connected: Relay[] = [...live];
-    const existingUrls = new Set(live.map((r) => r.url));
-    const toConnect = DEFAULT_JAM_RELAYS.filter((u) => !existingUrls.has(u));
-
-    await Promise.all(
-      toConnect.map(async (url) => {
-        try {
-          const r = await Promise.race([
-            Relay.connect(url),
-            new Promise<never>((_, reject) => setTimeout(() => reject(new Error("timeout")), 4000)),
-          ]);
-          connected.push(r);
-        } catch {
-          // fallback relay if one is down
-        }
-      }),
-    );
-
-    if (connected.length === 0) {
-      throw new Error("Не удалось подключиться к сети серверов");
+  private async open(code: string): Promise<void> {
+    if (!this.link) {
+      const { JamLink } = await import("./link");
+      this.link = new JamLink((msg, from) => this.receive(msg, from));
     }
-
-    this.relays = connected;
-    return connected;
+    await this.link.join(code);
   }
 
-  private async publish(content: JamMessageContent): Promise<void> {
-    if (!this.currentRoomTag) return;
+  /** the link of a session that is on (it is open from start or join on) */
+  private get wire(): JamLink {
+    return this.link!;
+  }
+
+  get myId(): string {
+    return this.link?.id ?? "";
+  }
+
+  // ---- starting and leaving -------------------------------------------------------------
+
+  async start(): Promise<void> {
+    const jam = useJam.getState();
+    if (jam.status !== "idle" || !this.nameIsSet()) return;
+    useJam.setState({ status: "starting" });
+    const code = newCode();
     try {
-      const activeRelays = await this.ensureRelaysConnected();
-      const msg: JamMessage = { ...content, senderId: this.myId };
-      const event = finalizeEvent(
-        {
-          kind: 20001,
-          created_at: Math.floor(Date.now() / 1000),
-          tags: [["t", this.currentRoomTag]],
-          content: JSON.stringify(msg),
-        },
-        this.secretKey,
-      );
-
-      this.seenEvents.add(event.id);
-      await Promise.allSettled(activeRelays.map((r) => r.publish(event)));
-    } catch {
-      // ignore transient send failures
-    }
-  }
-
-  private subscribeToRoom(roomTag: string): void {
-    this.currentRoomTag = roomTag;
-    for (const relay of this.relays) {
-      if (!relay.connected) continue;
-      const sub = relay.subscribe([{ kinds: [20001], "#t": [roomTag] }], {
-        onevent: (event) => {
-          if (this.seenEvents.has(event.id)) return;
-          this.seenEvents.add(event.id);
-          if (this.seenEvents.size > 800) {
-            const first = this.seenEvents.values().next().value;
-            if (first) this.seenEvents.delete(first);
-          }
-
-          try {
-            const msg = JSON.parse(event.content) as JamMessage;
-            if (msg.senderId === this.myId) return; // skip own messages
-            if ("id" in msg && typeof msg.id === "string") {
-              if (this.seenMsgIds.has(msg.id)) return;
-              this.seenMsgIds.add(msg.id);
-              if (this.seenMsgIds.size > 800) {
-                const first = this.seenMsgIds.values().next().value;
-                if (first) this.seenMsgIds.delete(first);
-              }
-            }
-            this.handleIncomingMessage(msg);
-          } catch {
-            // ignore malformed message
-          }
-        },
-      });
-      this.subscriptions.push(sub);
-    }
-  }
-
-  // --- HOST SESSION ---
-
-  async startHost(controlMode: JamControlMode = "anyone"): Promise<string> {
-    this.cleanup();
-    const code = generateRoomCode();
-    const roomTag = `evp_${code.toLowerCase().replace(/[^a-z0-9]/g, "")}`;
-    const myProfile = useJam.getState().myProfile;
-
-    useJam.getState().setStatus("hosting");
-
-    try {
-      await this.ensureRelaysConnected();
-      this.subscribeToRoom(roomTag);
-
-      const hostParticipant: JamParticipant = {
-        id: this.myId,
-        name: myProfile.name,
-        avatarColor: myProfile.avatarColor,
-        isHost: true,
-        joinedAt: Date.now(),
-      };
-
-      useJam.getState().setSession({
-        active: true,
-        isHost: true,
-        roomCode: code,
-        hostName: myProfile.name,
-        controlMode,
-        participants: [hostParticipant],
-      });
-
-      this.startHeartbeat();
-      toast(`Сессия Jam создана! Код: ${code}`);
-      return code;
-    } catch (err) {
-      useJam.getState().setStatus("error", String(err));
-      toast(`Ошибка создания сессии: ${err instanceof Error ? err.message : String(err)}`);
-      throw err;
-    }
-  }
-
-  // --- JOIN SESSION ---
-
-  async joinSession(rawCode: string): Promise<void> {
-    this.cleanup();
-    const code = normalizeRoomCode(rawCode);
-    const roomTag = `evp_${code.toLowerCase().replace(/[^a-z0-9]/g, "")}`;
-    const myProfile = useJam.getState().myProfile;
-
-    useJam.getState().setStatus("joining");
-
-    return new Promise((resolve, reject) => {
-      this.ensureRelaysConnected()
-        .then(() => {
-          this.subscribeToRoom(roomTag);
-
-          // Listen for host response
-          const onResponse = () => {
-            if (this.joinTimeout) {
-              clearTimeout(this.joinTimeout);
-              this.joinTimeout = null;
-            }
-            resolve();
-          };
-
-          // Send join request
-          void this.publish({
-            type: "join_request",
-            name: myProfile.name,
-            avatarColor: myProfile.avatarColor,
-          });
-
-          // Timeout if host not found in 8 seconds
-          this.joinTimeout = setTimeout(() => {
-            if (!useJam.getState().active) {
-              useJam.getState().setStatus("error", "Сессия не найдена");
-              toast("Организатор не найден. Проверьте код сессии.");
-              this.cleanup();
-              reject(new Error("Host not found"));
-            }
-          }, 8000);
-
-          (this as unknown as { _onJoinSuccess?: () => void })._onJoinSuccess = onResponse;
-        })
-        .catch((err) => {
-          useJam.getState().setStatus("error", "Ошибка соединения");
-          toast(`Ошибка подключения к серверам: ${err.message}`);
-          reject(err);
-        });
-    });
-  }
-
-  // --- MESSAGE HANDLER ---
-
-  private handleIncomingMessage(msg: JamMessage): void {
-    const jam = useJam.getState();
-
-    if (jam.isHost) {
-      this.handleHostMessage(msg);
-    } else {
-      this.handleClientMessage(msg);
-    }
-  }
-
-  private handleHostMessage(msg: JamMessage): void {
-    const jam = useJam.getState();
-
-    switch (msg.type) {
-      case "join_request": {
-        const participant: JamParticipant = {
-          id: msg.senderId,
-          name: msg.name || "Слушатель",
-          avatarColor: msg.avatarColor || "#1db954",
-          isHost: false,
-          joinedAt: Date.now(),
-        };
-
-        const updated = [...jam.participants.filter((p) => p.id !== msg.senderId), participant];
-        jam.updateParticipants(updated);
-
-        const syncPayload = this.buildCurrentSyncPayload(updated);
-        void this.publish({
-          type: "join_response",
-          targetId: msg.senderId,
-          ok: true,
-          state: syncPayload,
-        });
-
-        void this.publish({ type: "sync", state: syncPayload });
-        toast(`${participant.name} подключился к сессии!`);
-        break;
-      }
-
-      case "playback_state": {
-        if (jam.controlMode === "host_only") return;
-        this.withRemoteLock(() => {
-          if (msg.status === "playing" && usePlayer.getState().status !== "playing") {
-            this.origMethods.toggle();
-          } else if (msg.status === "paused" && usePlayer.getState().status === "playing") {
-            this.origMethods.toggle();
-          }
-        });
-        void this.publish(msg);
-        break;
-      }
-
-      case "seek": {
-        if (jam.controlMode === "host_only") return;
-        this.withRemoteLock(() => {
-          this.origMethods.seek(msg.positionMs);
-        });
-        void this.publish(msg);
-        break;
-      }
-
-      case "track_change": {
-        if (jam.controlMode === "host_only") return;
-        this.withRemoteLock(async () => {
-          const s = usePlayer.getState();
-          let targetIndex = s.queue.findIndex((t) => t.id === msg.track.id);
-          if (targetIndex >= 0) {
-            await this.origMethods.playIndex(targetIndex);
-          } else {
-            const curIdx = s.index;
-            targetIndex = curIdx >= 0 ? curIdx + 1 : 0;
-            const newQ = [...s.queue];
-            newQ.splice(targetIndex, 0, msg.track);
-            usePlayer.setState({ queue: newQ });
-            await this.origMethods.playIndex(targetIndex);
-          }
-          const updated = usePlayer.getState();
-          void this.publish({
-            type: "track_change",
-            track: msg.track,
-            index: updated.index,
-            positionMs: 0,
-            status: "playing",
-            timestamp: Date.now(),
-          });
-          void this.publish({
-            type: "queue_update",
-            queue: updated.queue,
-            index: updated.index,
-          });
-        });
-        break;
-      }
-
-      case "play_track": {
-        if (jam.controlMode === "host_only") return;
-        jam.recordTrackAddedBy(msg.track.id, msg.addedBy);
-        toast(`${msg.addedBy} включил(а): ${msg.track.title}`);
-
-        this.withRemoteLock(async () => {
-          if (msg.queue && msg.queue.length > 0) {
-            const idx = msg.queue.findIndex((t) => t.id === msg.track.id);
-            const playIdx = idx >= 0 ? idx : (msg.startIndex ?? 0);
-            await this.origMethods.playQueue(msg.queue, playIdx);
-          } else {
-            const curQueue = usePlayer.getState().queue;
-            const existingIdx = curQueue.findIndex((t) => t.id === msg.track.id);
-            if (existingIdx >= 0) {
-              await this.origMethods.playIndex(existingIdx);
-            } else {
-              const curIndex = usePlayer.getState().index;
-              const newQueue = [...curQueue];
-              const insertAt = curIndex >= 0 ? curIndex + 1 : 0;
-              newQueue.splice(insertAt, 0, msg.track);
-              usePlayer.setState({ queue: newQueue });
-              await this.origMethods.playIndex(insertAt);
-            }
-          }
-
-          const updatedState = usePlayer.getState();
-          const syncPayload = this.buildCurrentSyncPayload(jam.participants);
-          void this.publish({
-            type: "track_change",
-            track: msg.track,
-            index: updatedState.index,
-            positionMs: 0,
-            status: "playing",
-            timestamp: Date.now(),
-          });
-          void this.publish({
-            type: "queue_update",
-            queue: updatedState.queue,
-            index: updatedState.index,
-          });
-          void this.publish({
-            type: "sync",
-            state: syncPayload,
-          });
-        });
-        break;
-      }
-
-      case "queue_add": {
-        jam.recordTrackAddedBy(msg.track.id, msg.addedBy);
-        if (msg.playNext) {
-          this.origMethods.playNext(msg.track);
-        } else {
-          this.origMethods.addToQueue(msg.track);
-        }
-        toast(`${msg.addedBy} добавил(а) трек: ${msg.track.title}`);
-        void this.publish({
-          type: "queue_update",
-          queue: usePlayer.getState().queue,
-          index: usePlayer.getState().index,
-        });
-        break;
-      }
-
-      case "queue_remove": {
-        if (jam.controlMode === "host_only") return;
-        this.origMethods.removeFromQueue(msg.index);
-        void this.publish({
-          type: "queue_update",
-          queue: usePlayer.getState().queue,
-          index: usePlayer.getState().index,
-        });
-        break;
-      }
-
-      case "queue_move": {
-        if (jam.controlMode === "host_only") return;
-        this.origMethods.moveInQueue(msg.from, msg.to);
-        void this.publish({
-          type: "queue_update",
-          queue: usePlayer.getState().queue,
-          index: usePlayer.getState().index,
-        });
-        break;
-      }
-
-      case "reaction": {
-        jam.addReaction(msg);
-        void this.publish(msg);
-        break;
-      }
-
-      case "chat": {
-        jam.addChatMessage(msg);
-        void this.publish(msg);
-        break;
-      }
-
-      case "leave": {
-        const leaving = jam.participants.find((p) => p.id === msg.senderId);
-        if (leaving) {
-          const updated = jam.participants.filter((p) => p.id !== msg.senderId);
-          jam.updateParticipants(updated);
-          void this.publish({
-            type: "sync",
-            state: this.buildCurrentSyncPayload(updated),
-          });
-          toast(`${leaving.name} покинул(а) сессию`);
-        }
-        break;
-      }
-    }
-  }
-
-  private handleClientMessage(msg: JamMessage): void {
-    const jam = useJam.getState();
-
-    switch (msg.type) {
-      case "join_response": {
-        if (msg.targetId === this.myId && msg.ok && msg.state) {
-          useJam.getState().setSession({
-            active: true,
-            isHost: false,
-            roomCode: msg.state.roomCode,
-            hostName: msg.state.hostName,
-            controlMode: msg.state.controlMode,
-            participants: msg.state.participants,
-          });
-          this.applySyncPayload(msg.state);
-          toast(`Вы подключились к Jam (${msg.state.hostName})!`);
-          const cb = (this as unknown as { _onJoinSuccess?: () => void })._onJoinSuccess;
-          if (cb) cb();
-        }
-        break;
-      }
-
-      case "sync": {
-        jam.updateParticipants(msg.state.participants);
-        jam.setControlMode(msg.state.controlMode);
-        this.applySyncPayload(msg.state);
-        break;
-      }
-
-      case "playback_state": {
-        this.withRemoteLock(() => {
-          const currentStatus = usePlayer.getState().status;
-          if (msg.status === "playing" && currentStatus !== "playing") {
-            this.origMethods.toggle();
-          } else if (msg.status === "paused" && currentStatus === "playing") {
-            this.origMethods.toggle();
-          }
-          const target = calculateTargetPosition(msg.positionMs, msg.timestamp, Date.now(), msg.status);
-          if (shouldResyncPosition(usePlayer.getState().positionMs, target)) {
-            this.origMethods.seek(target);
-          }
-        });
-        break;
-      }
-
-      case "seek": {
-        this.withRemoteLock(() => {
-          const target = calculateTargetPosition(msg.positionMs, msg.timestamp, Date.now(), "playing");
-          this.origMethods.seek(target);
-        });
-        break;
-      }
-
-      case "track_change": {
-        this.withRemoteLock(() => {
-          const s = usePlayer.getState();
-          if (s.queue[msg.index]?.id !== msg.track.id) {
-            usePlayer.setState({ index: msg.index });
-          }
-          void this.origMethods.playIndex(msg.index).then(() => {
-            const target = calculateTargetPosition(
-              msg.positionMs,
-              msg.timestamp,
-              Date.now(),
-              msg.status,
-              msg.track.durationMs,
-            );
-            if (target > 1000) this.origMethods.seek(target);
-          });
-        });
-        break;
-      }
-
-      case "queue_update": {
-        this.withRemoteLock(() => {
-          usePlayer.setState({ queue: msg.queue, index: msg.index });
-        });
-        break;
-      }
-
-      case "control_mode": {
-        jam.setControlMode(msg.mode);
-        toast(`Режим управления: ${msg.mode === "anyone" ? "Все участники" : "Только хост"}`);
-        break;
-      }
-
-      case "reaction": {
-        jam.addReaction(msg);
-        break;
-      }
-
-      case "chat": {
-        jam.addChatMessage(msg);
-        break;
-      }
-
-      case "kick": {
-        if (msg.participantId === this.myId) {
-          toast("Организатор исключил вас из сессии");
-          this.cleanup();
-        }
-        break;
-      }
-
-      case "session_ended": {
-        toast("Организатор завершил совместную сессию");
-        this.cleanup();
-        break;
-      }
-    }
-  }
-
-  // --- PLAYBACK SYNC APPLICATION ---
-
-  private applySyncPayload(payload: JamSyncPayload): void {
-    if (!payload.track) return;
-
-    if (payload.track.source === "local") {
-      toast(`Хост играет локальный файл: «${payload.track.title}». На других устройствах он может быть недоступен.`);
+      await this.open(code);
+    } catch (e) {
+      resetJam();
+      toast(errorText(e), "error");
       return;
     }
+    const me: JamPerson = { id: this.wire.id, name: jam.name.trim(), color: jam.color, host: true };
+    useJam.setState({ status: "live", host: true, code, people: [me] });
+    this.rev++;
+    player.steerWith(this.steerHost);
+    this.stopWatching = this.watchPlayer();
+    this.timers.push(setInterval(() => this.beat(), BEAT_MS));
+  }
 
-    this.withRemoteLock(() => {
-      const state = usePlayer.getState();
-      const current = currentTrack(state);
+  async join(input: string): Promise<void> {
+    const jam = useJam.getState();
+    if (jam.status !== "idle" || !this.nameIsSet()) return;
+    const code = normalizeCode(input);
+    if (!code) {
+      toast("Это не похоже на код сессии: он выглядит как JAM-7K9P2Q", "error");
+      return;
+    }
+    useJam.setState({ status: "joining", code });
+    try {
+      await this.open(code);
+    } catch (e) {
+      this.finish(errorText(e));
+      return;
+    }
+    void this.wire.send({ t: "join", name: jam.name.trim(), color: jam.color });
+    this.joinTimer = setTimeout(() => {
+      if (useJam.getState().status === "joining") this.finish("Сессия не нашлась. Проверьте код: организатор должен быть в сети.");
+    }, JOIN_TIMEOUT_MS);
+  }
 
-      // Track or index mismatch: load the correct track from queue
-      if (current?.id !== payload.track?.id || state.index !== payload.index) {
-        usePlayer.setState({ queue: payload.queue, index: payload.index });
-        void this.origMethods.playIndex(payload.index).then(() => {
-          const target = calculateTargetPosition(
-            payload.positionMs,
-            payload.timestamp,
-            Date.now(),
-            payload.status,
-            payload.track?.durationMs,
-          );
-          if (target > 1000) this.origMethods.seek(target);
-          if (payload.status === "paused") this.origMethods.toggle();
-        });
-        return;
-      }
+  /** leave (a guest) or end the session for everyone (the host) */
+  async leave(): Promise<void> {
+    const s = useJam.getState();
+    if (s.status === "idle") return;
+    if (s.status === "live") {
+      const bye = this.wire.send(s.host ? { t: "end" } : { t: "leave" });
+      await Promise.race([bye, new Promise((r) => setTimeout(r, GOODBYE_MS))]);
+    }
+    this.finish(s.status !== "live" ? undefined : s.host ? "Сессия завершена" : "Вы вышли из сессии");
+  }
 
-      // Same track: sync queue if length differs
-      if (state.queue.length !== payload.queue.length) {
-        usePlayer.setState({ queue: payload.queue });
-      }
+  private nameIsSet(): boolean {
+    if (useJam.getState().name.trim()) return true;
+    toast("Сначала напишите своё имя: так вас увидят в сессии", "error");
+    return false;
+  }
 
-      // Check play / pause
-      if (payload.status === "playing" && state.status !== "playing") {
-        this.origMethods.toggle();
-      } else if (payload.status === "paused" && state.status === "playing") {
-        this.origMethods.toggle();
-      }
+  /** stop everything here; a guest gets their own music back, paused */
+  private finish(message?: string): void {
+    const wasGuest = !useJam.getState().host && useJam.getState().status === "live";
+    for (const t of this.timers) clearInterval(t);
+    this.timers = [];
+    clearTimeout(this.joinTimer);
+    clearTimeout(this.sendTimer);
+    this.stopWatching?.();
+    this.stopWatching = null;
+    this.link?.close();
+    player.steerWith(null);
+    if (wasGuest) this.giveBackPlayer();
+    this.heard.clear();
+    this.banned.clear();
+    this.hostId = "";
+    this.queueRev = -1;
+    this.sentRev = -1;
+    this.before = null;
+    this.warnedLocal = "";
+    this.playingId = "";
+    resetJam();
+    if (message) toast(message);
+  }
 
-      // Check drift
-      const targetPos = calculateTargetPosition(
-        payload.positionMs,
-        payload.timestamp,
-        Date.now(),
-        payload.status,
-        payload.track?.durationMs,
-      );
+  /** the session's music stops; what this guest was listening to before comes back */
+  private giveBackPlayer(): void {
+    if (usePlayer.getState().status === "playing") player.toggle();
+    const before = this.before;
+    if (before?.queue.length) player.restore(before.queue, before.index, before.positionMs);
+    else usePlayer.setState({ status: "idle" });
+  }
 
-      if (shouldResyncPosition(state.positionMs, targetPos, 1500)) {
-        this.origMethods.seek(targetPos);
-      }
+  // ---- the host --------------------------------------------------------------------------
+
+  /** the host's own actions go through as usual; only who added a song is noted */
+  private steerHost = (a: PlayerAction): boolean => {
+    const me = useJam.getState().name;
+    if (a.type === "add") noteAddedBy(a.track.id, me);
+    else if (a.type === "playQueue" && a.tracks[a.startIndex]) noteAddedBy(a.tracks[a.startIndex].id, me);
+    return false;
+  };
+
+  /** anything the others need to know about is sent soon after it happens */
+  private watchPlayer(): () => void {
+    return usePlayer.subscribe((s, prev) => {
+      // the visible part of the queue follows the current song, so a new song sends it again
+      if (s.queue !== prev.queue || s.index !== prev.index) this.rev++;
+      const seeked = Math.abs(s.positionMs - prev.positionMs) > 2500;
+      const playing = (st: string) => st === "playing" || st === "loading";
+      if (s.queue !== prev.queue || s.index !== prev.index || playing(s.status) !== playing(prev.status) || seeked) this.sendSoon();
     });
   }
 
-  // --- ACTIONS (REACTIONS, CHAT, CONTROLS) ---
+  private sendSoon(): void {
+    clearTimeout(this.sendTimer);
+    // a few changes in a row (the queue, then the index) go out as one message
+    this.sendTimer = setTimeout(() => this.sendState(), 120);
+  }
 
-  sendReaction(emoji: string): void {
-    const jam = useJam.getState();
-    if (!jam.active) return;
+  private beat(): void {
+    if (++this.beats % FULL_EVERY === 0) this.sentRev = -1;
+    this.sendState();
+    // guests who went quiet
+    const now = Date.now();
+    for (const p of useJam.getState().people) {
+      if (!p.host && now - (this.heard.get(p.id) ?? 0) > GUEST_GONE_MS) this.drop(p.id, `${p.name} отключился`);
+    }
+  }
 
-    const reaction = {
-      type: "reaction" as const,
-      id: crypto.randomUUID(),
-      emoji,
-      fromName: jam.myProfile.name,
-      timestamp: Date.now(),
-      receivedAt: Date.now(),
+  private nowPlaying(): JamNow {
+    const s = usePlayer.getState();
+    return {
+      index: s.index,
+      trackId: currentTrack(s)?.id ?? null,
+      playing: s.status === "playing" || s.status === "loading",
+      positionMs: Math.round(s.positionMs),
+      at: Date.now(),
     };
+  }
 
-    this.seenMsgIds.add(reaction.id);
-    jam.addReaction(reaction);
-    void this.publish(reaction);
+  private sendState(): void {
+    clearTimeout(this.sendTimer);
+    const j = useJam.getState();
+    if (!j.host || j.status !== "live") return;
+    const s = usePlayer.getState();
+    let queue;
+    if (this.sentRev !== this.rev) {
+      queue = queueWindow(s.queue, s.index, this.rev);
+      queue.by = Object.fromEntries(queue.tracks.flatMap((t) => (j.addedBy[t.id] ? [[t.id, j.addedBy[t.id]]] : [])));
+      this.sentRev = this.rev;
+    }
+    void this.wire.send({ t: "state", code: j.code, control: j.control, people: j.people, now: this.nowPlaying(), queue, rev: this.rev });
+  }
+
+  private drop(id: string, message?: string): void {
+    this.heard.delete(id);
+    useJam.setState((s) => ({ people: s.people.filter((p) => p.id !== id) }));
+    if (message) toast(message);
+    this.sendSoon();
+  }
+
+  private hostReceive(msg: JamMessage, from: string): void {
+    const j = useJam.getState();
+    const member = j.people.some((p) => p.id === from);
+    if (member) this.heard.set(from, Date.now());
+    switch (msg.t) {
+      case "join": {
+        const name = String(msg.name ?? "").trim().slice(0, 24);
+        const refuse = (reason: string) => void this.wire.send({ t: "refuse", to: from, reason });
+        if (this.banned.has(from)) return refuse("Организатор исключил вас из этой сессии");
+        if (!name) return refuse("Напишите своё имя, чтобы войти");
+        if (!member && j.people.length >= JAM_MAX) return refuse("В сессии уже нет мест");
+        if (j.people.some((p) => p.id !== from && sameName(p.name, name))) return refuse(`Имя «${name}» в этой сессии уже занято. Выберите другое.`);
+        const person: JamPerson = { id: from, name, color: typeof msg.color === "string" ? msg.color : "#6ff0c4", host: false };
+        useJam.setState((s) => ({ people: [...s.people.filter((p) => p.id !== from), person] }));
+        this.heard.set(from, Date.now());
+        if (!member) toast(`${name} слушает вместе с вами`);
+        // the newcomer needs the whole visible queue
+        this.sentRev = -1;
+        this.sendState();
+        return;
+      }
+      case "leave":
+        if (member) this.drop(from, `${nameOf(from)} вышел из сессии`);
+        return;
+      case "ask":
+        if (member) this.apply(msg.req, from);
+        return;
+      case "chat":
+      case "react":
+        if (member) this.show(msg, from);
+        return;
+    }
+  }
+
+  /** a guest's request, done on the host's player (which then tells everyone) */
+  private apply(req: JamRequest, from: string): void {
+    const who = nameOf(from);
+    const s = usePlayer.getState();
+    // the host decides, but a song may always be added
+    if (useJam.getState().control === "host" && req.do !== "add") return;
+    const at = (index: number, trackId: string) => (s.queue[index]?.id === trackId ? index : s.queue.findIndex((t) => t.id === trackId));
+    switch (req.do) {
+      case "toggle":
+        if (req.playing !== (s.status === "playing")) player.toggle();
+        return;
+      case "next":
+        return player.next();
+      case "prev":
+        return player.prev();
+      case "seek":
+        return player.seek(req.ms);
+      case "jump": {
+        const i = at(req.index, req.trackId);
+        if (i >= 0) void player.playIndex(i);
+        return;
+      }
+      case "play": {
+        const track = req.tracks[req.startIndex];
+        if (!track) return;
+        noteAddedBy(track.id, who);
+        toast(`${who} включает «${track.title}»`);
+        void player.playQueue(req.tracks, req.startIndex, null);
+        return;
+      }
+      case "add":
+        noteAddedBy(req.track.id, who);
+        toast(`${who} добавляет «${req.track.title}»`);
+        if (req.next) player.playNext(req.track);
+        else player.addToQueue(req.track);
+        return;
+      case "remove": {
+        const i = at(req.index, req.trackId);
+        if (i >= 0) player.removeFromQueue(i);
+        return;
+      }
+      case "move":
+        return player.moveInQueue(req.from, req.to);
+      case "clear":
+        return player.clearUpcoming();
+    }
+  }
+
+  // ---- the host's controls ---------------------------------------------------------------
+
+  setControl(control: JamControl): void {
+    if (!useJam.getState().host) return;
+    useJam.setState({ control });
+    this.sendSoon();
+  }
+
+  kick(id: string): void {
+    const j = useJam.getState();
+    const person = j.people.find((p) => p.id === id);
+    if (!j.host || !person || person.host) return;
+    this.banned.add(id);
+    void this.wire.send({ t: "kick", id });
+    this.drop(id, `${person.name} исключён из сессии`);
+  }
+
+  /**
+   * A new code (and so a new link and QR code). The people in the session move along on
+   * their own; the old code, and whoever only knows it, lead nowhere any more.
+   */
+  async changeCode(): Promise<void> {
+    const j = useJam.getState();
+    if (!j.host || j.status !== "live") return;
+    const code = newCode();
+    await Promise.all(j.people.filter((p) => !p.host).map((p) => this.wire.send({ t: "moved", to: p.id, sealed: this.wire.seal(code, p.id) })));
+    try {
+      await this.wire.join(code);
+    } catch (e) {
+      toast(errorText(e), "error");
+      return;
+    }
+    useJam.setState({ code });
+    this.sentRev = -1;
+    this.sendState();
+    toast(`Новый код сессии: ${code}`);
+  }
+
+  // ---- a guest ---------------------------------------------------------------------------
+
+  /** what a guest presses becomes a request to the host */
+  private steerGuest = (a: PlayerAction): boolean => {
+    const j = useJam.getState();
+    const s = usePlayer.getState();
+    const ask = (req: JamRequest) => void this.wire.send({ t: "ask", req });
+    const hostIndex = (i: number) => i + this.offset;
+    switch (a.type) {
+      case "ended":
+        return true; // the host's player moves on, and this one follows
+      case "shuffle":
+      case "repeat":
+        toast("Перемешивание и повтор в сессии — у организатора");
+        return true;
+      case "add":
+        noteAddedBy(a.track.id, j.name);
+        ask({ do: "add", track: a.track, next: a.next });
+        toast(a.next ? `«${a.track.title}» сыграет следующим` : `«${a.track.title}» добавлен в общую очередь`);
+        return true;
+    }
+    if (j.control === "host") {
+      // a list pressed: its song goes into the queue instead
+      const track = a.type === "playQueue" ? a.tracks[a.startIndex] : undefined;
+      if (track) {
+        noteAddedBy(track.id, j.name);
+        ask({ do: "add", track, next: false });
+        toast(`Музыкой управляет организатор: «${track.title}» добавлен в очередь`);
+      } else {
+        toast("Музыкой в этой сессии управляет организатор");
+      }
+      return true;
+    }
+    switch (a.type) {
+      case "toggle":
+        ask({ do: "toggle", playing: s.status !== "playing" });
+        break;
+      case "next":
+      case "prev":
+        ask({ do: a.type });
+        break;
+      case "seek":
+        ask({ do: "seek", ms: a.ms });
+        break;
+      case "playIndex": {
+        const track = s.queue[a.index];
+        if (track) ask({ do: "jump", index: hostIndex(a.index), trackId: track.id });
+        break;
+      }
+      case "playQueue": {
+        const fit = fitTracks(a.tracks, a.startIndex);
+        const track = fit.tracks[fit.startIndex];
+        if (!track) break;
+        noteAddedBy(track.id, j.name);
+        ask({ do: "play", ...fit });
+        break;
+      }
+      case "remove": {
+        const track = s.queue[a.index];
+        if (track) ask({ do: "remove", index: hostIndex(a.index), trackId: track.id });
+        break;
+      }
+      case "move":
+        ask({ do: "move", from: hostIndex(a.from), to: hostIndex(a.to) });
+        break;
+      case "clearUpcoming":
+        ask({ do: "clear" });
+        break;
+    }
+    return true;
+  };
+
+  private guestReceive(msg: JamMessage, from: string): void {
+    const j = useJam.getState();
+    const fromHost = from === this.hostId;
+    if (fromHost) this.lastFromHost = Date.now();
+    switch (msg.t) {
+      case "state":
+        return this.followState(msg, from);
+      case "refuse":
+        if (msg.to === this.wire.id && j.status === "joining") this.finish(msg.reason);
+        return;
+      case "kick":
+        if (fromHost && msg.id === this.wire.id) this.finish("Организатор исключил вас из сессии");
+        return;
+      case "moved": {
+        if (!fromHost || msg.to !== this.wire.id) return;
+        const code = normalizeCode(this.wire.unseal(msg.sealed, from) ?? "");
+        if (code) {
+          useJam.setState({ code });
+          void this.wire.join(code).catch((e) => this.finish(errorText(e)));
+        }
+        return;
+      }
+      case "end":
+        if (fromHost) this.finish("Организатор завершил сессию");
+        return;
+      case "chat":
+      case "react":
+        if (j.people.some((p) => p.id === from)) this.show(msg, from);
+        return;
+    }
+  }
+
+  private followState(msg: Extract<JamMessage, { t: "state" }>, from: string): void {
+    const j = useJam.getState();
+    // only the host speaks for the session: the key that is marked as the host in it
+    if (this.hostId ? from !== this.hostId : !msg.people.some((p) => p.id === from && p.host)) return;
+    const inside = msg.people.some((p) => p.id === this.wire.id);
+    if (j.status === "joining") {
+      if (!inside) return; // the host has not let us in yet
+      this.welcome(from);
+    } else if (!inside) {
+      this.finish("Вы больше не в этой сессии");
+      return;
+    }
+    this.lastFromHost = Date.now();
+    useJam.setState({ people: msg.people, control: msg.control, code: msg.code });
+    if (msg.queue) {
+      this.offset = msg.queue.offset;
+      this.queueRev = msg.queue.rev;
+      if (msg.queue.by) useJam.setState((s) => ({ addedBy: { ...s.addedBy, ...msg.queue!.by } }));
+      usePlayer.setState({ queue: msg.queue.tracks, index: msg.now.index - this.offset });
+    }
+    // the queue changed and its new part has not come yet: the positions would not match
+    if (msg.rev !== this.queueRev) return;
+    this.follow(msg.now);
+  }
+
+  private welcome(hostId: string): void {
+    clearTimeout(this.joinTimer);
+    this.hostId = hostId;
+    const s = usePlayer.getState();
+    this.before = { queue: s.queue, index: s.index, positionMs: s.positionMs };
+    useJam.setState({ status: "live", host: false });
+    player.steerWith(this.steerGuest);
+    this.timers.push(
+      setInterval(() => void this.wire.send({ t: "here" }), HERE_MS),
+      setInterval(() => {
+        if (Date.now() - this.lastFromHost > HOST_GONE_MS) this.finish("Связь с организатором пропала, сессия закрыта");
+      }, 5000),
+    );
+    toast(`Вы слушаете вместе с ${nameOf(hostId)}`);
+  }
+
+  /** play what the host plays, where the host is */
+  private follow(now: JamNow): void {
+    const s = usePlayer.getState();
+    const local = now.index - this.offset;
+    const track = s.queue[local];
+    if (!track || track.id !== now.trackId) return;
+    if (track.source === "local") {
+      if (this.warnedLocal !== track.id) toast(`У организатора играет файл с его компьютера: «${track.title}». Здесь его не послушать.`);
+      this.warnedLocal = track.id;
+      return;
+    }
+    const target = positionNow(now, Date.now(), track.durationMs);
+    player.unsteered(() => {
+      if (this.playingId !== track.id || s.status === "idle" || s.status === "error") {
+        this.playingId = track.id;
+        if (!now.playing) {
+          if (s.status === "playing") player.toggle();
+          player.restore(s.queue, local, target);
+          return;
+        }
+        void player.playIndex(local).then(() => {
+          // the song took a moment to start: catch up with the host
+          const behind = positionNow(now, Date.now(), track.durationMs);
+          if (behind > DRIFT_MS) player.unsteered(() => player.seek(behind));
+        });
+        return;
+      }
+      if (s.status === "loading") return;
+      if (now.playing !== (s.status === "playing")) player.toggle();
+      if (Math.abs(s.positionMs - target) > DRIFT_MS) player.seek(target);
+    });
+  }
+
+  // ---- both ------------------------------------------------------------------------------
+
+  private receive(msg: JamMessage, from: string): void {
+    const j = useJam.getState();
+    if (j.status === "idle" || j.status === "starting") return;
+    if (j.host) this.hostReceive(msg, from);
+    else this.guestReceive(msg, from);
+  }
+
+  private show(msg: Extract<JamMessage, { t: "chat" | "react" }>, from: string): void {
+    const name = nameOf(from);
+    if (msg.t === "chat") addChat({ id: String(msg.id), from: name, text: String(msg.text).slice(0, 200), at: Date.now() });
+    else addReaction({ id: String(msg.id), from: name, emoji: String(msg.emoji).slice(0, 8), at: Date.now() });
   }
 
   sendChat(text: string): void {
-    const jam = useJam.getState();
-    if (!jam.active || !text.trim()) return;
-
-    const msg = {
-      type: "chat" as const,
-      id: crypto.randomUUID(),
-      text: text.trim().slice(0, 200),
-      fromName: jam.myProfile.name,
-      timestamp: Date.now(),
-      receivedAt: Date.now(),
-    };
-
-    this.seenMsgIds.add(msg.id);
-    jam.addChatMessage(msg);
-    void this.publish(msg);
+    const clean = text.trim().slice(0, 200);
+    if (!clean || useJam.getState().status !== "live") return;
+    const id = crypto.randomUUID();
+    addChat({ id, from: useJam.getState().name, text: clean, at: Date.now() });
+    void this.wire.send({ t: "chat", id, text: clean });
   }
 
-  setControlMode(mode: JamControlMode): void {
-    const jam = useJam.getState();
-    if (!jam.active || !jam.isHost) return;
-
-    jam.setControlMode(mode);
-    void this.publish({ type: "control_mode", mode });
-  }
-
-  kickParticipant(participantId: string): void {
-    const jam = useJam.getState();
-    if (!jam.active || !jam.isHost) return;
-
-    void this.publish({ type: "kick", participantId });
-    const updated = jam.participants.filter((p) => p.id !== participantId);
-    jam.updateParticipants(updated);
-    void this.publish({
-      type: "sync",
-      state: this.buildCurrentSyncPayload(updated),
-    });
-  }
-
-  leaveOrEndSession(): void {
-    const jam = useJam.getState();
-    if (!jam.active) return;
-
-    if (jam.isHost) {
-      void this.publish({ type: "session_ended", reason: "Host ended session" });
-      toast("Сессия Jam завершена");
-    } else {
-      void this.publish({ type: "leave", participantId: this.myId });
-      toast("Вы покинули сессию Jam");
-    }
-
-    this.cleanup();
-  }
-
-  // --- UTILS & HEARTBEAT ---
-
-  private startHeartbeat(): void {
-    if (this.heartbeatInterval) clearInterval(this.heartbeatInterval);
-    this.heartbeatInterval = setInterval(() => {
-      const jam = useJam.getState();
-      if (!jam.active || !jam.isHost) return;
-      void this.publish({
-        type: "sync",
-        state: this.buildCurrentSyncPayload(jam.participants),
-      });
-    }, 3000);
-  }
-
-  private buildCurrentSyncPayload(participants: JamParticipant[]): JamSyncPayload {
-    const state = usePlayer.getState();
-    const track = currentTrack(state) ?? null;
-    const jam = useJam.getState();
-
-    return buildSyncPayload(
-      state,
-      jam.controlMode,
-      participants,
-      jam.hostName || jam.myProfile.name,
-      jam.roomCode,
-      track,
-    );
-  }
-
-  private withRemoteLock(fn: () => void): void {
-    this.isRemoteAction = true;
-    try {
-      fn();
-    } finally {
-      setTimeout(() => {
-        this.isRemoteAction = false;
-      }, 300);
-    }
-  }
-
-  private cleanup(): void {
-    if (this.heartbeatInterval) {
-      clearInterval(this.heartbeatInterval);
-      this.heartbeatInterval = null;
-    }
-
-    if (this.joinTimeout) {
-      clearTimeout(this.joinTimeout);
-      this.joinTimeout = null;
-    }
-
-    for (const sub of this.subscriptions) {
-      try {
-        sub.close();
-      } catch {
-        // ignore
-      }
-    }
-    this.subscriptions = [];
-
-    for (const relay of this.relays) {
-      try {
-        relay.close();
-      } catch {
-        // ignore
-      }
-    }
-    this.relays = [];
-    this.currentRoomTag = "";
-    this.seenEvents.clear();
-    this.seenMsgIds.clear();
-
-    useJam.getState().resetSession();
+  react(emoji: string): void {
+    if (useJam.getState().status !== "live") return;
+    const id = crypto.randomUUID();
+    addReaction({ id, from: useJam.getState().name, emoji, at: Date.now() });
+    void this.wire.send({ t: "react", id, emoji });
   }
 }
 
-export const jamEngine = new JamEngine();
+export const jam = new JamEngine();

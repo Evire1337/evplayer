@@ -72,7 +72,15 @@ export interface PresenceState {
   paused?: boolean;
   /** what Discord shows next to your name in the member list */
   statusShows?: "app" | "artist" | "song";
+  /** a paused song: where it stands (said in words, as Discord's clock would run on) */
+  positionMs?: number;
+  durationMs?: number;
+  /** friends may ask to listen along; join reaches their app when they are let in */
+  party?: { id: string; size: number; max: number; join: string };
 }
+
+/** a friend asked to listen along, or this person was let into a friend's session */
+export type DiscordEvent = { kind: "request"; user: DiscordUser } | { kind: "join"; secret: string };
 
 export interface SpotifyTokens {
   accessToken: string;
@@ -191,7 +199,12 @@ export interface EvPlayerApi {
     setAppId: (appId: string | null) => void;
     update: (state: PresenceState | null) => void;
     status: () => Promise<{ status: "off" | "connecting" | "connected" | "no-discord" | "error"; user: DiscordUser | null; error: string | null }>;
+    onEvent: (cb: (event: DiscordEvent) => void) => () => void;
+    /** let a friend who asked in (true) or not */
+    answer: (userId: string, accept: boolean) => void;
   };
+  /** evplayer:// links: the one the app started with, then each one opened while it runs */
+  links: { first: () => Promise<string | null>; onOpen: (cb: (url: string) => void) => () => void };
   /** the saved state of the Electron version (read once, on the first start) */
   migrateFromElectron: () => Promise<Record<string, string> | null>;
 }

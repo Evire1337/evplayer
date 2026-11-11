@@ -1,0 +1,116 @@
+/* listening together: the session dialog, the banner on "Сейчас играет", the floating
+   reactions and chat. Every column and row may shrink (min-width: 0), so a long name is
+   cut with an ellipsis instead of pushing the dialog wider. */
+
+.jam-body { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.jam-label { font-size: 12px; font-weight: 700; color: var(--ink-3); text-transform: uppercase; letter-spacing: 0.5px; }
+
+/* start */
+.jam-profile { display: flex; flex-direction: column; gap: 10px; }
+.jam-profile-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.jam-name { flex: 1; min-width: 140px; }
+.jam-colors { display: flex; gap: 6px; flex-wrap: wrap; }
+.jam-color { width: 24px; height: 24px; border-radius: 50%; border: 2px solid transparent; display: flex; align-items: center; justify-content: center; color: var(--ground); transition: transform 120ms ease; }
+.jam-color:hover { transform: scale(1.15); }
+.jam-color.is-on { border-color: #fff; }
+.jam-code-input { letter-spacing: 2px; font-weight: 800; text-align: center; text-transform: uppercase; }
+
+/* the room card */
+.jam-room { display: flex; flex-direction: column; gap: 12px; background: linear-gradient(135deg, rgba(31, 138, 115, 0.2), rgba(5, 16, 18, 0.45)); border: 1px solid rgba(111, 240, 196, 0.25); }
+.jam-room-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.jam-room-status { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.jam-room-meta { display: flex; flex-direction: column; min-width: 0; }
+.jam-room-live { font-size: 14px; font-weight: 700; color: var(--accent); }
+.jam-room-host { font-size: 12px; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.jam-pulse { width: 10px; height: 10px; flex: none; border-radius: 50%; background: var(--accent); box-shadow: 0 0 10px var(--accent); animation: jam-pulse 1.8s ease-in-out infinite; }
+@keyframes jam-pulse { 50% { transform: scale(1.35); opacity: 0.55; } }
+.jam-code { display: flex; align-items: center; gap: 4px; padding: 4px 6px 4px 12px; border-radius: 14px; background: rgba(5, 16, 18, 0.5); border: 1px solid var(--edge); }
+.jam-code-text { font: 800 16px ui-monospace, monospace; letter-spacing: 2px; margin-right: 4px; white-space: nowrap; }
+.jam-qr { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 14px; border-radius: 16px; background: rgba(5, 16, 18, 0.5); border: 1px solid var(--edge); }
+.jam-qr img { width: 180px; height: 180px; border-radius: 12px; }
+
+.jam-reactions { display: flex; gap: 6px; flex-wrap: wrap; }
+.jam-reaction { width: 38px; height: 38px; font-size: 20px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: rgba(238, 247, 244, 0.06); border: 1px solid var(--edge); transition: transform 120ms ease, background 120ms ease; }
+.jam-reaction:hover { transform: scale(1.15); background: rgba(238, 247, 244, 0.14); }
+.jam-reaction:active { transform: scale(0.92); background: rgba(111, 240, 196, 0.2); }
+
+/* people and chat side by side */
+.jam-columns { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr); gap: 12px; }
+.jam-column { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.jam-people { display: flex; flex-direction: column; gap: 6px; height: 240px; overflow-y: auto; scrollbar-width: thin; }
+.jam-person { position: relative; display: flex; align-items: center; gap: 10px; width: 100%; min-width: 0; padding: 8px 10px; border-radius: 14px; background: rgba(238, 247, 244, 0.04); border: 1px solid var(--edge); color: var(--ink); text-align: left; font: inherit; }
+.jam-avatar { width: 28px; height: 28px; flex: none; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 12.5px; color: var(--ground); }
+.jam-person-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.jam-person-name { font-size: 13.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.jam-badges { display: flex; gap: 4px; }
+.jam-badge { font-size: 10.5px; font-weight: 700; padding: 1px 6px; border-radius: 6px; background: rgba(238, 247, 244, 0.12); color: var(--ink-2); }
+.jam-badge.is-host { background: rgba(111, 240, 196, 0.15); color: var(--accent); }
+/* the host points at someone: the card turns red and says what a click does */
+.jam-person.is-kickable { cursor: pointer; transition: background 120ms ease, border-color 120ms ease; }
+.jam-kick { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; border-radius: inherit; font-weight: 700; font-size: 13px; color: #fff; background: rgba(196, 43, 28, 0.82); opacity: 0; transition: opacity 120ms ease; }
+.jam-person.is-kickable:hover, .jam-person.is-kickable:focus-visible { border-color: var(--danger); }
+.jam-person.is-kickable:hover .jam-kick, .jam-person.is-kickable:focus-visible .jam-kick { opacity: 1; }
+
+.jam-chat { display: flex; flex-direction: column; height: 240px; min-width: 0; border-radius: 18px; overflow: hidden; background: rgba(5, 16, 18, 0.45); border: 1px solid var(--edge); }
+.jam-chat-list { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; scrollbar-width: thin; }
+.jam-chat-empty { margin: auto; text-align: center; }
+.jam-message { display: flex; flex-direction: column; gap: 3px; max-width: 90%; min-width: 0; align-self: flex-start; padding: 6px 10px; border-radius: 12px; font-size: 13px; background: rgba(238, 247, 244, 0.04); border: 1px solid var(--edge); }
+.jam-message.is-mine { align-self: flex-end; background: rgba(111, 240, 196, 0.08); border-color: rgba(111, 240, 196, 0.22); }
+.jam-message-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.jam-message-from { flex: 1; min-width: 0; font-weight: 700; font-size: 11.5px; color: var(--accent); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.jam-message.is-mine .jam-message-from { color: var(--ink-2); }
+.jam-message-time { flex: none; font-size: 10px; color: var(--ink-3); }
+.jam-message-text { line-height: 1.4; overflow-wrap: anywhere; }
+.jam-chat-form { display: flex; gap: 6px; padding: 8px; border-top: 1px solid var(--edge); background: rgba(5, 16, 18, 0.65); }
+.jam-chat-form .filter-input { flex: 1; min-width: 0; height: 36px; font-size: 13px; }
+.jam-chat-form .btn { height: 36px; padding: 0 14px; font-size: 13px; }
+
+@media (max-width: 600px) {
+  .jam-columns { grid-template-columns: minmax(0, 1fr); }
+  .jam-people { height: auto; max-height: 180px; }
+}
+
+/* reactions and messages float up in the corner while the dialog is closed */
+.jam-float { position: fixed; right: 28px; bottom: 110px; z-index: 25; pointer-events: none; display: flex; flex-direction: column; align-items: flex-end; gap: 10px; }
+.jam-float-reactions { position: relative; width: 140px; height: 180px; }
+.jam-float-reaction { position: absolute; bottom: 0; display: flex; flex-direction: column; align-items: center; animation: jam-float-up 4s ease-out forwards; }
+.jam-float-emoji { font-size: 38px; filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.6)); }
+.jam-float-from { max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10.5px; font-weight: 700; padding: 1px 6px; border-radius: 6px; background: rgba(5, 16, 18, 0.85); border: 1px solid var(--edge); }
+@keyframes jam-float-up {
+  0% { transform: translateY(0) scale(0.6); opacity: 0; }
+  12% { transform: translateY(-20px) scale(1.15); opacity: 1; }
+  25% { transform: translateY(-45px) scale(1); opacity: 1; }
+  100% { transform: translateY(-160px) scale(0.85); opacity: 0; }
+}
+.jam-float-chat { display: flex; flex-direction: column; gap: 6px; max-width: 280px; }
+.jam-float-message { padding: 8px 12px; border-radius: 14px; font-size: 13px; overflow-wrap: anywhere; background: rgba(8, 22, 24, 0.92); border: 1px solid rgba(111, 240, 196, 0.28); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45); animation: jam-message 6s ease forwards; }
+.jam-float-message b { color: var(--accent); }
+@keyframes jam-message {
+  0% { opacity: 0; transform: translateY(10px); }
+  5%, 80% { opacity: 1; transform: none; }
+  100% { opacity: 0; }
+}
+
+/* the session in the rail, in the player's tools and on "Сейчас играет" */
+.rail-btn.is-jam { color: var(--accent); }
+.rail-jam-dot { position: absolute; top: 9px; right: 9px; width: 9px; height: 9px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+.tool-btn.is-jam { color: var(--accent); }
+.now-jam { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 14px; margin-top: 6px; border-radius: 16px; background: rgba(31, 138, 115, 0.16); border: 1px solid rgba(111, 240, 196, 0.25); color: var(--ink); text-align: left; font: inherit; transition: background 150ms ease; }
+.now-jam:hover { background: rgba(31, 138, 115, 0.26); }
+.now-jam-who { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.now-jam-faces { display: flex; flex: none; }
+.now-jam-faces .jam-avatar { width: 22px; height: 22px; font-size: 10px; border: 1.5px solid var(--ground); margin-left: -6px; }
+.now-jam-faces .jam-avatar:first-child { margin-left: 0; }
+.now-jam-text { display: flex; flex-direction: column; min-width: 0; font-size: 12.5px; font-weight: 600; }
+.now-jam-text small { font-size: 11px; font-weight: 500; color: var(--accent); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.now-jam-code { display: flex; align-items: center; gap: 4px; flex: none; font-size: 11px; font-weight: 700; color: var(--accent); }
+.queue-added-by { color: var(--accent); }
+
+html.saver .jam-pulse, html.saver .jam-float-reaction { animation: none; }
+
+/* a friend asked to join in Discord */
+.jam-asks { position: fixed; left: 50%; top: 52px; transform: translateX(-50%); z-index: 26; display: flex; flex-direction: column; gap: 8px; width: min(460px, calc(100vw - 32px)); }
+.jam-ask { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 18px; box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4); }
+.jam-ask img.jam-avatar { object-fit: cover; }
+.jam-ask-text { flex: 1; min-width: 0; font-size: 13px; overflow-wrap: anywhere; }
+.jam-ask .btn { height: 34px; padding: 0 14px; font-size: 13px; }

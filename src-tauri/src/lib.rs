@@ -29,6 +29,7 @@ use std::sync::{Arc, Mutex};
 
 use serde_json::Value;
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder, WindowEvent};
+use tauri_plugin_deep_link::DeepLinkExt;
 use tauri_plugin_dialog::DialogExt;
 #[cfg(desktop)]
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
@@ -528,6 +529,18 @@ fn discord_status(state: tauri::State<'_, AppState>) -> discord::Status {
     state.discord.status()
 }
 
+/// the link the app was started with (evplayer://jam/...), if any
+#[tauri::command]
+fn start_link(app: AppHandle) -> Option<String> {
+    app.deep_link().get_current().ok().flatten()?.first().map(|u| u.to_string())
+}
+
+/// a friend's "Ask to join": let them in or turn them down
+#[tauri::command]
+fn discord_answer(state: tauri::State<'_, AppState>, user_id: String, accept: bool) {
+    state.discord.answer(user_id, accept);
+}
+
 /// the saved state of the Electron version, read once on the first start of this one
 #[tauri::command]
 async fn migrate_electron(app: AppHandle, state: tauri::State<'_, AppState>) -> Result<Option<BTreeMap<String, String>>, String> {
@@ -614,6 +627,7 @@ pub fn run() {
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_updater::Builder::new().build());
     builder
+        .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_process::init())
@@ -667,6 +681,8 @@ pub fn run() {
             discord_set,
             discord_update,
             discord_status,
+            discord_answer,
+            start_link,
             migrate_electron,
             updates::updates_get,
             updates::updates_check,
@@ -699,6 +715,22 @@ pub fn run() {
             });
             *app.state::<AppState>().watcher.lock().unwrap() = Some(watcher);
             updates::start(&handle);
+            // a friend asks to join in Discord, or this person was let in
+            let events = handle.clone();
+            app.state::<AppState>().discord.on_event(move |event| {
+                let _ = events.emit_to(MAIN, "discord:event", event);
+            });
+            // evplayer://jam/... links (an invite to listen together); the one the app was
+            // started with waits until the page asks for it
+            #[cfg(desktop)]
+            let _ = app.deep_link().register_all();
+            let links = handle.clone();
+            app.deep_link().on_open_url(move |event| {
+                for url in event.urls() {
+                    show_main(&links);
+                    let _ = links.emit_to(MAIN, "link:open", url.as_str());
+                }
+            });
             Ok(())
         })
         .build(tauri::generate_context!())

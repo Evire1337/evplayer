@@ -14,9 +14,8 @@ const ITEMS: { page: Page; label: string; icon: (p: { size?: number }) => React.
 // the floating column of sections on the left
 export default function Rail() {
   const { page, go } = useNavigation();
-  const jamActive = useJam((s) => s.active);
-  const participantsCount = useJam((s) => s.participants.length);
-  const setJamOpen = useJam((s) => s.setOpen);
+  const jamLive = useJam((s) => s.status === "live");
+  const together = useJam((s) => s.people.length);
   return (
     <nav className="rail glass" aria-label="Разделы">
       <img src={logo} alt="EvPlayer" className="rail-logo" />
@@ -34,15 +33,10 @@ export default function Rail() {
         </button>
       ))}
       <span className="rail-gap" />
-      <button
-        type="button"
-        className={`rail-btn${jamActive ? " jam-active is-active" : ""}`}
-        aria-label="Совместное прослушивание"
-        onClick={() => setJamOpen(true)}
-      >
+      <button type="button" className={`rail-btn rail-jam${jamLive ? " is-jam" : ""}`} aria-label="Слушать вместе" onClick={() => useJam.getState().setOpen(true)}>
         <IconJam size={21} />
-        {jamActive && <span className="rail-jam-dot" />}
-        <span className="rail-tip">{jamActive ? `Jam (${participantsCount})` : "Совместное прослушивание"}</span>
+        {jamLive && <span className="rail-jam-dot" />}
+        <span className="rail-tip">{jamLive ? `Слушаете вместе: ${together}` : "Слушать вместе"}</span>
       </button>
       <button
         type="button"

@@ -1,83 +1,86 @@
 import type { Track } from "@/types";
-import type { PlayerStatus } from "@/player/store";
 
-export type JamControlMode = "anyone" | "host_only";
+/** who may steer the music: everyone in the session, or only the one who started it */
+export type JamControl = "anyone" | "host";
 
-export interface JamParticipant {
+export interface JamPerson {
+  /** their key in the session (a fresh one each time the app starts) */
   id: string;
   name: string;
-  avatarColor: string;
-  isHost: boolean;
-  joinedAt: number;
+  color: string;
+  host: boolean;
+}
+
+export interface JamChat {
+  id: string;
+  from: string;
+  text: string;
+  at: number;
 }
 
 export interface JamReaction {
   id: string;
+  from: string;
   emoji: string;
-  fromName: string;
-  timestamp: number;
-  receivedAt?: number;
+  at: number;
 }
 
-export interface JamChatMessage {
-  id: string;
-  text: string;
-  fromName: string;
-  timestamp: number;
-  receivedAt?: number;
-}
-
-export interface JamSyncPayload {
-  track: Track | null;
-  queue: Track[];
+/** what is playing at the host, as of `at` (the host's clock) */
+export interface JamNow {
   index: number;
-  status: PlayerStatus;
+  trackId: string | null;
+  playing: boolean;
   positionMs: number;
-  timestamp: number;
-  controlMode: JamControlMode;
-  participants: JamParticipant[];
-  hostName: string;
-  roomCode: string;
+  at: number;
 }
 
-export type JamMessageContent =
-  | { type: "join_request"; name: string; avatarColor: string }
-  | { type: "join_response"; targetId: string; ok: boolean; state?: JamSyncPayload; error?: string }
-  | { type: "sync"; state: JamSyncPayload }
-  | { type: "track_change"; track: Track; index: number; positionMs: number; status: PlayerStatus; timestamp: number }
-  | { type: "playback_state"; status: PlayerStatus; positionMs: number; timestamp: number }
-  | { type: "seek"; positionMs: number; timestamp: number }
-  | { type: "queue_update"; queue: Track[]; index: number }
-  | { type: "queue_add"; track: Track; addedBy: string; playNext?: boolean }
-  | { type: "play_track"; track: Track; addedBy: string; queue?: Track[]; startIndex?: number }
-  | { type: "queue_remove"; index: number }
-  | { type: "queue_move"; from: number; to: number }
-  | { type: "reaction"; emoji: string; fromName: string; id: string; timestamp: number }
-  | { type: "chat"; text: string; fromName: string; id: string; timestamp: number }
-  | { type: "control_mode"; mode: JamControlMode }
-  | { type: "kick"; participantId: string; reason?: string }
-  | { type: "leave"; participantId: string }
-  | { type: "session_ended"; reason?: string };
+/** a part of the host's queue around the current song: `tracks[0]` is queue position `offset` */
+export interface JamQueue {
+  rev: number;
+  offset: number;
+  tracks: Track[];
+  /** who added which of these songs, by track id */
+  by?: Record<string, string>;
+}
 
-export type JamMessage = JamMessageContent & { senderId: string };
+/** what a guest may ask the host to do with the music */
+export type JamRequest =
+  | { do: "toggle"; playing: boolean }
+  | { do: "next" }
+  | { do: "prev" }
+  | { do: "seek"; ms: number }
+  | { do: "jump"; index: number; trackId: string }
+  | { do: "play"; tracks: Track[]; startIndex: number }
+  | { do: "add"; track: Track; next: boolean }
+  | { do: "remove"; index: number; trackId: string }
+  | { do: "move"; from: number; to: number }
+  | { do: "clear" };
 
-export const DEFAULT_JAM_RELAYS = [
-  "wss://relay.primal.net",
-  "wss://relay.snort.social",
-  "wss://offchain.pub",
-];
+/** everything said in a session; who said it is the signed key of the event, never the text */
+export type JamMessage =
+  // guest → host
+  | { t: "join"; name: string; color: string }
+  | { t: "here" }
+  | { t: "leave" }
+  | { t: "ask"; req: JamRequest }
+  // host → everyone
+  | { t: "state"; code: string; control: JamControl; people: JamPerson[]; now: JamNow; queue?: JamQueue; rev: number }
+  | { t: "refuse"; to: string; reason: string }
+  | { t: "kick"; id: string }
+  /** the session moved to a new code: sealed for each person still in it */
+  | { t: "moved"; to: string; sealed: string }
+  | { t: "end" }
+  // anyone in the session
+  | { t: "chat"; id: string; text: string }
+  | { t: "react"; id: string; emoji: string };
 
-export const JAM_AVATAR_COLORS = [
-  "#6ff0c4", // evplayer accent mint
-  "#ff9a3c", // Amber / orange
-  "#3b82f6", // Blue
-  "#8b5cf6", // Violet
-  "#ec4899", // Pink
-  "#10b981", // Emerald
-  "#06b6d4", // Cyan
-  "#ef4444", // Coral red
-  "#f59e0b", // Warm amber
-  "#a855f7", // Purple
-];
+/** public relays the session talks through (Nostr, short-lived events that are not stored);
+    the same list is allowed in connect-src in src-tauri/tauri.conf.json */
+export const JAM_RELAYS = ["wss://relay.primal.net", "wss://relay.snort.social", "wss://offchain.pub", "wss://nos.lol"];
+
+/** at most this many people in one session (Discord shows it as "2 из 16") */
+export const JAM_MAX = 16;
+
+export const JAM_COLORS = ["#6ff0c4", "#ff9a3c", "#3b82f6", "#8b5cf6", "#ec4899", "#10b981", "#06b6d4", "#ef4444", "#f59e0b", "#a855f7"];
 
 export const JAM_REACTIONS = ["🔥", "❤️", "👏", "🎉", "🚀", "😭", "⚡", "🎧"];

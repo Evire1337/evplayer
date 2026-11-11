@@ -5,7 +5,7 @@ import type { MenuItem } from "@/ui/menu";
 import { toast } from "@/ui/toasts";
 import { IconChart, IconDisc, IconDownload, IconFolder, IconHeart, IconHeartFill, IconJam, IconLink, IconListPlus, IconNext, IconPencil, IconPlus, IconQueue, IconRadio, IconTrash, IconUser } from "@/ui/components/Icons";
 import { isLiked, useLibrary } from "./store";
-import { useJam } from "@/jam/store";
+import { jamLive } from "@/jam/store";
 import { openCreatePlaylist } from "./dialogs";
 import { openTrackStats } from "@/stats/statsDialog";
 import { openTagEditor } from "@/files/tagEditor";
@@ -30,10 +30,10 @@ export function trackMenuItems(track: Track, ctx: TrackMenuContext = {}): MenuIt
   const lib = useLibrary.getState();
   const liked = isLiked(track.id);
   const artist = artistTarget(track);
-  const isJam = useJam.getState().active;
+  const together = jamLive();
   const items: MenuItem[] = [
-    { label: isJam ? "Играть следующим в Jam" : "Играть следующим", icon: <IconNext size={16} />, onSelect: () => player.playNext(track) },
-    { label: isJam ? "Добавить в очередь Jam" : "Добавить в очередь", icon: isJam ? <IconJam size={16} /> : <IconQueue size={16} />, onSelect: () => player.addToQueue(track) },
+    { label: "Играть следующим", icon: <IconNext size={16} />, onSelect: () => player.playNext(track) },
+    { label: together ? "В общую очередь" : "Добавить в очередь", icon: together ? <IconJam size={16} /> : <IconQueue size={16} />, onSelect: () => player.addToQueue(track) },
     { label: "Радио по треку", icon: <IconRadio size={16} />, onSelect: () => void player.startRadio(track) },
     {
       label: liked ? "Убрать из понравившихся" : "Нравится",

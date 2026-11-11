@@ -66,17 +66,10 @@ export function Tools() {
   const fx = useEffects();
   const tuned = fx.speed !== 1 || (!fx.linked && fx.pitch !== 0) || fx.reverb;
   const { volume, muted } = usePlayer(useShallow((s) => ({ volume: s.volume, muted: s.muted })));
-  const jamActive = useJam((s) => s.active);
-  const setJamOpen = useJam((s) => s.setOpen);
+  const jamLive = useJam((s) => s.status === "live");
   return (
     <div className="tools">
-      <button
-        type="button"
-        className={`tool-btn jam-tool-btn${jamActive ? " is-on" : ""}`}
-        aria-label="Совместное прослушивание"
-        data-tip="Совместное прослушивание (Jam)"
-        onClick={() => setJamOpen(true)}
-      >
+      <button type="button" className={`tool-btn${jamLive ? " is-jam" : ""}`} aria-label="Слушать вместе" data-tip="Слушать вместе" onClick={() => useJam.getState().setOpen(true)}>
         <IconJam size={19} />
       </button>
       <Popover label="Звук, скорость и тон" icon={<IconSliders size={19} />} width={292} active={tuned}>

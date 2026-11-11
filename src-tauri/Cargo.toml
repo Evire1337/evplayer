@@ -19,6 +19,7 @@ tauri = { version = "2", features = ["image-png"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"
 tauri-plugin-process = "2"
+tauri-plugin-deep-link = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 reqwest = { version = "0.12", default-features = false, features = ["cookies", "gzip", "brotli", "deflate", "json", "blocking"] }
@@ -40,7 +41,7 @@ tiny_http = "0.12"
 # desktop only: tray, one running copy, system-wide keys, installer updates
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri = { version = "2", features = ["tray-icon", "image-png"] }
-tauri-plugin-single-instance = "2"
+tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
 tauri-plugin-global-shortcut = "2"
 tauri-plugin-updater = "2"
 # the system TLS on desktop (Windows: schannel)
@@ -51,7 +52,7 @@ reqwest = { version = "0.12", default-features = false, features = ["native-tls"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_UI_Shell"] }
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_UI_Shell", "Win32_System_Pipes"] }
 # must match the versions tauri uses (memory.rs talks to WebView2 directly)
 webview2-com = "0.39"
 windows = "0.62"
