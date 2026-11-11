@@ -75,7 +75,8 @@
 .jam-float { position: fixed; right: 28px; bottom: 110px; z-index: 45; pointer-events: none; display: flex; flex-direction: column; align-items: flex-end; gap: 10px; }
 .jam-float-reactions { position: relative; width: 140px; height: 180px; }
 .jam-float-reaction { position: absolute; bottom: 0; display: flex; flex-direction: column; align-items: center; animation: jam-float-up 4s ease-out forwards; }
-.jam-float-emoji { font-size: 38px; filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.6)); }
+.jam-float-emoji { font-size: 38px; display: flex; filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.6)); }
+.jam-emoji { display: block; object-fit: contain; pointer-events: none; }
 .jam-float-from { max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10.5px; font-weight: 700; padding: 1px 6px; border-radius: 6px; background: rgba(5, 16, 18, 0.85); border: 1px solid var(--edge); }
 @keyframes jam-float-up {
   0% { transform: translateY(0) scale(0.6); opacity: 0; }

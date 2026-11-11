@@ -8,6 +8,7 @@ import { useJam } from "./store";
 import { inviteLink } from "./protocol";
 import { JAM_COLORS, JAM_REACTIONS, type JamPerson } from "./types";
 import { listeners } from "./JamBanner";
+import Emoji from "./Emoji";
 
 export default function JamDialog() {
   const open = useJam((s) => s.open);
@@ -254,7 +255,7 @@ function Session() {
       <div className="jam-reactions" aria-label="Реакции">
         {JAM_REACTIONS.map((emoji) => (
           <button key={emoji} type="button" className="jam-reaction" onClick={() => jam.react(emoji)} aria-label={`Отправить ${emoji}`}>
-            {emoji}
+            <Emoji emoji={emoji} size={24} />
           </button>
         ))}
       </div>

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useJam } from "./store";
+import Emoji from "./Emoji";
 
 const REACTION_MS = 4000;
 const MESSAGE_MS = 6000;
@@ -34,7 +35,7 @@ export default function JamFloat() {
       <div className="jam-float-reactions">
         {shownReactions.map((r, i) => (
           <div key={r.id} className="jam-float-reaction" style={{ left: (i * 26) % 100 }}>
-            <span className="jam-float-emoji">{r.emoji}</span>
+            <span className="jam-float-emoji"><Emoji emoji={r.emoji} size={44} /></span>
             <span className="jam-float-from">{r.from}</span>
           </div>
         ))}
