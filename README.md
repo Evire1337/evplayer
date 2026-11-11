@@ -258,6 +258,10 @@ pnpm dev          # запуск с горячей перезагрузкой (�
   <img src="https://api.star-history.com/svg?repos=Evire1337/evplayer&type=Date&theme=dark" alt="Star History" width="600" />
 </a>
 
+## Участие
+
+Как ведутся задачи и как прислать свои изменения — в [CONTRIBUTING.md](CONTRIBUTING.md). Как устроен код, как его писать и тестировать — в [AGENTS.md](AGENTS.md); этот файл можно отдать и ИИ-ассистенту.
+
 ## Лицензия
 
 [MIT](LICENSE) © Evire1337
