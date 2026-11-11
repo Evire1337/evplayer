@@ -37,9 +37,10 @@ import { IconBack } from "@/ui/components/Icons";
 import WindowControls from "@/ui/components/WindowControls";
 import { useVisible } from "@/app/visibility";
 
-/** after this long out of sight the window lets go of its pages (sooner with memory saver) */
-const SLEEP_AFTER_MS = 20_000;
-const SAVER_SLEEP_AFTER_MS = 4_000;
+/** after this long out of sight the window lets go of its pages (a quick look at another app
+    does not cost a rebuild) */
+const SLEEP_AFTER_MS = 5_000;
+const SAVER_SLEEP_AFTER_MS = 2_000;
 
 function useAsleep(): boolean {
   const visible = useVisible((s) => s.visible);

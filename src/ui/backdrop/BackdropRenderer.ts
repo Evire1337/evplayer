@@ -208,5 +208,8 @@ export class BackdropRenderer {
     gl.deleteTexture(this.from);
     if (this.to !== this.from) gl.deleteTexture(this.to);
     gl.deleteProgram(this.program);
+    // the context itself would hold on to the graphics memory until garbage collection: give it
+    // back now (the app asleep in the tray should take as little as it can)
+    gl.getExtension("WEBGL_lose_context")?.loseContext();
   }
 }
