@@ -35,7 +35,8 @@ html.is-phone .page-now .content { bottom: calc(var(--nav-h) + var(--safe-bottom
 html.is-phone .page { padding: 12px 0 20px; gap: 22px; }
 html.is-phone .display { font-size: 30px; }
 html.is-phone .pl-hero { gap: 16px; }
-html.is-phone .pl-cover { width: 120px; height: 120px; }
+/* only the cover at the head of a playlist page is small; the covers of cards (home, library) fill their card */
+html.is-phone .pl-hero .pl-cover { width: 120px; height: 120px; }
 
 /* the player above the bottom bar */
 html.is-phone .mini {
@@ -82,6 +83,9 @@ html.is-phone .track-row .track-art { width: 44px; height: 44px; }
 /* the column header becomes a row of sort buttons */
 html.is-phone .track-head { display: flex; flex-wrap: wrap; gap: 6px 18px; padding: 0 4px 8px; }
 html.is-phone .track-head > span { display: none; }
+
+/* grids of cards: two to a row (the 170px minimum of a computer left one giant card per row) */
+html.is-phone .pl-grid, html.is-phone .card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 12px; }
 
 /* bigger touch targets; nothing waits for a hover that never comes */
 html.is-phone .row-icon { opacity: 1; }
