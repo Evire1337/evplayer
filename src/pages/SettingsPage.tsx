@@ -1,3 +1,5 @@
+import { Flag } from "@/ui/components/Flag";
+import { currentLang, LANGUAGES } from "@/i18n/lang";
 import { DESKTOP_ONLY_TABS, isPhone } from "@/platform/device";
 import { useEffect, useState, type ReactNode } from "react";
 import type { UpdateState } from "@/platform/api";
@@ -245,6 +247,16 @@ function Appearance() {
   return (
     <>
       <TabHeader icon={<IconPalette size={22} />} hue={300} title="Внешний вид" description="Фон, свечение и текст песен." />
+      <Card title="Язык">
+        <div className="chip-row" role="radiogroup" aria-label="Язык интерфейса">
+          {LANGUAGES.map((l) => (
+            <button key={l.id} type="button" role="radio" aria-checked={s.language === l.id} className={`chip lang-chip${s.language === l.id ? " is-on" : ""}`} onClick={() => s.set({ language: l.id })}>
+              <Flag code={l.id === "ru" ? "ru" : l.id === "en" ? "gb" : "auto"} size={18} />
+              <span data-no-translate>{l.id === "auto" ? (currentLang() === "en" ? l.english : l.label) : l.label}</span>
+            </button>
+          ))}
+        </div>
+      </Card>
       <Card title="Экономия ресурсов">
         <SwitchRow
           title="Режим экономии памяти"

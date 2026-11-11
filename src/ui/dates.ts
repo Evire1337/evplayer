@@ -1,3 +1,5 @@
+import { currentLang, localeOf } from "@/i18n/lang";
+
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
@@ -8,7 +10,7 @@ export function formatAddedAt(iso: string | undefined, now = Date.now()): string
   const time = new Date(iso).getTime();
   if (!Number.isFinite(time)) return "";
   const diff = Math.max(0, now - time);
-  const rtf = new Intl.RelativeTimeFormat("ru", { numeric: "auto", style: "short" });
+  const rtf = new Intl.RelativeTimeFormat(localeOf(currentLang()), { numeric: "auto", style: "short" });
   if (diff < MINUTE) return rtf.format(0, "second");
   if (diff < HOUR) return rtf.format(-Math.floor(diff / MINUTE), "minute");
   if (diff < DAY) return rtf.format(-Math.floor(diff / HOUR), "hour");
@@ -18,5 +20,5 @@ export function formatAddedAt(iso: string | undefined, now = Date.now()): string
 }
 
 export function formatDate(iso: string): string {
-  return new Intl.DateTimeFormat("ru", { day: "numeric", month: "short", year: "numeric" }).format(new Date(iso));
+  return new Intl.DateTimeFormat(localeOf(currentLang()), { day: "numeric", month: "short", year: "numeric" }).format(new Date(iso));
 }

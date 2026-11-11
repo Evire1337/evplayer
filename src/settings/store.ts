@@ -1,3 +1,4 @@
+import type { Language } from "@/i18n/lang";
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import type { Bindings } from "./shortcuts";
@@ -108,6 +109,8 @@ export interface SettingsState {
   // services
   /** client id of your own app from soundcloud.com/you/apps; empty = automatic */
   soundcloudClientId: string;
+  /** the interface language: the system's, or one chosen (see src/i18n) */
+  language: Language;
   /** keep SoundCloud out of reach from the countries below (see services/region.ts) */
   regionGuard: boolean;
   /** two-letter codes of the countries SoundCloud is not asked from */
@@ -139,6 +142,15 @@ export interface SettingsState {
   discordStatusShows: DiscordStatusShows;
   set: (patch: Partial<Omit<SettingsState, "set" | "reset">>) => void;
   reset: () => void;
+}
+
+/** the settings were saved by an earlier run of the app */
+function existingInstall(): boolean {
+  try {
+    return localStorage.getItem("evplayer.settings.v1") !== null;
+  } catch {
+    return false;
+  }
 }
 
 const DEFAULTS = {

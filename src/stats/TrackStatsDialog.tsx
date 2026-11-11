@@ -1,4 +1,5 @@
 import Artwork from "@/ui/components/Artwork";
+import { currentLang, localeOf } from "@/i18n/lang";
 import { useEffect, useMemo, useState } from "react";
 import Dialog from "@/ui/components/Dialog";
 import { Segmented } from "@/ui/components/Controls";
@@ -58,7 +59,7 @@ function Stat({ label, value, sub }: { label: string; value: string; sub?: strin
   );
 }
 
-const longDate = (iso?: string) => (iso ? new Date(iso).toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" }) : "—");
+const longDate = (iso?: string) => (iso ? new Date(iso).toLocaleDateString(localeOf(currentLang()), { day: "numeric", month: "long", year: "numeric" }) : "—");
 
 export default function TrackStatsDialog() {
   const track = useStatsDialog((s) => s.track);
@@ -78,7 +79,7 @@ export default function TrackStatsDialog() {
     if (range === "year") {
       return {
         values: stats.monthly.map((m) => m.n),
-        labels: stats.monthly.map((m) => new Date(`${m.month}-01T00:00:00`).toLocaleDateString("ru-RU", { month: "short" }).replace(".", "")),
+        labels: stats.monthly.map((m) => new Date(`${m.month}-01T00:00:00`).toLocaleDateString(localeOf(currentLang()), { month: "short" }).replace(".", "")),
       };
     }
     const days = range === "week" ? stats.daily.slice(-7) : stats.daily;
@@ -86,7 +87,7 @@ export default function TrackStatsDialog() {
       values: days.map((d) => d.n),
       labels: days.map((d, i) => {
         const date = new Date(`${d.day}T00:00:00`);
-        if (range === "week") return date.toLocaleDateString("ru-RU", { weekday: "short" });
+        if (range === "week") return date.toLocaleDateString(localeOf(currentLang()), { weekday: "short" });
         return i % 5 === 4 || i === days.length - 1 ? String(date.getDate()) : "";
       }),
     };
@@ -124,7 +125,7 @@ export default function TrackStatsDialog() {
             <div><dt>Последнее</dt><dd>{longDate(stats.last)}</dd></div>
             <div><dt>В среднем в день (месяц)</dt><dd>{(stats.month.n / 30).toFixed(1)}</dd></div>
             <div><dt>Среднее прослушивание</dt><dd>{stats.all.n ? formatListenTime(stats.all.ms / stats.all.n) : "—"}</dd></div>
-            {track.plays !== undefined && <div><dt>Прослушиваний на {track.source === "youtube" ? "YouTube" : "SoundCloud"}</dt><dd>{track.plays.toLocaleString("ru-RU")}</dd></div>}
+            {track.plays !== undefined && <div><dt>Прослушиваний на {track.source === "youtube" ? "YouTube" : "SoundCloud"}</dt><dd>{track.plays.toLocaleString(localeOf(currentLang()))}</dd></div>}
           </dl>
         </div>
       )}

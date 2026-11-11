@@ -1,5 +1,6 @@
 import "./platform";
 import { isPhone } from "./platform/device";
+import { startTranslator } from "./i18n/dom";
 import React from "react";
 import ReactDOM from "react-dom/client";
 import "@fontsource/onest/400.css";
@@ -23,6 +24,8 @@ void import("./app/migrate")
       ([{ default: App }, bridge, shortcuts, , session, { useSettings }]) => {
         // phones keep no cache: only the library, playlists, settings and statistics stay
         if (isPhone) useSettings.getState().set({ noCache: true, noServiceCache: true, noLoudnessMemory: true });
+        // English: the texts of the page are swapped for the dictionary's (src/i18n)
+        startTranslator();
         session.restoreSession();
         bridge.startBridge();
         shortcuts.startShortcuts();
