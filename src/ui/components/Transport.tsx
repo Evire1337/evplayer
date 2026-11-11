@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { player } from "@/player/engine";
 import { currentTrack, usePlayer } from "@/player/store";
@@ -12,7 +13,15 @@ import VolumePanel from "./VolumePanel";
 export function Progress({ big = false }: { big?: boolean }) {
   const { positionMs, durationMs } = usePlayer(useShallow((s) => ({ positionMs: s.positionMs, durationMs: s.durationMs })));
   const track = usePlayer((s) => currentTrack(s));
-  const progress = durationMs > 0 ? Math.min(1, positionMs / durationMs) : 0;
+  // while the bar is dragged it shows where it is let go, and the song jumps there only then:
+  // a jump on every pixel stuttered, and in a shared session sent a request for each
+  const [dragged, setDragged] = useState<number | null>(null);
+  const progress = dragged ?? (durationMs > 0 ? Math.min(1, positionMs / durationMs) : 0);
+  const letGo = () => {
+    if (dragged === null) return;
+    player.seek(dragged * durationMs);
+    setDragged(null);
+  };
   return (
     <div className={`progress${big ? " is-big" : ""}`}>
       <input
@@ -24,11 +33,14 @@ export function Progress({ big = false }: { big?: boolean }) {
         value={Math.round(progress * 1000)}
         disabled={!track}
         aria-label="Позиция" data-tip="Позиция"
-        onChange={(e) => player.seek((Number(e.target.value) / 1000) * durationMs)}
+        onChange={(e) => setDragged(Number(e.target.value) / 1000)}
+        onPointerUp={letGo}
+        onKeyUp={letGo}
+        onBlur={letGo}
         style={{ "--fill": `${progress * 100}%` } as React.CSSProperties}
       />
       <div className="progress-times">
-        <span>{formatTime(positionMs)}</span>
+        <span>{formatTime(dragged === null ? positionMs : dragged * durationMs)}</span>
         {/* the big player shows what is left; the bar at the bottom the length, as Spotify does */}
         <span>{big ? `−${formatTime(Math.max(0, durationMs - positionMs))}` : formatTime(durationMs)}</span>
       </div>

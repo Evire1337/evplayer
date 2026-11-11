@@ -37,6 +37,10 @@ const LISTED_FOR_MS = 30_000;
 const GOODBYE_MS = 1500;
 /** a guest asks for the queue again at most this often */
 const RESYNC_MS = 3000;
+/** about how long a message takes from the host to a guest through the relays */
+const LATENCY_MS = 150;
+/** after a guest's own seek, the host's reports are not followed for this long */
+const SEEK_HOLD_MS = 2500;
 
 interface Before {
   queue: Track[];
@@ -76,6 +80,7 @@ class JamEngine {
   private warnedLocal = "";
   /** the song this guest's player was told to play (the queue may already show the next one) */
   private playingId = "";
+  private seekHeldUntil = 0;
 
   constructor() {
     // closing the app: say goodbye, so the others do not wait for the timeout
@@ -241,8 +246,7 @@ class JamEngine {
       // the visible part of the queue follows the current song, so a new song sends it again
       if (s.queue !== prev.queue || s.index !== prev.index) this.rev++;
       const seeked = Math.abs(s.positionMs - prev.positionMs) > 2500;
-      const playing = (st: string) => st === "playing" || st === "loading";
-      if (s.queue !== prev.queue || s.index !== prev.index || playing(s.status) !== playing(prev.status) || seeked) this.sendSoon();
+      if (s.queue !== prev.queue || s.index !== prev.index || s.status !== prev.status || seeked) this.sendSoon();
     });
   }
 
@@ -271,7 +275,8 @@ class JamEngine {
     return {
       index: s.index,
       trackId: currentTrack(s)?.id ?? null,
-      playing: s.status === "playing" || s.status === "loading",
+      // a song still loading is not playing yet: guests start it when the host's starts
+      playing: s.status === "playing",
       positionMs: Math.round(s.positionMs),
       at: Date.now(),
     };
@@ -617,6 +622,9 @@ class JamEngine {
         break;
       case "seek":
         ask({ do: "seek", ms: a.ms });
+        // heard here at once; the host's next report then agrees
+        this.seekHeldUntil = Date.now() + SEEK_HOLD_MS;
+        player.unsteered(() => player.seek(a.ms));
         break;
       case "playIndex": {
         const track = s.queue[a.index];
@@ -715,7 +723,9 @@ class JamEngine {
       }
       return;
     }
-    this.follow(msg.now);
+    // where the host is counts from when the message came, by this device's own clock: the
+    // clocks of two computers can differ by seconds (the song started 5–7 s in)
+    this.follow({ ...msg.now, at: Date.now() - LATENCY_MS });
   }
 
   private welcome(hostId: string): void {
@@ -767,8 +777,11 @@ class JamEngine {
         return;
       }
       if (s.status === "loading") return;
+      // this copy ended a moment before the host's: wait for the next song instead of starting over
+      if (player.audio.ended) return;
       if (now.playing !== (s.status === "playing")) player.toggle();
-      if (Math.abs(s.positionMs - target) > DRIFT_MS) player.seek(target);
+      // right after a seek here, the host's older position is not a reason to jump back
+      if (Date.now() > this.seekHeldUntil && Math.abs(s.positionMs - target) > DRIFT_MS) player.seek(target);
     });
   }
 
