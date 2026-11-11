@@ -8,6 +8,8 @@ import { mapScTrack } from "@/services/soundcloud/mappers";
 // what is needed to show and play the song (the id is enough to get its sound).
 
 export const LISTEN_PAGE = "https://evire1337.github.io/evplayer/listen/";
+/** the same for a listening session: the page opens evplayer://jam/CODE */
+export const joinUrl = (code: string) => `https://evire1337.github.io/evplayer/join/?code=${encodeURIComponent(code)}`;
 
 const ID = /^(sc:\d+|yt:[\w-]{11})$/;
 

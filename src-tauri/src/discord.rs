@@ -26,8 +26,10 @@ pub struct PresenceState {
     /// where a paused song stands, shown in words (Discord can only show a running clock)
     pub position_ms: Option<f64>,
     pub duration_ms: Option<f64>,
-    /// friends may ask to listen along
+    /// the session this person is in, shown as "2 of 16"
     pub party: Option<Party>,
+    /// a page that takes a friend into that session (the "Слушать вместе" button)
+    pub join_url: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -36,8 +38,9 @@ pub struct Party {
     pub id: String,
     pub size: u32,
     pub max: u32,
-    /// handed to the friend's app when they are let in
-    pub join: String,
+    /// for Discord's own "Ask to join" (handed to the friend's app when let in); Discord
+    /// shows no link buttons next to it, so the app leaves it out
+    pub join: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq)]
@@ -137,15 +140,26 @@ pub fn activity_for(state: &PresenceState, plain: bool, lone: bool, now_ms: f64)
     if let Some(art) = state.artwork.as_deref().filter(|a| a.starts_with("https:")) {
         activity["assets"]["large_image"] = json!(art);
     }
+    let mut secret = false;
     if let Some(party) = &state.party {
         let size = party.size.max(1);
         activity["party"] = json!({ "id": party.id, "size": [size, party.max.max(size)] });
-        activity["secrets"] = json!({ "join": party.join });
-    }
-    if let Some(url) = state.url.as_deref().filter(|u| u.starts_with("https:")) {
-        if state.party.is_none() || !lone {
-            activity["buttons"] = json!([{ "label": "Слушать", "url": url }]);
+        if let Some(join) = party.join.as_deref().filter(|j| !j.is_empty()) {
+            activity["secrets"] = json!({ "join": join });
+            secret = true;
         }
+    }
+    // up to two link buttons under the status (seen by others, not by the person themself)
+    let https = |u: &Option<String>| u.clone().filter(|u| u.starts_with("https:") && u.len() <= 512);
+    let mut buttons = Vec::new();
+    if let Some(url) = https(&state.url) {
+        buttons.push(json!({ "label": "Слушать в EvPlayer", "url": url }));
+    }
+    if let Some(url) = https(&state.join_url) {
+        buttons.push(json!({ "label": "Слушать вместе", "url": url }));
+    }
+    if !buttons.is_empty() && !(secret && lone) {
+        activity["buttons"] = json!(buttons);
     }
     activity
 }
@@ -531,6 +545,7 @@ mod tests {
             position_ms: Some(83_000.0),
             duration_ms: Some(200_000.0),
             party: None,
+            join_url: None,
         }
     }
 
@@ -565,17 +580,20 @@ mod tests {
     }
 
     #[test]
-    fn a_party_can_be_joined_with_or_without_the_link_button() {
-        let party = Party { id: "evp:JAM-7K9P-2QXZ".into(), size: 2, max: 16, join: "JAM-7K9P-2QXZ~pass".into() };
-        let s = PresenceState { party: Some(party), ..song() };
+    fn two_link_buttons_and_the_party_size() {
+        let party = Party { id: "evp:JAM-7K9P-2QXZ".into(), size: 2, max: 16, join: None };
+        let s = PresenceState { party: Some(party), join_url: Some("https://evire1337.github.io/evplayer/join/?code=JAM-7K9P-2QXZ".into()), ..song() };
         let a = activity_for(&s, false, false, 0.0);
         assert_eq!(a["party"]["size"], json!([2, 16]));
-        assert_eq!(a["secrets"]["join"], "JAM-7K9P-2QXZ~pass");
-        assert!(a["buttons"].is_array());
-        assert!(activity_for(&s, false, true, 0.0).get("buttons").is_none());
-        assert!(activity_for(&song(), false, true, 0.0)["buttons"].is_array());
+        assert!(a.get("secrets").is_none());
+        assert_eq!(a["buttons"][0]["label"], "Слушать в EvPlayer");
+        assert_eq!(a["buttons"][1]["label"], "Слушать вместе");
+        // with Discord's own "Ask to join" the buttons go only if Discord turns them down
+        let asked = PresenceState { party: Some(Party { id: "p".into(), size: 1, max: 16, join: Some("JAM-7K9P-2QXZ~pass".into()) }), ..s.clone() };
+        assert_eq!(activity_for(&asked, false, false, 0.0)["secrets"]["join"], "JAM-7K9P-2QXZ~pass");
+        assert!(activity_for(&asked, false, true, 0.0).get("buttons").is_none());
+        assert_eq!(activity_for(&song(), false, true, 0.0)["buttons"].as_array().unwrap().len(), 1);
     }
-
     #[test]
     fn reads_join_events() {
         let request = json!({ "cmd": "DISPATCH", "evt": "ACTIVITY_JOIN_REQUEST", "data": { "user": { "id": "42", "username": "friend" } } });
@@ -646,6 +664,7 @@ mod pipe_tests {
             position_ms: Some(1000.0),
             duration_ms: Some(4000.0),
             party: None,
+            join_url: None,
         };
         discord.update(Some(playing.clone()));
         let (_, a) = read(&mut s);

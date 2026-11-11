@@ -7,28 +7,23 @@ import { runAction, type Command } from "./actions";
 import { useLyricsLine } from "@/ui/lyricsLine";
 import { sendPhoneMedia } from "@/platform/androidMedia";
 import { useJam } from "@/jam/store";
-import { listenUrl } from "./playLink";
+import { joinUrl, listenUrl } from "./playLink";
 import { JAM_MAX } from "@/jam/types";
-import { jam } from "@/jam/engine";
 
 // Keeps the main process in step with the page: tray menu and options, global keys,
 // Discord status. Also takes commands from the tray and the global keys.
 
-/** this app's party for Discord's "Ask to join" when no session is on yet */
-const SOLO_PARTY = `evplayer-${Math.random().toString(36).slice(2, 10)}`;
-
 /**
- * What friends see in Discord to ask to join: the session's code while one is on (they are
- * let in with it), otherwise a placeholder; a session is started when someone is let in.
+ * The listening session in the Discord status: its size ("2 of 16") and the "Слушать вместе"
+ * button, which takes a friend in through a page (Discord takes only https links). Nothing for
+ * a closed session. Discord's own "Ask to join" is not used: next to it Discord shows no link
+ * buttons at all.
  */
-function discordParty() {
+function discordSession(): { party?: { id: string; size: number; max: number }; joinUrl?: string } {
   const j = useJam.getState();
-  // Discord refuses a join secret that equals the party id. The host's secret carries a pass:
-  // whoever Discord lets in comes in without asking, even when the session lets in on request
-  if (j.status === "live") return { id: `evp:${j.code}`, size: j.people.length, max: JAM_MAX, join: jam.discordPass ? `${j.code}~${jam.discordPass}` : j.code };
-  return { id: SOLO_PARTY, size: 1, max: JAM_MAX, join: "evplayer" };
+  if (j.status !== "live") return {};
+  return { party: { id: `evp:${j.code}`, size: j.people.length, max: JAM_MAX }, joinUrl: j.access === "closed" ? undefined : joinUrl(j.code) };
 }
-
 export function startBridge(): void {
   const api = window.evplayer;
   if (!api) return;
@@ -65,7 +60,7 @@ export function startBridge(): void {
     const track = currentTrack(s);
     const playing = s.status === "playing";
     const jam = useJam.getState();
-    const key = `${track?.id}|${playing}|${jam.status}|${jam.code}|${jam.people.length}`;
+    const key = `${track?.id}|${playing}|${jam.status}|${jam.code}|${jam.people.length}|${jam.access}`;
     // a jump in position (seek) also needs a fresh "elapsed" time in Discord
     if (!force && key === lastPresence) return;
     lastPresence = key;
@@ -87,7 +82,7 @@ export function startBridge(): void {
       statusShows: o.discordStatusShows,
       positionMs: playing ? undefined : s.positionMs,
       durationMs: playing ? undefined : s.durationMs || undefined,
-      party: o.discordJoin ? discordParty() : undefined,
+      ...(o.discordJoin ? discordSession() : {}),
     });
   };
 

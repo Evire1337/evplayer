@@ -75,8 +75,11 @@ export interface PresenceState {
   /** a paused song: where it stands (said in words, as Discord's clock would run on) */
   positionMs?: number;
   durationMs?: number;
-  /** friends may ask to listen along; join reaches their app when they are let in */
-  party?: { id: string; size: number; max: number; join: string };
+  /** the session this person is in ("2 of 16"); `join` is for Discord's own "Ask to join" (not
+      sent: Discord shows no link buttons next to it) */
+  party?: { id: string; size: number; max: number; join?: string };
+  /** the "Слушать вместе" button: a page that takes a friend into the session */
+  joinUrl?: string;
 }
 
 /** a friend asked to listen along, or this person was let into a friend's session */
