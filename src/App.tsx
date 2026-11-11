@@ -28,6 +28,8 @@ import LibraryDialogs from "@/library/LibraryDialogs";
 import SpotifyExportDialog from "@/library/SpotifyExportDialog";
 import TrackStatsDialog from "@/stats/TrackStatsDialog";
 import TagEditorDialog from "@/files/tagEditor";
+import JamDialog from "@/jam/JamDialog";
+import ReactionOverlay from "@/jam/ReactionOverlay";
 import { useSettings } from "@/settings/store";
 import { IconBack } from "@/ui/components/Icons";
 import WindowControls from "@/ui/components/WindowControls";
@@ -118,6 +120,8 @@ export default function App() {
       <SpotifyExportDialog />
       <TrackStatsDialog />
       <TagEditorDialog />
+      <JamDialog />
+      <ReactionOverlay />
     </div>
   );
 }

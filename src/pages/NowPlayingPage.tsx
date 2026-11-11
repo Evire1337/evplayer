@@ -5,10 +5,11 @@ import QueuePanel from "@/ui/components/QueuePanel";
 import { Progress, Tools, Transport } from "@/ui/components/Transport";
 import { useNavigation } from "@/ui/navigation";
 import { useSettings } from "@/settings/store";
-import { IconQueue } from "@/ui/components/Icons";
+import { IconJam, IconQueue } from "@/ui/components/Icons";
 import LikeButton from "@/ui/components/LikeButton";
 import { useEffect, useState } from "react";
 import { isPhone } from "@/platform/device";
+import { useJam } from "@/jam/store";
 
 /** the window is too narrow for the «Далее» column (the same width as in app.css) */
 const NARROW = "(max-width: 1180px)";
@@ -32,6 +33,12 @@ export default function NowPlayingPage() {
   const route = usePlayer((s) => s.route);
   const go = useNavigation((s) => s.go);
   const showSetting = useSettings((s) => s.showQueue);
+  const jamActive = useJam((s) => s.active);
+  const participants = useJam((s) => s.participants);
+  const isHost = useJam((s) => s.isHost);
+  const hostName = useJam((s) => s.hostName);
+  const roomCode = useJam((s) => s.roomCode);
+  const setJamOpen = useJam((s) => s.setOpen);
   // a phone (or a narrow window) has no room for a third column: «Далее» slides up over
   // the page when asked
   const narrow = useNarrow();
@@ -65,6 +72,27 @@ export default function NowPlayingPage() {
               {route === "soundcloud" && " · играет копия с SoundCloud"}
               {route === "youtube" && " · играет копия с YouTube"}
             </span>
+          )}
+          {jamActive && (
+            <div className="now-jam-banner" onClick={() => setJamOpen(true)} role="button" tabIndex={0}>
+              <div className="now-jam-left">
+                <div className="now-jam-avatars">
+                  {participants.slice(0, 4).map((p) => (
+                    <span key={p.id} className="now-jam-avatar-circle" style={{ backgroundColor: p.avatarColor }}>
+                      {p.name.slice(0, 1).toUpperCase()}
+                    </span>
+                  ))}
+                </div>
+                <div>
+                  <div className="now-jam-text">Jam: {participants.length} {participants.length === 1 ? "слушатель" : participants.length < 5 ? "слушателя" : "слушателей"}</div>
+                  <div className="now-jam-sub">{isHost ? "Вы организатор" : `Организатор: ${hostName}`}</div>
+                </div>
+              </div>
+              <div className="now-jam-right">
+                <span>{roomCode}</span>
+                <IconJam size={16} />
+              </div>
+            </div>
           )}
         </div>
         <Progress big />

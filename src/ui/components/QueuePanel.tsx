@@ -7,6 +7,7 @@ import { useSettings } from "@/settings/store";
 import { trackMenuItems } from "@/library/trackMenu";
 import { openMenu } from "../menu";
 import { artistLine } from "../format";
+import { useJam } from "@/jam/store";
 
 /** how many already played songs stay visible above the current one */
 const PLAYED_SHOWN = 30;
@@ -17,6 +18,9 @@ export default function QueuePanel({ onHide }: { onHide?: () => void } = {}) {
   const queue = usePlayer((s) => s.queue);
   const index = usePlayer((s) => s.index);
   const autoplay = useSettings((s) => s.autoplay);
+  const jamActive = useJam((s) => s.active);
+  const roomCode = useJam((s) => s.roomCode);
+  const trackAddedBy = useJam((s) => s.trackAddedBy);
   // positions here are queue positions, so a move is a move in the queue
   const reorder = useReorder((from, to) => player.moveInQueue(from, to));
   const upcoming = queue.slice(index + 1, index + 61);
@@ -33,7 +37,7 @@ export default function QueuePanel({ onHide }: { onHide?: () => void } = {}) {
   return (
     <aside className="queue glass" aria-label="Далее в очереди">
       <div className="queue-head">
-        <h2 className="queue-title">Далее</h2>
+        <h2 className="queue-title">Далее{jamActive ? ` · Jam (${roomCode})` : ""}</h2>
         <span className="queue-actions">
           {upcoming.length > 0 && (
             <button type="button" className="reset-btn" onClick={() => player.clearUpcoming()}>Очистить</button>
@@ -63,7 +67,12 @@ export default function QueuePanel({ onHide }: { onHide?: () => void } = {}) {
                   <span className="queue-art"><Artwork src={t.artwork} size="row" /></span>
                   <span className="queue-text">
                     <span className="queue-name">{t.title}</span>
-                    <span className="queue-sub">{artistLine(t.artists)} · {SOURCE_LABEL[t.source]}</span>
+                    <span className="queue-sub">
+                      {artistLine(t.artists)} · {SOURCE_LABEL[t.source]}
+                      {jamActive && trackAddedBy[t.id] && (
+                        <span className="queue-added-by"> · добавил(а) {trackAddedBy[t.id]}</span>
+                      )}
+                    </span>
                   </span>
                 </button>
               </li>

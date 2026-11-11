@@ -65,3 +65,27 @@ export const IconUndo = (p: P) => <Svg {...p}><path d="M9 7L5 11l4 4" /><path d=
 export const IconSort = (p: P) => <Svg {...p}><path d="M7 4v16M4 17l3 3 3-3" /><path d="M13 6h8M13 11h6M13 16h3" /></Svg>;
 export const IconGridView = (p: P) => <Svg {...p}><rect x="4" y="4" width="7" height="7" rx="1.5" /><rect x="13" y="4" width="7" height="7" rx="1.5" /><rect x="4" y="13" width="7" height="7" rx="1.5" /><rect x="13" y="13" width="7" height="7" rx="1.5" /></Svg>;
 export const IconListView = (p: P) => <Svg {...p}><rect x="4" y="5" width="4" height="4" rx="1" /><rect x="4" y="15" width="4" height="4" rx="1" /><path d="M11 7h9M11 17h9" /></Svg>;
+export const IconJam = (p: P) => (
+  <Svg {...p}>
+    <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+    <circle cx="9" cy="7" r="4" />
+    <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
+    <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+  </Svg>
+);
+export const IconCopy = (p: P) => (
+  <Svg {...p}>
+    <rect x="9" y="9" width="13" height="13" rx="2" />
+    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+  </Svg>
+);
+export const IconQr = (p: P) => (
+  <Svg {...p}>
+    <rect x="3" y="3" width="7" height="7" rx="1" />
+    <rect x="14" y="3" width="7" height="7" rx="1" />
+    <rect x="3" y="14" width="7" height="7" rx="1" />
+    <rect x="14" y="14" width="3" height="3" />
+    <rect x="18" y="14" width="3" height="3" />
+    <rect x="14" y="18" width="7" height="3" />
+  </Svg>
+);

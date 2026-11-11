@@ -1,6 +1,7 @@
 import logo from "@/logo.svg";
 import { useNavigation, type Page } from "../navigation";
-import { IconDisc, IconFolder, IconHome, IconLibrary, IconSearch, IconSettings } from "./Icons";
+import { IconDisc, IconFolder, IconHome, IconJam, IconLibrary, IconSearch, IconSettings } from "./Icons";
+import { useJam } from "@/jam/store";
 
 const ITEMS: { page: Page; label: string; icon: (p: { size?: number }) => React.ReactNode }[] = [
   { page: "now", label: "Сейчас играет", icon: IconDisc },
@@ -13,6 +14,9 @@ const ITEMS: { page: Page; label: string; icon: (p: { size?: number }) => React.
 // the floating column of sections on the left
 export default function Rail() {
   const { page, go } = useNavigation();
+  const jamActive = useJam((s) => s.active);
+  const participantsCount = useJam((s) => s.participants.length);
+  const setJamOpen = useJam((s) => s.setOpen);
   return (
     <nav className="rail glass" aria-label="Разделы">
       <img src={logo} alt="EvPlayer" className="rail-logo" />
@@ -30,6 +34,16 @@ export default function Rail() {
         </button>
       ))}
       <span className="rail-gap" />
+      <button
+        type="button"
+        className={`rail-btn${jamActive ? " jam-active is-active" : ""}`}
+        aria-label="Совместное прослушивание"
+        onClick={() => setJamOpen(true)}
+      >
+        <IconJam size={21} />
+        {jamActive && <span className="rail-jam-dot" />}
+        <span className="rail-tip">{jamActive ? `Jam (${participantsCount})` : "Совместное прослушивание"}</span>
+      </button>
       <button
         type="button"
         className={`rail-btn${page === "settings" ? " is-active" : ""}`}

@@ -3,7 +3,8 @@ import { player } from "@/player/engine";
 import { currentTrack, usePlayer } from "@/player/store";
 import { useEffects } from "@/player/effects";
 import { formatTime } from "../format";
-import { IconNext, IconPause, IconPlay, IconPrev, IconRepeat, IconShuffle, IconSliders, IconVolume, IconMute } from "./Icons";
+import { IconNext, IconPause, IconPlay, IconPrev, IconRepeat, IconShuffle, IconSliders, IconVolume, IconMute, IconJam } from "./Icons";
+import { useJam } from "@/jam/store";
 import Popover from "./Popover";
 import SoundPanel from "./SoundPanel";
 import VolumePanel from "./VolumePanel";
@@ -65,8 +66,19 @@ export function Tools() {
   const fx = useEffects();
   const tuned = fx.speed !== 1 || (!fx.linked && fx.pitch !== 0) || fx.reverb;
   const { volume, muted } = usePlayer(useShallow((s) => ({ volume: s.volume, muted: s.muted })));
+  const jamActive = useJam((s) => s.active);
+  const setJamOpen = useJam((s) => s.setOpen);
   return (
     <div className="tools">
+      <button
+        type="button"
+        className={`tool-btn jam-tool-btn${jamActive ? " is-on" : ""}`}
+        aria-label="Совместное прослушивание"
+        data-tip="Совместное прослушивание (Jam)"
+        onClick={() => setJamOpen(true)}
+      >
+        <IconJam size={19} />
+      </button>
       <Popover label="Звук, скорость и тон" icon={<IconSliders size={19} />} width={292} active={tuned}>
         <SoundPanel />
       </Popover>
