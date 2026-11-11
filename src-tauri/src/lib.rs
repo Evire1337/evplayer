@@ -5,6 +5,7 @@
 
 mod diagnostics;
 mod discord;
+mod identity;
 mod library;
 mod media_server;
 mod memory;
@@ -708,6 +709,8 @@ pub fn run() {
         .setup(|app| {
             let handle = app.handle().clone();
             let dir = data_dir(&handle);
+            // Windows names the playing app by this id (the media flyout said "Unknown app")
+            identity::register(&dir);
             let library = Library::new(dir.clone());
             let offline = Offline::new(&dir);
             app.manage(AppState {
