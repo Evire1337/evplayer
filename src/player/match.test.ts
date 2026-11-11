@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bestMatch, isSameRecording, matchScore, searchQueryFor, simplify, versionTags } from "./match";
+import { bestMatch, isOriginal, isSameRecording, matchScore, searchQueryFor, simplify, versionTags } from "./match";
 import type { Track } from "@/types";
 
 const tr = (title: string, artist: string, durationMs = 200000, id = title): Track => ({
@@ -31,9 +31,15 @@ describe("match", () => {
     expect(isSameRecording(sc, { ...tr("VVV (HE'S BACK)", "Someone Else", 81000), source: "youtube" })).toBe(true);
     expect(isSameRecording(sc, { ...tr("VVV (HE'S BACK)", "Someone Else", 95000), source: "youtube" })).toBe(false);
     expect(isSameRecording(sc, { ...tr("VVV (HE'S BACK) (Sped Up)", "Mikeey", 81000), source: "youtube" })).toBe(false);
-    // what was found on YouTube for it: a re-upload of the same part, and the full song (longer)
+    // what was found on YouTube for it: a re-upload of the same part, and the artist's original (longer)
     expect(isSameRecording(sc, { ...tr("VVV HE'S BACK (ALL CREDITS TO mikeeysmind) not my song", "CYBERMASK", 81000), source: "youtube" })).toBe(true);
-    expect(isSameRecording(sc, { ...tr("VVV", "mikeeysmind", 228000), source: "youtube" })).toBe(false);
+    const original = { ...tr("VVV", "mikeeysmind", 228000), source: "youtube" as const };
+    expect(isSameRecording(sc, original)).toBe(true);
+    expect(isOriginal(sc, original)).toBe(true);
+    // the original is the artist's: someone else's "VVV", or another of the artist's songs, is not
+    expect(isOriginal(sc, { ...original, artists: [{ id: "x", name: "WizNation" }] })).toBe(false);
+    expect(isOriginal(tr("Love Story", "Artist"), tr("Love", "Artist", 100000))).toBe(false);
+    expect(isOriginal(sc, { ...original, title: "VVV (Remix)" })).toBe(false);
   });
   it("builds a search query", () => {
     expect(searchQueryFor(tr("Daft Punk - Get Lucky (Official Video)", "convar"))).toBe("daft punk get lucky");

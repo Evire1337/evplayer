@@ -75,11 +75,30 @@ export function versionTags(title: string): Set<string> {
  */
 export function isSameRecording(wanted: Track, candidate: Track): boolean {
   const diff = wanted.durationMs && candidate.durationMs ? Math.abs(wanted.durationMs - candidate.durationMs) : Infinity;
+  if (isOriginal(wanted, candidate)) return true;
   if (diff !== Infinity && diff > 15000) return false;
   if (matchScore(wanted, candidate) >= 0.8) return true;
   // the very same title, as long to a few seconds, and not another version: the same song even
   // when the artist is written differently (a SoundCloud uploader's name is often not the artist's)
   return diff < 3000 && titleScore(wanted, candidate) === 1 && sameVersion(wanted, candidate);
+}
+
+/** the title without what is in brackets: "VVV (HE'S BACK)" is "vvv" */
+const mainTitle = (track: Track) => simplify(splitTitle(track).title.replace(/\([^)]*\)|\[[^\]]*\]/g, " "));
+
+/**
+ * The artist's own release of the song: the same artist, the same title (what is in brackets
+ * aside) and not another version. It may be much longer: a SoundCloud upload is often a part of
+ * the song (a minute of it), and the original is what should play then.
+ */
+export function isOriginal(wanted: Track, candidate: Track): boolean {
+  const title = mainTitle(wanted);
+  if (!title || title !== mainTitle(candidate) || !sameVersion(wanted, candidate)) return false;
+  // about as long, or the wanted one is plainly a part of it; a little longer is an extended mix
+  const diff = wanted.durationMs && candidate.durationMs ? Math.abs(wanted.durationMs - candidate.durationMs) : 0;
+  if (diff > 15000 && wanted.durationMs > candidate.durationMs * 0.6) return false;
+  const artist = words(splitTitle(wanted).artist);
+  return nameOverlap(artist, words(candidate.artists.map((a) => a.name).join(" "))) === 1;
 }
 
 function sameVersion(wanted: Track, candidate: Track): boolean {

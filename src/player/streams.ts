@@ -1,7 +1,7 @@
 import type { Track } from "@/types";
 import { searchSoundCloud, soundCloudStreams } from "@/services/soundcloud/api";
 import { searchYouTubeMusic } from "@/services/youtube/music";
-import { isSameRecording, matchScore, searchQueryFor, simplify, splitTitle } from "./match";
+import { isOriginal, isSameRecording, matchScore, searchQueryFor, simplify, splitTitle } from "./match";
 import { mediaUrl } from "@/files/localFiles";
 import { keptUrl } from "@/offline/store";
 import { resolveYouTubeAudio, videoIdOf } from "@/services/youtube/direct";
@@ -28,7 +28,8 @@ async function youTubeMatch(track: Track, signal?: AbortSignal): Promise<Track |
   for (const query of queries) {
     const ranked = (await searchYouTubeMusic(query, signal))
       .filter((t) => isSameRecording(track, t))
-      .sort((a, b) => matchScore(track, b) - matchScore(track, a));
+      // the artist's own release first, then the closest copy
+      .sort((a, b) => Number(isOriginal(track, b)) - Number(isOriginal(track, a)) || matchScore(track, b) - matchScore(track, a));
     found = ranked[0] ?? null;
     if (found) break;
   }
