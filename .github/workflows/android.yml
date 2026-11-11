@@ -1,12 +1,11 @@
 name: Android
 
-# An APK from every push to the android branch, to put on a phone and try.
+# An APK to put on a phone and try, built when the author starts it (Actions -> Android ->
+# Run workflow, or `gh workflow run android.yml --ref <branch>`).
 # Signed with the release key from the repository secrets ANDROID_KEYSTORE (base64 of the
 # .jks file) and ANDROID_KEY_PASSWORD; without them the APK is signed with a throwaway
 # key, which installs fine but cannot be updated by a later properly signed APK.
 on:
-  push:
-    branches: [android]
   workflow_dispatch:
 
 jobs:
