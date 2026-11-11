@@ -10,7 +10,8 @@ export default function CollectionCard({ item }: { item: CollectionSummary }) {
         {item.artwork ? <img src={item.artwork} alt="" loading="lazy" /> : <span className="card-placeholder"><IconDisc size={40} /></span>}
       </span>
       <span className="track-card-title">{item.title}</span>
-      <span className="track-card-artist">
+      {/* "Альбом · Артист · 2025": the kind is the app's own word */}
+      <span className="track-card-artist" data-translate>
         {item.kind === "album" ? "Альбом" : "Плейлист"}
         {item.subtitle ? ` · ${item.subtitle.replace(/^(Альбом|Плейлист|Album|Playlist|Сингл|EP)\s*·\s*/i, "")}` : ""}
       </span>

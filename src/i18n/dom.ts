@@ -15,7 +15,7 @@ const ATTRIBUTES = ["aria-label", "placeholder", "title", "data-tip", "alt"] as 
  * (a Russian song line like "Нет" must not become "No"). Only the app's own words are translated.
  */
 /** the made-for-you cards reuse the song-card classes for words of the app's own */
-const APP_OWN = ".smart-card";
+const APP_OWN = ".smart-card, [data-translate]";
 const CONTENT = "[data-no-translate], script, style, textarea, canvas, .lyrics, .lyric-line, .track-title, .track-artist, .track-card-title, .track-card-artist, .queue-name, .queue-sub, .artist-name";
 
 /** the Russian original of a text node, and what it was last turned into */

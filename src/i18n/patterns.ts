@@ -13,6 +13,7 @@ export const EN_PATTERNS: Pattern[] = [
   [/^(\d[\d\s ]*) прослушивани(?:е|я|й)$/, (m) => count(m[1], "play", "plays")],
   [/^(\d[\d\s ]*) слушател(?:ь|я|ей)$/, (m) => count(m[1], "listener", "listeners")],
   [/^(\d[\d\s ]*) процесс\(ов\) приложения(.*)$/, (m, piece) => `${m[1]} app process(es)${m[2].trim() ? " " + piece(m[2].trim().replace(/^,\s*/, "")) : ""}`],
+  [/^([\d.,]+\S?) подписчик(?:а|ов)?$/, (m) => `${m[1]} followers`],
   [/^(\d[\d\s ]*) подписчик(?:а|ов)? на SoundCloud$/, (m) => `${m[1]} followers on SoundCloud`],
   [/^(\d[\d\s ]*) подписчик(?:а|ов)? на YouTube$/, (m) => `${m[1]} subscribers on YouTube`],
   [/^(\d[\d\s ]*) слушател(?:ь|я|ей) в месяц$/, (m) => `${m[1]} monthly listeners`],
