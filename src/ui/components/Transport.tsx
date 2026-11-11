@@ -29,7 +29,8 @@ export function Progress({ big = false }: { big?: boolean }) {
       />
       <div className="progress-times">
         <span>{formatTime(positionMs)}</span>
-        <span>−{formatTime(Math.max(0, durationMs - positionMs))}</span>
+        {/* the big player shows what is left; the bar at the bottom the length, as Spotify does */}
+        <span>{big ? `−${formatTime(Math.max(0, durationMs - positionMs))}` : formatTime(durationMs)}</span>
       </div>
     </div>
   );
