@@ -17,6 +17,7 @@ import { toast } from "@/ui/toasts";
 import { formatAddedAt } from "@/ui/dates";
 import { IconFolder, IconHeart, IconLink, IconListPlus, IconPlug, IconRefresh, IconUser } from "@/ui/components/Icons";
 import { Card, Pill, SwitchRow, TabHeader } from "./parts";
+import RegionGuardCard from "./RegionGuardCard";
 
 function ServiceBadge({ name, color }: { name: string; color: string }) {
   return (
@@ -224,6 +225,7 @@ function SoundCloudCard() {
       <p className="muted small">Подтягиваются ваши публичные лайки и плейлисты. Пароль не нужен и никуда не передаётся.</p>
 
       <SoundCloudSync />
+      <RegionGuardCard />
 
       <button type="button" className="svc-more" onClick={() => setAdvanced((v) => !v)}>{advanced ? "Скрыть дополнительно" : "Дополнительно"}</button>
       {advanced && (

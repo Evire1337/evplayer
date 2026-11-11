@@ -108,6 +108,10 @@ export interface SettingsState {
   // services
   /** client id of your own app from soundcloud.com/you/apps; empty = automatic */
   soundcloudClientId: string;
+  /** keep SoundCloud out of reach from the countries below (see services/region.ts) */
+  regionGuard: boolean;
+  /** two-letter codes of the countries SoundCloud is not asked from */
+  regionCountries: string[];
   soundcloudAccount: SoundCloudAccount | null;
   /** secret of that same app (needed for the OAuth sign-in) */
   soundcloudClientSecret: string;
@@ -168,6 +172,8 @@ const DEFAULTS = {
   overlayCorner: "top-center" as OverlayCorner,
   overlayShowLyrics: true,
   soundcloudClientId: "",
+  regionGuard: true,
+  regionCountries: ["RU"],
   soundcloudAccount: null as SoundCloudAccount | null,
   soundcloudClientSecret: "",
   soundcloudLogin: null as SoundCloudLogin | null,

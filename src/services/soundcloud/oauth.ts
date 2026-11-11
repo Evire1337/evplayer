@@ -1,4 +1,5 @@
 import { useSettings } from "@/settings/store";
+import { guardSoundCloud } from "@/services/region";
 
 // Signing in to SoundCloud with its official OAuth, and calls to the write side of its API
 // (api.soundcloud.com) on behalf of that account. Tokens live about an hour and a refresh
@@ -70,6 +71,8 @@ const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** one call to the API; waits out "too many requests" and renews an expired token once */
 export async function call<T = unknown>(method: string, path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
+  // an account asked from a country SoundCloud blocks can stay marked as that country's
+  await guardSoundCloud();
   let renewed = false;
   for (let attempt = 0; ; attempt++) {
     const res = await fetch(`${API}${path}`, {

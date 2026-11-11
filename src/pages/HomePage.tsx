@@ -2,6 +2,7 @@ import RowScroll from "@/ui/components/RowScroll";
 import { useEffect, useMemo, useState } from "react";
 import type { Track } from "@/types";
 import { soundCloudCharts } from "@/services/soundcloud/api";
+import { RegionBlockedError } from "@/services/region";
 import TrackCard from "@/ui/components/TrackCard";
 import TrackRow from "@/ui/components/TrackRow";
 import { Segmented } from "@/ui/components/Controls";
@@ -37,7 +38,7 @@ const chartCache = new Map<string, Track[]>();
 
 function useChart(kind: "trending") {
   const [tracks, setTracks] = useState<Track[]>(() => chartCache.get(kind) ?? []);
-  const [state, setState] = useState<"loading" | "ready" | "error">(chartCache.has(kind) ? "ready" : "loading");
+  const [state, setState] = useState<"loading" | "ready" | "error" | "blocked">(chartCache.has(kind) ? "ready" : "loading");
   useEffect(() => {
     if (chartCache.has(kind)) return;
     const controller = new AbortController();
@@ -47,7 +48,7 @@ function useChart(kind: "trending") {
         setTracks(list);
         setState("ready");
       })
-      .catch(() => !controller.signal.aborted && setState("error"));
+      .catch((error) => !controller.signal.aborted && setState(error instanceof RegionBlockedError ? "blocked" : "error"));
     return () => controller.abort();
   }, [kind]);
   return { tracks, state };
@@ -59,7 +60,9 @@ function Row({ title, tracks, state, ranked, hint }: { title: string; tracks: Tr
     <section className="row">
       <h2 className="row-title">{title}</h2>
       {hint && <p className="muted small row-hint">{hint}</p>}
-      {state === "error" ? (
+      {state === "blocked" ? (
+        <p className="muted">SoundCloud не трогаю с адреса вашей страны. Включите VPN другой страны или отключите защиту: Настройки → Сервисы.</p>
+      ) : state === "error" ? (
         <p className="muted">SoundCloud сейчас не отвечает. Попробуйте позже.</p>
       ) : (
         <RowScroll>

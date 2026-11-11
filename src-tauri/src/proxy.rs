@@ -31,6 +31,8 @@ const OPEN_HOSTS: &[&str] = &[
     "open.spotifycdn.com",
     "api.music.yandex.net",
     "api.github.com",
+    // the country the connection is in (src/services/region.ts)
+    "www.cloudflare.com",
 ];
 
 /// a media file is handed over in pieces of this size, so playback starts without

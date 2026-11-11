@@ -25,6 +25,8 @@ const OPEN_HOSTS = [
   /^api\.music\.yandex\.net$/,
   // the phone version looks for a newer APK
   /^api\.github\.com$/,
+  // the country the connection is in (services/region.ts)
+  /^www\.cloudflare\.com$/,
 ];
 
 export function isOpenHost(url: string): boolean {

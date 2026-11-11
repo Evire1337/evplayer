@@ -3,6 +3,7 @@ import { useSettings } from "@/settings/store";
 import { formatsListed, mapScCollection, mapScTrack, mapScUser, qualityOf, rankTranscodings, trackAuthorization, transcodingsOf, type Transcoding } from "./mappers";
 import { joinedStream } from "@/platform/net";
 import { isWebDev, webClientId } from "@/platform/web";
+import { guardSoundCloud } from "@/services/region";
 
 const isOggHls = (t: Transcoding) => t.protocol === "hls" && /ogg/i.test(t.mimeType);
 
@@ -23,6 +24,7 @@ async function getClientId(force = false): Promise<string> {
 
 /** GET from api-v2; a rejected client id is refreshed once */
 export async function scGet<T = unknown>(path: string, params: Record<string, string> = {}, signal?: AbortSignal): Promise<T> {
+  await guardSoundCloud();
   for (let attempt = 0; attempt < 2; attempt++) {
     const url = new URL(path.startsWith("http") ? path : `${API}${path}`);
     for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
