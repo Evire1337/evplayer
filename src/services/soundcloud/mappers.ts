@@ -32,8 +32,20 @@ export function mapScTrack(raw: unknown): Track | null {
     artwork: artworkUrl(raw.artwork_url) ?? artworkUrl(user?.avatar_url),
     plays: num(raw.playback_count),
     permalink: str(raw.permalink_url),
+    ...(isPreviewOnly(raw) && { preview: true }),
   };
 }
+
+/** SoundCloud gives this song out only as a 30-second preview (a SoundCloud Go+ song) */
+export function isPreviewOnly(raw: Json): boolean {
+  if (str(raw.policy) === "SNIP") return true;
+  const full = num(raw.full_duration);
+  const given = num(raw.duration);
+  return full !== undefined && given !== undefined && given <= PREVIEW_MS && full > given + 5000;
+}
+
+/** previews are 30 seconds long */
+const PREVIEW_MS = 31_000;
 
 export function mapScUser(raw: unknown): ArtistSummary | null {
   if (!isObj(raw) || raw.kind !== "user") return null;
@@ -59,6 +71,13 @@ export function formatsListed(raw: unknown): string[] {
   });
 }
 
+/** a format that is a 30-second cut of a longer song */
+function snippedBy(track: Json, t: Json): boolean {
+  const full = num(track.full_duration);
+  const length = num(t.duration);
+  return full !== undefined && length !== undefined && length <= PREVIEW_MS && full > length + 5000;
+}
+
 export function transcodingsOf(raw: unknown): Transcoding[] {
   if (!isObj(raw) || !isObj(raw.media) || !Array.isArray(raw.media.transcodings)) return [];
   return raw.media.transcodings.flatMap((t): Transcoding[] => {
@@ -67,8 +86,9 @@ export function transcodingsOf(raw: unknown): Transcoding[] {
     const protocol = str(t.format.protocol);
     const mimeType = str(t.format.mime_type) ?? "";
     if (!url || (protocol !== "progressive" && protocol !== "hls")) return [];
-    // encrypted streams (premium "ctr-encrypted-hls") cannot be played here
-    if (/encrypted/i.test(protocol) || t.snipped === true) return [];
+    // encrypted streams (premium "ctr-encrypted-hls") cannot be played here, and a preview
+    // is not the song (some are not marked as one: they are told by their length)
+    if (/encrypted/i.test(protocol) || t.snipped === true || snippedBy(raw, t)) return [];
     return [{ url, protocol, mimeType }];
   });
 }

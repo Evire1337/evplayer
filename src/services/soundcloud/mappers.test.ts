@@ -39,4 +39,13 @@ describe("soundcloud mappers", () => {
     expect(trackAuthorization({ track_authorization: "tok" })).toBe("tok");
     expect(trackAuthorization({})).toBeUndefined();
   });
+  it("knows a SoundCloud Go+ song that is given out only as a preview", () => {
+    const base = { kind: "track", id: 7, title: "Go+ song", full_duration: 200_000 };
+    expect(mapScTrack({ ...base, duration: 30_000, policy: "SNIP" })?.preview).toBe(true);
+    expect(mapScTrack({ ...base, duration: 30_000 })?.preview).toBe(true);
+    expect(mapScTrack({ ...base, duration: 200_000, policy: "ALLOW" })?.preview).toBeUndefined();
+    const formats = (duration: number) => ({ full_duration: 200_000, media: { transcodings: [{ url: "u", duration, format: { protocol: "progressive", mime_type: "audio/mpeg" } }] } });
+    expect(transcodingsOf(formats(30_000))).toEqual([]);
+    expect(transcodingsOf(formats(200_000))).toHaveLength(1);
+  });
 });

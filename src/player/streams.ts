@@ -57,7 +57,7 @@ export class NoCopyError extends Error {
  * not play (resolveStream below takes only the first):
  * - SoundCloud: each format of the upload, then the same song on YouTube (some uploads are
  *   only given out protected or as a 30-second preview, which the SoundCloud site can play
- *   and this player cannot)
+ *   and this player cannot); a song known to be preview-only goes to YouTube straight away
  * - YouTube: straight from YouTube, then the song's copy on SoundCloud
  * A copy saved for offline listening goes before all of these.
  */
@@ -71,11 +71,15 @@ export async function* streamCandidates(track: Track, signal?: AbortSignal): Asy
       yield { url: mediaUrl("track", track.id), hls: false };
       return;
     case "soundcloud": {
-      try {
-        yield* soundCloudStreams(track.id, signal);
-      } catch (e) {
-        if (signal?.aborted) throw e;
-        lastError = e;
+      // a preview-only song (SoundCloud Go+) is not asked of SoundCloud at all: its full
+      // recording comes from YouTube Music, with the cover and names of the SoundCloud one
+      if (!track.preview) {
+        try {
+          yield* soundCloudStreams(track.id, signal);
+        } catch (e) {
+          if (signal?.aborted) throw e;
+          lastError = e;
+        }
       }
       const copy = await youTubeMatch(track, signal).catch((e) => {
         if (signal?.aborted) throw e;
@@ -92,6 +96,7 @@ export async function* streamCandidates(track: Track, signal?: AbortSignal): Asy
         }
       }
       if (lastError) throw lastError;
+      if (track.preview) throw new Error("SoundCloud даёт только 30-секундный отрывок, а на YouTube Music эта песня не нашлась");
       return;
     }
     case "youtube": {
