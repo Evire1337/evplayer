@@ -119,5 +119,10 @@ html.is-phone .lyric-line { filter: none !important; }
 html.is-phone .rail-jam { display: none; }
 html.is-phone .jam-float { right: 12px; bottom: calc(var(--nav-h) + var(--mini-h) + var(--safe-bottom) + 24px); }
 html.is-phone .jam-asks { top: calc(env(safe-area-inset-top, 0px) + 12px); }
+/* the code and its four buttons are one row that fits the card (it ran past the right edge) */
+/* on the narrowest screens the buttons drop under the code instead of running off the card */
+html.is-phone .jam-code { width: 100%; max-width: 100%; min-width: 0; justify-content: space-between; flex-wrap: wrap; padding-left: 10px; gap: 0 2px; }
+html.is-phone .jam-code-text { font-size: clamp(12px, 3.5vw, 14px); letter-spacing: 0.5px; margin-right: 0; }
+html.is-phone .jam-code .icon-btn { flex: none; width: 28px; height: 28px; }
 html.is-phone .jam-ask { flex-wrap: wrap; }
 html.is-phone .jam-ask-text { flex-basis: calc(100% - 48px); }
