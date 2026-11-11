@@ -1,16 +1,26 @@
 import type { DiscordUser } from "@/platform/api";
 import { toast } from "@/ui/toasts";
+import { playLink } from "@/app/playLink";
+import { useNavigation } from "@/ui/navigation";
 import { jam } from "./engine";
 import { normalizeCode } from "./protocol";
 import { useJam } from "./store";
 
-// The ways into a session from outside the dialog: an evplayer://jam/... link (a QR code,
-// a link sent in a chat) and Discord's "Ask to join" on the status.
+// The ways in from outside: an evplayer://jam/... link (a QR code, a link sent in a chat),
+// Discord's "Ask to join" on the status, and evplayer://play/... (Discord's "Слушать").
 
 /** Discord needs a little time to show the status with the session's code before it hands
     that code to the friend */
 const STATUS_SETTLES_MS = 1500;
 const ASKS_KEPT = 5;
+
+/** an evplayer:// link: a song to play (from Discord's "Слушать") or a session to join */
+function openLink(url: string): void {
+  void playLink(url).then((played) => {
+    if (played) useNavigation.getState().go("now");
+    else openInvite(url);
+  });
+}
 
 /** a link or a code from outside: open the session dialog and go in */
 export function openInvite(text: string): void {
@@ -61,8 +71,8 @@ export function startInvites(): () => void {
       toast("Друг ещё не начал сессию: попросите его прислать код", "error");
     }
   });
-  void api.links.first().then((url) => url && openInvite(url)).catch(() => undefined);
-  const offLinks = api.links.onOpen(openInvite);
+  void api.links.first().then((url) => url && openLink(url)).catch(() => undefined);
+  const offLinks = api.links.onOpen(openLink);
   return () => {
     offDiscord();
     offLinks();

@@ -7,6 +7,7 @@ import { runAction, type Command } from "./actions";
 import { useLyricsLine } from "@/ui/lyricsLine";
 import { sendPhoneMedia } from "@/platform/androidMedia";
 import { useJam } from "@/jam/store";
+import { listenUrl } from "./playLink";
 import { JAM_MAX } from "@/jam/types";
 import { jam } from "@/jam/engine";
 
@@ -78,7 +79,8 @@ export function startBridge(): void {
       title: track.title,
       artist: artistLine(track.artists),
       artwork: o.discordShowArtwork ? track.artwork : undefined,
-      url: o.discordShowButton ? track.permalink : undefined,
+      // the button opens the song in EvPlayer (through a page: Discord takes only https links)
+      url: o.discordShowButton ? listenUrl(track) : undefined,
       paused: !playing,
       startedAt: o.discordShowTimeline ? startedAt : undefined,
       endsAt: o.discordShowTimeline && s.durationMs ? startedAt + s.durationMs : undefined,
