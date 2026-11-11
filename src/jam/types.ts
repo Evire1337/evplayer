@@ -108,7 +108,8 @@ export type JamMessage =
 
 /** public relays the session talks through (Nostr, short-lived events that are not stored);
     the same list is allowed in connect-src in src-tauri/tauri.conf.json */
-export const JAM_RELAYS = ["wss://relay.primal.net", "wss://relay.snort.social", "wss://offchain.pub", "wss://nos.lol"];
+// (checked by hand: offchain.pub refuses unknown keys and nos.lol does not pass these events on)
+export const JAM_RELAYS = ["wss://relay.primal.net", "wss://relay.snort.social", "wss://relay.damus.io", "wss://nostr.oxtr.dev", "wss://purplerelay.com"];
 
 /** at most this many people in one session (Discord shows it as "2 из 16") */
 export const JAM_MAX = 16;

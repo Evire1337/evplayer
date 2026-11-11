@@ -20,7 +20,7 @@
         "font-src": "'self' data:",
         "img-src": "'self' data: blob: https: evmedia: http://evmedia.localhost evproxy: http://evproxy.localhost",
         "media-src": "'self' blob: evmedia: http://evmedia.localhost evproxy: http://evproxy.localhost http://127.0.0.1:*",
-        "connect-src": "'self' wss://relay.primal.net wss://relay.snort.social wss://offchain.pub wss://nos.lol ipc: http://ipc.localhost evproxy: http://evproxy.localhost evmedia: http://evmedia.localhost blob:",
+        "connect-src": "'self' wss://relay.primal.net wss://relay.snort.social wss://relay.damus.io wss://nostr.oxtr.dev wss://purplerelay.com ipc: http://ipc.localhost evproxy: http://evproxy.localhost evmedia: http://evmedia.localhost blob:",
         "worker-src": "'self' blob:",
         "frame-src": "'none'",
         "object-src": "'none'"
