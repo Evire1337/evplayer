@@ -64,7 +64,7 @@ export function trackMenuItems(track: Track, ctx: TrackMenuContext = {}): MenuIt
     items.push(
       kept
         ? { label: "Удалить скачанное", icon: <IconTrash size={16} />, onSelect: () => void forgetTracks([track.id]).then(() => toast("Копия для офлайн удалена")) }
-        : { label: "Скачать для офлайн", icon: <IconDownload size={16} />, onSelect: () => void keepTracks([track]) },
+        : { label: "Скачать для офлайн", icon: <IconDownload size={16} />, onSelect: () => { if (keepTracks([track])) toast("Скачиваю для офлайн"); } },
     );
   }
   if (track.permalink) {

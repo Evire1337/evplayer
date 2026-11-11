@@ -17,7 +17,7 @@ vi.mock("@/services/youtube/direct", () => ({
   videoIdOf: (id: string) => (/^yt:[A-Za-z0-9_-]{11}$/.test(id) ? id.slice(3) : null),
 }));
 
-import { cancelKeeping, forgetTracks, keepTracks, watchJob, type KeepJob } from "./keep";
+import { cancelKeeping, forgetTracks, keepTracks, STALL_MS, watchJob, type KeepJob } from "./keep";
 import { keptUrl, useKeepLists, useOffline } from "./store";
 
 const track = (id: string, source: Track["source"] = "soundcloud"): Track => ({ id, source, title: id, artists: [{ id: "a", name: "A" }], durationMs: 1000 });
@@ -58,6 +58,25 @@ const idle = () => new Promise<void>((resolve) => {
 });
 
 describe("keeping songs offline", () => {
+  it("gives up on a song that stops answering, and goes on with the rest", async () => {
+    vi.useFakeTimers();
+    try {
+      download = (id) => (id === "sc:hung" ? new Promise(() => undefined) : Promise.resolve(entry(id)));
+      let last: KeepJob | null = null;
+      const stop = watchJob((job) => {
+        if (job) last = job;
+      });
+      expect(keepTracks([track("sc:hung"), track("sc:ok")])).toBe(2);
+      await vi.advanceTimersByTimeAsync(STALL_MS + 10_000);
+      stop();
+      expect(last).toMatchObject({ total: 2, done: 2, failed: 1, reason: "сервис не отвечает" });
+      expect(useOffline.getState().entries["sc:ok"]).toBeDefined();
+      expect(useOffline.getState().entries["sc:hung"]).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("asks the desktop side for the right kind of source", async () => {
     const done = idle();
     expect(keepTracks([track("sc:1"), track("sc:hls"), track("sc:ogg"), track("yt:abcdefghijk", "youtube")])).toBe(4);

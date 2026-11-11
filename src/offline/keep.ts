@@ -11,6 +11,9 @@ import { isKeepable } from "./scopes";
 // what can be played can be kept; the desktop side does the downloading itself.
 
 const PARALLEL = 2;
+/** a song that has said nothing for this long is given up on (the connection hangs, the service does not answer) */
+export const STALL_MS = 60_000;
+const WATCH_EVERY_MS = 5_000;
 
 export interface KeepJob {
   total: number;
@@ -27,6 +30,42 @@ interface Queue {
 }
 
 const queue: Queue = { waiting: [], running: new Map(), job: null };
+/** when each running song last made progress (or started) */
+const lastSeen = new Map<string, number>();
+/** songs given up on because they stalled: counted as failed, not as cancelled */
+const stalled = new Set<string>();
+let watchdog: ReturnType<typeof setInterval> | undefined;
+
+/** the desktop side said a song is coming in: it is alive */
+export function noteProgress(id: string): void {
+  if (queue.running.has(id)) lastSeen.set(id, Date.now());
+}
+
+function watch(): void {
+  if (watchdog) return;
+  watchdog = setInterval(() => {
+    for (const [id, controller] of queue.running) {
+      if (Date.now() - (lastSeen.get(id) ?? Date.now()) < STALL_MS) continue;
+      stalled.add(id);
+      controller.abort();
+      window.evplayer?.offline.cancel(id);
+    }
+    if (!queue.running.size) {
+      clearInterval(watchdog);
+      watchdog = undefined;
+    }
+  }, WATCH_EVERY_MS);
+}
+
+/** waits for a promise, but lets go of it as soon as the signal says so (a hung download would never return) */
+function until<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const abort = () => reject(new DOMException("aborted", "AbortError"));
+    if (signal.aborted) return abort();
+    signal.addEventListener("abort", abort, { once: true });
+    promise.then(resolve, reject).finally(() => signal.removeEventListener("abort", abort));
+  });
+}
 const listeners = new Set<(job: KeepJob | null) => void>();
 
 const emit = () => listeners.forEach((l) => l(queue.job ? { ...queue.job } : null));
@@ -64,7 +103,8 @@ async function keepOne(track: Track, signal: AbortSignal): Promise<void> {
   let last: unknown = new Error("нет подходящего формата");
   for await (const source of sources(track, signal)) {
     try {
-      const entry = await api.download(track.id, source);
+      lastSeen.set(track.id, Date.now());
+      const entry = await until(api.download(track.id, source), signal);
       useOffline.setState((s) => ({ entries: { ...s.entries, [track.id]: entry } }));
       markFailed(track.id, false);
       return;
@@ -92,24 +132,29 @@ async function pump(): Promise<void> {
     const track = queue.waiting.shift()!;
     const controller = new AbortController();
     queue.running.set(track.id, controller);
+    lastSeen.set(track.id, Date.now());
+    watch();
     void (async () => {
       try {
         await keepOne(track, controller.signal);
       } catch (error) {
-        if (!controller.signal.aborted) {
+        if (!controller.signal.aborted || stalled.has(track.id)) {
           markFailed(track.id, true);
           if (queue.job) {
             queue.job.failed++;
-            queue.job.reason ??= messageOf(error);
+            queue.job.reason ??= stalled.has(track.id) ? "сервис не отвечает" : messageOf(error);
           }
         }
       } finally {
+        const given = !controller.signal.aborted || stalled.has(track.id);
         queue.running.delete(track.id);
+        lastSeen.delete(track.id);
+        stalled.delete(track.id);
         useOffline.setState((s) => {
           const { [track.id]: _gone, ...rest } = s.progress;
           return { progress: rest };
         });
-        if (queue.job && !controller.signal.aborted) queue.job.done++;
+        if (queue.job && given) queue.job.done++;
         emit();
         if (queue.waiting.length) void pump();
         else if (queue.running.size === 0) finish();
@@ -173,6 +218,7 @@ export async function forgetTracks(ids: string[]): Promise<void> {
 export function listenForProgress(): () => void {
   return (
     window.evplayer?.offline.onProgress(({ id, done, total }) => {
+      noteProgress(id);
       useOffline.setState((s) => ({ progress: { ...s.progress, [id]: total > 0 ? Math.min(1, done / total) : -1 } }));
     }) ?? (() => undefined)
   );
