@@ -1,108 +1,124 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- the small home-screen player: the same as the big one in one row of the home screen,
      for launchers that do not let a widget be resized (Xiaomi, for one) -->
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:id="@+id/widget_root"
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:background="@drawable/widget_bg_small"
-    android:gravity="center_vertical"
-    android:orientation="horizontal"
-    android:padding="7dp">
-
-    <ImageView
-        android:id="@+id/widget_cover"
-        android:layout_width="64dp"
-        android:layout_height="match_parent"
-        android:contentDescription="@null"
-        android:scaleType="fitCenter"
-        android:src="@drawable/widget_cover_empty" />
+    android:layout_height="match_parent">
 
     <LinearLayout
-        android:layout_width="0dp"
+        android:id="@+id/widget_root"
+        android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:layout_marginStart="9dp"
-        android:layout_weight="1"
-        android:orientation="vertical">
-
-        <TextView
-            android:id="@+id/widget_title"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:ellipsize="end"
-            android:fontFamily="sans-serif-medium"
-            android:includeFontPadding="false"
-            android:maxLines="1"
-            android:text="EvPlayer"
-            android:textColor="#FFFFFFFF"
-            android:textSize="14sp" />
-
-        <TextView
-            android:id="@+id/widget_artist"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="2dp"
-            android:ellipsize="end"
-            android:includeFontPadding="false"
-            android:maxLines="1"
-            android:text="@string/widget_idle"
-            android:textColor="#B3FFFFFF"
-            android:textSize="12sp" />
-
-        <FrameLayout
-            android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:layout_weight="1" />
-
+        android:background="@drawable/widget_bg_small"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:padding="7dp">
+    
+        <ImageView
+            android:id="@+id/widget_cover"
+            android:layout_width="64dp"
+            android:layout_height="match_parent"
+            android:contentDescription="@null"
+            android:scaleType="fitCenter"
+            android:src="@drawable/widget_cover_empty" />
+    
         <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="28dp"
-            android:orientation="horizontal">
-
-            <ImageButton
-                android:id="@+id/widget_prev"
-                android:layout_width="0dp"
-                android:layout_height="match_parent"
-                android:layout_marginEnd="5dp"
-                android:layout_weight="1"
-                android:background="@drawable/widget_btn_small"
-                android:contentDescription="Предыдущий"
-                android:padding="5dp"
-                android:scaleType="fitCenter"
-                android:src="@drawable/ic_w_prev" />
-            <ImageButton
-                android:id="@+id/widget_toggle"
-                android:layout_width="0dp"
-                android:layout_height="match_parent"
-                android:layout_marginEnd="5dp"
-                android:layout_weight="1"
-                android:background="@drawable/widget_btn_small"
-                android:contentDescription="Играть"
-                android:padding="5dp"
-                android:scaleType="fitCenter"
-                android:src="@drawable/ic_w_play" />
-            <ImageButton
-                android:id="@+id/widget_next"
-                android:layout_width="0dp"
-                android:layout_height="match_parent"
-                android:layout_marginEnd="5dp"
-                android:layout_weight="1"
-                android:background="@drawable/widget_btn_small"
-                android:contentDescription="Следующий"
-                android:padding="5dp"
-                android:scaleType="fitCenter"
-                android:src="@drawable/ic_w_next" />
-            <ImageButton
-                android:id="@+id/widget_like"
-                android:layout_width="0dp"
-                android:layout_height="match_parent"
-                
-                android:layout_weight="1"
-                android:background="@drawable/widget_btn_small"
-                android:contentDescription="Нравится"
-                android:padding="5dp"
-                android:scaleType="fitCenter"
-                android:src="@drawable/ic_heart" />
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_marginStart="9dp"
+            android:layout_weight="1"
+            android:orientation="vertical">
+    
+            <TextView
+                android:id="@+id/widget_title"
+                android:layout_width="match_parent"
+                android:layout_marginEnd="22dp"
+                android:layout_height="wrap_content"
+                android:ellipsize="end"
+                android:fontFamily="sans-serif-medium"
+                android:includeFontPadding="false"
+                android:maxLines="1"
+                android:text="EvPlayer"
+                android:textColor="#FFFFFFFF"
+                android:textSize="14sp" />
+    
+            <TextView
+                android:id="@+id/widget_artist"
+                android:layout_width="match_parent"
+                android:layout_marginEnd="22dp"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:ellipsize="end"
+                android:includeFontPadding="false"
+                android:maxLines="1"
+                android:text="@string/widget_idle"
+                android:textColor="#B3FFFFFF"
+                android:textSize="12sp" />
+    
+            <FrameLayout
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1" />
+    
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="28dp"
+                android:orientation="horizontal">
+    
+                <ImageButton
+                    android:id="@+id/widget_prev"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_marginEnd="5dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/widget_btn_small"
+                    android:contentDescription="Предыдущий"
+                    android:padding="5dp"
+                    android:scaleType="fitCenter"
+                    android:src="@drawable/ic_w_prev" />
+                <ImageButton
+                    android:id="@+id/widget_toggle"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_marginEnd="5dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/widget_btn_small"
+                    android:contentDescription="Играть"
+                    android:padding="5dp"
+                    android:scaleType="fitCenter"
+                    android:src="@drawable/ic_w_play" />
+                <ImageButton
+                    android:id="@+id/widget_next"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_marginEnd="5dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/widget_btn_small"
+                    android:contentDescription="Следующий"
+                    android:padding="5dp"
+                    android:scaleType="fitCenter"
+                    android:src="@drawable/ic_w_next" />
+                <ImageButton
+                    android:id="@+id/widget_like"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    
+                    android:layout_weight="1"
+                    android:background="@drawable/widget_btn_small"
+                    android:contentDescription="Нравится"
+                    android:padding="5dp"
+                    android:scaleType="fitCenter"
+                    android:src="@drawable/ic_heart" />
+            </LinearLayout>
         </LinearLayout>
     </LinearLayout>
-</LinearLayout>
+
+    <!-- the EvPlayer snail in the corner -->
+    <ImageView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|end"
+        android:layout_margin="10dp"
+        android:contentDescription="@null"
+        android:src="@drawable/ic_evplayer_logo" />
+</FrameLayout>

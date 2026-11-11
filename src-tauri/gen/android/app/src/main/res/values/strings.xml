@@ -3,6 +3,6 @@
     <string name="main_activity_title">"EvPlayer"</string>
     <string name="widget_description">Играющий трек с кнопками: назад, пауза, вперёд, нравится</string>
     <string name="widget_mini_description">Тот же плеер, поменьше: в одну строку рабочего стола</string>
-    <string name="widget_strip_description">Самый тонкий: полоска в половину строки, всё в одну линию</string>
+    <string name="widget_strip_description">Средний: квадратная обложка, песня и кнопки рядом</string>
     <string name="widget_idle">Нажмите, чтобы открыть</string>
 </resources>
