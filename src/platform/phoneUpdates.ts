@@ -62,7 +62,11 @@ export function phoneUpdates(currentVersion: () => Promise<string>, open: (url: 
     get: async () => state,
     check: () => check(currentVersion),
     install: async () => {
-      if (!apkUrl) return;
+      if (!apkUrl) {
+        // nothing to download yet (the check has not found a newer version): say so, do not do nothing
+        set({ status: "error", message: "Нет ссылки на обновление: проверьте обновления ещё раз" });
+        return;
+      }
       const bridge = window.EvPlayerAndroid;
       if (!bridge?.installUpdate) {
         await open(apkUrl);
