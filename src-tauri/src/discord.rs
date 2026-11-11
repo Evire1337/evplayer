@@ -95,7 +95,9 @@ fn clock(ms: f64) -> String {
     format!("{}:{:02}", s / 60, s % 60)
 }
 
-pub fn activity_for(state: &PresenceState, plain: bool) -> Value {
+/// plain: without the newer status_display_type (older Discord builds); lone: no link
+/// buttons next to a party (in case Discord does not take both)
+pub fn activity_for(state: &PresenceState, plain: bool, lone: bool, now_ms: f64) -> Value {
     let paused = state.paused.unwrap_or(false);
     let artist = if state.artist.is_empty() { "EvPlayer" } else { &state.artist };
     // paused: no timestamps (a clock would run on), so where the song stands is said in words
@@ -118,15 +120,19 @@ pub fn activity_for(state: &PresenceState, plain: bool) -> Value {
         };
         activity["status_display_type"] = json!(shows);
     }
-    if !paused {
-        if let Some(start) = state.started_at {
+    if paused {
+        // Discord runs a clock of its own for an activity without one; a clock that ends at
+        // this moment stands still at the paused position
+        if let (Some(at), Some(_)) = (state.position_ms, state.started_at) {
+            activity["timestamps"] = json!({ "start": (now_ms - at).round() as i64, "end": now_ms.round() as i64 });
+        }
+    } else if let Some(start) = state.started_at {
             // Discord rejects the whole activity if a timestamp is not a whole number
             let mut ts = json!({ "start": start.round() as i64 });
             if let Some(end) = state.ends_at {
                 ts["end"] = json!(end.round() as i64);
             }
             activity["timestamps"] = ts;
-        }
     }
     if let Some(art) = state.artwork.as_deref().filter(|a| a.starts_with("https:")) {
         activity["assets"]["large_image"] = json!(art);
@@ -135,9 +141,11 @@ pub fn activity_for(state: &PresenceState, plain: bool) -> Value {
         let size = party.size.max(1);
         activity["party"] = json!({ "id": party.id, "size": [size, party.max.max(size)] });
         activity["secrets"] = json!({ "join": party.join });
-    } else if let Some(url) = state.url.as_deref().filter(|u| u.starts_with("https:")) {
-        // Discord does not take link buttons together with a join secret
-        activity["buttons"] = json!([{ "label": "Слушать", "url": url }]);
+    }
+    if let Some(url) = state.url.as_deref().filter(|u| u.starts_with("https:")) {
+        if state.party.is_none() || !lone {
+            activity["buttons"] = json!([{ "label": "Слушать", "url": url }]);
+        }
     }
     activity
 }
@@ -321,6 +329,7 @@ impl Discord {
             let mut state: Option<PresenceState> = None;
             let mut conn: Option<Conn> = None;
             let mut plain = false;
+            let mut lone = false;
             let mut was_paused = false;
             // the activity has to be sent again (new state, or just connected)
             let mut dirty = false;
@@ -400,7 +409,8 @@ impl Discord {
                         let mut resend = true;
                         while resend {
                             resend = false;
-                            let activity = state.as_ref().map(|s| activity_for(s, plain));
+                            let now_ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as f64).unwrap_or(0.0);
+                            let activity = state.as_ref().map(|s| activity_for(s, plain, lone, now_ms));
                             match c.call("SET_ACTIVITY", json!({ "pid": pid, "activity": activity }), None) {
                                 None => {
                                     lost(&mut conn);
@@ -409,8 +419,13 @@ impl Discord {
                                 Some(data) if data["evt"] == "ERROR" => {
                                     let msg = data["data"]["message"].as_str().unwrap_or("Discord не принял статус").to_string();
                                     // older Discord builds reject the newer "status_display_type" field
-                                    if !plain && msg.to_lowercase().contains("status_display_type") {
+                                    let lower = msg.to_lowercase();
+                                    if !plain && lower.contains("status_display_type") {
                                         plain = true;
+                                        resend = true;
+                                    } else if !lone && lower.contains("button") {
+                                        // link buttons are not taken next to "Ask to join": that one wins
+                                        lone = true;
                                         resend = true;
                                     } else {
                                         shared.lock().unwrap().error = Some(msg);
@@ -530,29 +545,35 @@ mod tests {
     #[test]
     fn activity_rounds_times_and_pads_short_text() {
         let s = song();
-        let a = activity_for(&s, false);
+        let a = activity_for(&s, false, false, 0.0);
         assert_eq!(a["details"], "A  ");
         assert_eq!(a["timestamps"]["start"], 1000);
         assert_eq!(a["timestamps"]["end"], 2001);
         assert_eq!(a["status_display_type"], 1);
-        assert!(activity_for(&s, true).get("status_display_type").is_none());
+        assert!(activity_for(&s, true, false, 0.0).get("status_display_type").is_none());
     }
 
     #[test]
-    fn paused_has_no_clock_and_says_where_it_stands() {
-        let a = activity_for(&PresenceState { paused: Some(true), ..song() }, false);
-        assert!(a.get("timestamps").is_none());
+    fn paused_clock_stands_still_and_says_where_it_stands() {
+        let a = activity_for(&PresenceState { paused: Some(true), ..song() }, false, false, 1_000_000.0);
+        // a clock that has already ended: Discord shows it stopped at the paused position
+        assert_eq!(a["timestamps"]["start"], 1_000_000 - 83_000);
+        assert_eq!(a["timestamps"]["end"], 1_000_000);
         assert_eq!(a["state"], "На паузе 1:23 / 3:20 · B");
+        let no_timeline = PresenceState { paused: Some(true), started_at: None, ..song() };
+        assert!(activity_for(&no_timeline, false, false, 1_000_000.0).get("timestamps").is_none());
     }
 
     #[test]
-    fn a_party_can_be_joined_and_has_no_link_button() {
-        let party = Party { id: "p1".into(), size: 2, max: 16, join: "JAM-7K9P2Q".into() };
-        let a = activity_for(&PresenceState { party: Some(party), ..song() }, false);
+    fn a_party_can_be_joined_with_or_without_the_link_button() {
+        let party = Party { id: "evp:JAM-7K9P-2QXZ".into(), size: 2, max: 16, join: "JAM-7K9P-2QXZ~pass".into() };
+        let s = PresenceState { party: Some(party), ..song() };
+        let a = activity_for(&s, false, false, 0.0);
         assert_eq!(a["party"]["size"], json!([2, 16]));
-        assert_eq!(a["secrets"]["join"], "JAM-7K9P2Q");
-        assert!(a.get("buttons").is_none());
-        assert!(activity_for(&song(), false)["buttons"].is_array());
+        assert_eq!(a["secrets"]["join"], "JAM-7K9P-2QXZ~pass");
+        assert!(a["buttons"].is_array());
+        assert!(activity_for(&s, false, true, 0.0).get("buttons").is_none());
+        assert!(activity_for(&song(), false, true, 0.0)["buttons"].is_array());
     }
 
     #[test]
@@ -636,7 +657,8 @@ mod pipe_tests {
         reply(&mut s, &cleared);
         let (_, b) = read(&mut s);
         let act = &b["args"]["activity"];
-        assert!(act.get("timestamps").is_none(), "{act}");
+        let ts = &act["timestamps"];
+        assert_eq!(ts["end"].as_i64().unwrap() - ts["start"].as_i64().unwrap(), 1000, "{act}");
         assert!(act["state"].as_str().unwrap().contains("паузе"), "{act}");
         reply(&mut s, &b);
         // a friend asks to join while nothing is being sent; the answer goes back
