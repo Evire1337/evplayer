@@ -1,7 +1,7 @@
 <div align="center">
 
 <a href="https://github.com/Evire1337/evplayer/releases/latest">
-  <img src="https://raw.githubusercontent.com/Evire1337/evplayer/desktop/public/icon.png" alt="EvPlayer" width="120" />
+  <img src="https://raw.githubusercontent.com/Evire1337/evplayer/tauri/public/icon.png" alt="EvPlayer" width="120" />
 </a>
 
 # EvPlayer
@@ -37,7 +37,7 @@
 
 <br /><br />
 
-<img src="https://raw.githubusercontent.com/Evire1337/evplayer/desktop/docs/screenshots/now-playing.jpg" alt="Экран «Сейчас играет»: обложка, текст песни и очередь" width="900" />
+<img src="https://raw.githubusercontent.com/Evire1337/evplayer/tauri/docs/screenshots/now-playing.jpg" alt="Экран «Сейчас играет»: обложка, текст песни и очередь" width="900" />
 
 </div>
 
@@ -111,20 +111,20 @@ EvPlayer — музыкальный плеер для **Windows** (x64 и ARM), 
 
 <table>
 <tr>
-<td><img src="https://raw.githubusercontent.com/Evire1337/evplayer/desktop/docs/screenshots/home.jpg" alt="Главная" /><p align="center"><sub>Главная: недавнее, умные плейлисты, топы</sub></p></td>
-<td><img src="https://raw.githubusercontent.com/Evire1337/evplayer/desktop/docs/screenshots/search.jpg" alt="Поиск" /><p align="center"><sub>Поиск по SoundCloud и YouTube Music</sub></p></td>
+<td><img src="https://raw.githubusercontent.com/Evire1337/evplayer/tauri/docs/screenshots/home.jpg" alt="Главная" /><p align="center"><sub>Главная: недавнее, умные плейлисты, топы</sub></p></td>
+<td><img src="https://raw.githubusercontent.com/Evire1337/evplayer/tauri/docs/screenshots/search.jpg" alt="Поиск" /><p align="center"><sub>Поиск по SoundCloud и YouTube Music</sub></p></td>
 </tr>
 <tr>
-<td><img src="https://raw.githubusercontent.com/Evire1337/evplayer/desktop/docs/screenshots/library.jpg" alt="Библиотека" /><p align="center"><sub>Библиотека</sub></p></td>
-<td><img src="https://raw.githubusercontent.com/Evire1337/evplayer/desktop/docs/screenshots/stats.jpg" alt="Статистика трека" /><p align="center"><sub>Статистика трека</sub></p></td>
+<td><img src="https://raw.githubusercontent.com/Evire1337/evplayer/tauri/docs/screenshots/library.jpg" alt="Библиотека" /><p align="center"><sub>Библиотека</sub></p></td>
+<td><img src="https://raw.githubusercontent.com/Evire1337/evplayer/tauri/docs/screenshots/stats.jpg" alt="Статистика трека" /><p align="center"><sub>Статистика трека</sub></p></td>
 </tr>
 <tr>
-<td><img src="https://raw.githubusercontent.com/Evire1337/evplayer/desktop/docs/screenshots/equalizer.jpg" alt="Эквалайзер" /><p align="center"><sub>Эквалайзер</sub></p></td>
-<td><img src="https://raw.githubusercontent.com/Evire1337/evplayer/desktop/docs/screenshots/sound.jpg" alt="Скорость, тон и реверберация" /><p align="center"><sub>Скорость, тон и реверберация</sub></p></td>
+<td><img src="https://raw.githubusercontent.com/Evire1337/evplayer/tauri/docs/screenshots/equalizer.jpg" alt="Эквалайзер" /><p align="center"><sub>Эквалайзер</sub></p></td>
+<td><img src="https://raw.githubusercontent.com/Evire1337/evplayer/tauri/docs/screenshots/sound.jpg" alt="Скорость, тон и реверберация" /><p align="center"><sub>Скорость, тон и реверберация</sub></p></td>
 </tr>
 <tr>
-<td><img src="https://raw.githubusercontent.com/Evire1337/evplayer/desktop/docs/screenshots/discord.jpg" alt="Discord" /><p align="center"><sub>Статус в Discord</sub></p></td>
-<td align="center" valign="middle"><img src="https://raw.githubusercontent.com/Evire1337/evplayer/desktop/docs/screenshots/mini-player.png" alt="Мини-плеер" /><p align="center"><sub>Мини-плеер поверх окон</sub></p></td>
+<td><img src="https://raw.githubusercontent.com/Evire1337/evplayer/tauri/docs/screenshots/discord.jpg" alt="Discord" /><p align="center"><sub>Статус в Discord</sub></p></td>
+<td align="center" valign="middle"><img src="https://raw.githubusercontent.com/Evire1337/evplayer/tauri/docs/screenshots/mini-player.png" alt="Мини-плеер" /><p align="center"><sub>Мини-плеер поверх окон</sub></p></td>
 </tr>
 </table>
 
