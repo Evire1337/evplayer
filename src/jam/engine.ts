@@ -38,7 +38,8 @@ class JamEngine {
     prev: (force?: boolean) => void;
     seek: (ms: number) => void;
     playIndex: (index: number) => Promise<void>;
-    playQueue: (tracks: Track[], startIndex?: number) => Promise<void>;
+    playQueue: (tracks: Track[], startIndex?: number, source?: any) => Promise<void>;
+    playFrom: (tracks: Track[], index: number) => void;
     addToQueue: (track: Track) => void;
     playNext: (track: Track) => void;
     removeFromQueue: (index: number) => void;
@@ -55,6 +56,7 @@ class JamEngine {
       seek: player.seek.bind(player),
       playIndex: player.playIndex.bind(player),
       playQueue: player.playQueue.bind(player),
+      playFrom: player.playFrom.bind(player),
       addToQueue: player.addToQueue.bind(player),
       playNext: player.playNext.bind(player),
       removeFromQueue: player.removeFromQueue.bind(player),
@@ -170,6 +172,59 @@ class JamEngine {
           timestamp: Date.now(),
         });
       }
+    };
+
+    player.playQueue = async (tracks: Track[], startIndex = 0, source?: any) => {
+      const jam = useJam.getState();
+      if (!jam.active) return this.origMethods.playQueue(tracks, startIndex, source);
+      if (jam.isHost) {
+        const startTrack = tracks[startIndex] ?? tracks[0];
+        if (startTrack) {
+          useJam.getState().recordTrackAddedBy(startTrack.id, jam.myProfile.name);
+        }
+        return this.origMethods.playQueue(tracks, startIndex, source);
+      }
+
+      // Participant trying to play a track or list
+      const targetTrack = tracks[startIndex] ?? tracks[0];
+      if (!targetTrack) return;
+
+      if (jam.controlMode === "host_only") {
+        useJam.getState().recordTrackAddedBy(targetTrack.id, jam.myProfile.name);
+        void this.publish({
+          type: "queue_add",
+          track: targetTrack,
+          addedBy: jam.myProfile.name,
+          playNext: false,
+        });
+        toast("Только организатор переключает треки. Трек добавлен в очередь Jam.");
+        return;
+      }
+
+      // Control mode is 'anyone' (toggle ON): play immediately in Jam!
+      useJam.getState().recordTrackAddedBy(targetTrack.id, jam.myProfile.name);
+      toast(`Включаем в Jam: ${targetTrack.title}`);
+
+      void this.publish({
+        type: "play_track",
+        track: targetTrack,
+        addedBy: jam.myProfile.name,
+        queue: tracks.slice(0, 50),
+        startIndex,
+      });
+    };
+
+    player.playFrom = (tracks: Track[], index: number) => {
+      const jam = useJam.getState();
+      if (!jam.active) return this.origMethods.playFrom(tracks, index);
+      const s = usePlayer.getState();
+      const track = tracks[index];
+      if (!track) return;
+      if (currentTrack(s)?.id === track.id) {
+        player.toggle();
+        return;
+      }
+      void player.playQueue(tracks, index);
     };
 
     player.addToQueue = (track: Track) => {
@@ -557,10 +612,82 @@ class JamEngine {
 
       case "track_change": {
         if (jam.controlMode === "host_only") return;
-        this.withRemoteLock(() => {
-          void this.origMethods.playIndex(msg.index);
+        this.withRemoteLock(async () => {
+          const s = usePlayer.getState();
+          let targetIndex = s.queue.findIndex((t) => t.id === msg.track.id);
+          if (targetIndex >= 0) {
+            await this.origMethods.playIndex(targetIndex);
+          } else {
+            const curIdx = s.index;
+            targetIndex = curIdx >= 0 ? curIdx + 1 : 0;
+            const newQ = [...s.queue];
+            newQ.splice(targetIndex, 0, msg.track);
+            usePlayer.setState({ queue: newQ });
+            await this.origMethods.playIndex(targetIndex);
+          }
+          const updated = usePlayer.getState();
+          void this.publish({
+            type: "track_change",
+            track: msg.track,
+            index: updated.index,
+            positionMs: 0,
+            status: "playing",
+            timestamp: Date.now(),
+          });
+          void this.publish({
+            type: "queue_update",
+            queue: updated.queue,
+            index: updated.index,
+          });
         });
-        void this.publish(msg);
+        break;
+      }
+
+      case "play_track": {
+        if (jam.controlMode === "host_only") return;
+        jam.recordTrackAddedBy(msg.track.id, msg.addedBy);
+        toast(`${msg.addedBy} включил(а): ${msg.track.title}`);
+
+        this.withRemoteLock(async () => {
+          if (msg.queue && msg.queue.length > 0) {
+            const idx = msg.queue.findIndex((t) => t.id === msg.track.id);
+            const playIdx = idx >= 0 ? idx : (msg.startIndex ?? 0);
+            await this.origMethods.playQueue(msg.queue, playIdx);
+          } else {
+            const curQueue = usePlayer.getState().queue;
+            const existingIdx = curQueue.findIndex((t) => t.id === msg.track.id);
+            if (existingIdx >= 0) {
+              await this.origMethods.playIndex(existingIdx);
+            } else {
+              const curIndex = usePlayer.getState().index;
+              const newQueue = [...curQueue];
+              const insertAt = curIndex >= 0 ? curIndex + 1 : 0;
+              newQueue.splice(insertAt, 0, msg.track);
+              usePlayer.setState({ queue: newQueue });
+              await this.origMethods.playIndex(insertAt);
+            }
+          }
+
+          const updatedState = usePlayer.getState();
+          const syncPayload = this.buildCurrentSyncPayload(jam.participants);
+          void this.publish({
+            type: "track_change",
+            track: msg.track,
+            index: updatedState.index,
+            positionMs: 0,
+            status: "playing",
+            timestamp: Date.now(),
+          });
+          void this.publish({
+            type: "queue_update",
+            queue: updatedState.queue,
+            index: updatedState.index,
+          });
+          void this.publish({
+            type: "sync",
+            state: syncPayload,
+          });
+        });
         break;
       }
 

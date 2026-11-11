@@ -49,6 +49,7 @@ export type JamMessageContent =
   | { type: "seek"; positionMs: number; timestamp: number }
   | { type: "queue_update"; queue: Track[]; index: number }
   | { type: "queue_add"; track: Track; addedBy: string; playNext?: boolean }
+  | { type: "play_track"; track: Track; addedBy: string; queue?: Track[]; startIndex?: number }
   | { type: "queue_remove"; index: number }
   | { type: "queue_move"; from: number; to: number }
   | { type: "reaction"; emoji: string; fromName: string; id: string; timestamp: number }

@@ -133,4 +133,27 @@ describe("jam store and flow", () => {
     expect(useJam.getState().chatMessages.length).toBe(1);
     expect(useJam.getState().chatMessages[0].text).toBe("Great track!");
   });
+
+  it("intercepts playQueue when in Jam session", async () => {
+    const track: Track = {
+      id: "sc:my-favorite-song",
+      source: "soundcloud",
+      title: "My Favorite Song",
+      artists: [{ id: "art2", name: "Artist 2" }],
+      durationMs: 180_000,
+    };
+
+    useJam.getState().setSession({
+      active: true,
+      isHost: true,
+      roomCode: "JAM-8888",
+      hostName: "HostUser",
+      controlMode: "anyone",
+      participants: [],
+    });
+
+    await player.playQueue([track], 0);
+    expect(usePlayer.getState().queue).toContainEqual(track);
+    expect(useJam.getState().trackAddedBy["sc:my-favorite-song"]).toBeTruthy();
+  });
 });
