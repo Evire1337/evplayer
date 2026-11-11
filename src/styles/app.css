@@ -37,7 +37,9 @@ img { display: block; max-width: 100%; }
   scrollbar-width: thin;
   scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
 }
-.page-now .content { bottom: 20px; overflow: hidden; }
+/* moved left by as much as the column below is padded: the cover's shadow needs that room
+   inside the clipped area (it used to be cut off along the left edge) */
+.page-now .content { bottom: 20px; overflow: hidden; left: 82px; }
 
 /* ---------- rail ---------- */
 .rail {
@@ -389,7 +391,7 @@ img { display: block; max-width: 100%; }
 .mini-side { display: flex; align-items: center; justify-content: flex-end; gap: 4px; }
 
 /* ---------- now playing ---------- */
-.now { height: 100%; display: grid; grid-template-columns: minmax(300px, 420px) minmax(0, 1fr) 290px; gap: 28px; padding: 8px 0 0 8px; }
+.now { height: 100%; display: grid; grid-template-columns: minmax(300px, 420px) minmax(0, 1fr) 290px; gap: 28px; padding: 8px 0 0 30px; }
 /* the column scrolls, and a scrolling box cuts everything at its edges: the padding (taken
    back by the margin) is room for the cover's shadow, which used to end in straight lines */
 .now-left { display: flex; flex-direction: column; justify-content: safe center; gap: 18px; min-width: 0; min-height: 0; overflow-y: auto; scrollbar-width: none; padding: 20px 28px 32px; margin: 0 -28px -28px; }
