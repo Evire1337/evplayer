@@ -90,6 +90,8 @@ export interface ProcessInfo {
   memory: number;
   /** processor time since it started */
   cpuMs: number;
+  /** what it does for WebView2: "renderer" (a page), "gpu", "browser" (the manager), "utility" */
+  kind?: string;
 }
 
 /** a friend asked to listen along, or this person was let into a friend's session */

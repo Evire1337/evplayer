@@ -111,7 +111,7 @@ export function advise(s: Sample, o: Knobs): Advice[] {
 export function report(s: Sample, advice: Advice[]): string {
   const lines = [
     `EvPlayer — диагностика, ${new Date(s.at).toLocaleString()}`,
-    `Процессы: ${s.processes.map((p) => `${p.name} #${p.pid} ${mb(p.memory)} ЦП ${p.cpu.toFixed(1)}%`).join("; ") || "нет данных"}`,
+    `Процессы: ${s.processes.map((p) => `${p.name}${p.kind ? ` (${p.kind})` : ""} #${p.pid} ${mb(p.memory)} ЦП ${p.cpu.toFixed(1)}%`).join("; ") || "нет данных"}`,
     `Память страницы: ${s.heap ? `${mb(s.heap.used)} из ${mb(s.heap.total)}` : "нет данных"}; элементов на странице: ${s.domNodes}`,
     `Главный поток: занят ${pct(s.busy)}, опоздание таймеров ${Math.round(s.lag)} мс`,
     `Фон: ${Math.round(s.backdrop.fps)} кадров/с, ${s.backdrop.msPerFrame.toFixed(2)} мс на кадр; обработка звука: ${s.soundGraph ? "да" : "нет"}`,

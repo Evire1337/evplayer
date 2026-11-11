@@ -8,10 +8,18 @@ import { Card, Pill, Row, TabHeader } from "./parts";
 
 const EVERY_MS = 2000;
 
+const KINDS: Record<string, string> = {
+  renderer: "WebView2: страница (окно или мини-плеер)",
+  gpu: "WebView2: графика",
+  browser: "WebView2: менеджер",
+  utility: "WebView2: служебный (сеть, звук, хранилище)",
+};
+
 /** a process's name as people know it */
-function processName(name: string, first: boolean): string {
-  if (/msedgewebview2/i.test(name)) return "WebView2 (страница, графика, сеть)";
-  return first || /evplayer/i.test(name) ? "EvPlayer" : name;
+export function processName(name: string, kind?: string): string {
+  if (kind && KINDS[kind]) return KINDS[kind];
+  if (/msedgewebview2/i.test(name)) return "WebView2";
+  return /evplayer/i.test(name) ? "EvPlayer" : name;
 }
 
 // What the app takes right now and what to do about it. Measures only while this tab is open.
@@ -69,8 +77,8 @@ export default function DiagnosticsTab() {
       </Card>
       {sample && sample.processes.length > 0 && (
         <Card title="Процессы" hint="WebView2 — встроенный браузер, в котором работает интерфейс">
-          {sample.processes.map((p, i) => (
-            <Row key={p.pid} title={processName(p.name, i === 0 && sample.processes.length === 1)} hint={`#${p.pid}`}>{`${mb(p.memory)} · ${p.cpu.toFixed(1)}%`}</Row>
+          {sample.processes.map((p) => (
+            <Row key={p.pid} title={processName(p.name, p.kind)} hint={`#${p.pid}`}>{`${mb(p.memory)} · ${p.cpu.toFixed(1)}%`}</Row>
           ))}
         </Card>
       )}

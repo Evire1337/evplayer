@@ -536,8 +536,13 @@ fn discord_status(state: tauri::State<'_, AppState>) -> discord::Status {
 
 /// the memory and processor time of the app's processes (the diagnostics page)
 #[tauri::command]
-async fn diagnostics_processes() -> Vec<diagnostics::ProcessInfo> {
-    tauri::async_runtime::spawn_blocking(diagnostics::processes).await.unwrap_or_default()
+async fn diagnostics_processes(app: AppHandle) -> Vec<diagnostics::ProcessInfo> {
+    let kinds = diagnostics::webview_kinds(&app).await;
+    let mut list = tauri::async_runtime::spawn_blocking(diagnostics::processes).await.unwrap_or_default();
+    for p in &mut list {
+        p.kind = kinds.get(&p.pid).cloned();
+    }
+    list
 }
 
 /// the link the app was started with (evplayer://jam/...), if any

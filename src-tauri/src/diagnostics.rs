@@ -14,6 +14,8 @@ pub struct ProcessInfo {
     pub memory: u64,
     /// processor time used since the process started
     pub cpu_ms: u64,
+    /// what the process does for WebView2 ("renderer", "gpu", "browser", "utility"), when known
+    pub kind: Option<String>,
 }
 
 #[cfg(windows)]
@@ -80,7 +82,7 @@ pub fn processes() -> Vec<ProcessInfo> {
                 let (mut created, mut exited, mut kernel, mut user) = (zero, zero, zero, zero);
                 let cpu_ms = if GetProcessTimes(handle, &mut created, &mut exited, &mut kernel, &mut user) != 0 { ticks(kernel) + ticks(user) } else { 0 };
                 CloseHandle(handle);
-                Some(ProcessInfo { pid: *pid, name: name.clone(), memory, cpu_ms })
+                Some(ProcessInfo { pid: *pid, name: name.clone(), memory, cpu_ms, kind: None })
             }
         })
         .collect()
@@ -103,9 +105,58 @@ pub fn processes() -> Vec<ProcessInfo> {
     let tick = |i: usize| fields.get(i).and_then(|v| v.parse::<u64>().ok()).unwrap_or(0);
     // 100 ticks a second is what Linux and Android use
     let cpu_ms = (tick(11) + tick(12)) * 10;
-    vec![ProcessInfo { pid: std::process::id(), name: "evplayer".into(), memory, cpu_ms }]
+    vec![ProcessInfo { pid: std::process::id(), name: "evplayer".into(), memory, cpu_ms, kind: None }]
 }
 
+/// What each WebView2 process is for, as WebView2 itself tells: a page, the graphics, the
+/// manager or a helper (network, audio, storage). Asked on the window's own thread.
+#[cfg(windows)]
+pub async fn webview_kinds(app: &tauri::AppHandle) -> std::collections::HashMap<u32, String> {
+    use tauri::Manager;
+    let Some(win) = app.get_webview_window("main") else { return Default::default() };
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    let asked = win.with_webview(move |webview| {
+        use webview2_com::Microsoft::Web::WebView2::Win32::{
+            ICoreWebView2Environment8, ICoreWebView2_2, COREWEBVIEW2_PROCESS_KIND_BROWSER, COREWEBVIEW2_PROCESS_KIND_GPU,
+            COREWEBVIEW2_PROCESS_KIND_RENDERER,
+        };
+        use windows::core::Interface;
+        let read = || -> windows::core::Result<std::collections::HashMap<u32, String>> {
+            let mut out = std::collections::HashMap::new();
+            // SAFETY: COM calls on the window's thread, on objects WebView2 hands out
+            unsafe {
+                let core = webview.controller().CoreWebView2()?;
+                let environment = core.cast::<ICoreWebView2_2>()?.Environment()?.cast::<ICoreWebView2Environment8>()?;
+                let infos = environment.GetProcessInfos()?;
+                for i in 0..infos.Count()? {
+                    let info = infos.GetValueAtIndex(i)?;
+                    let kind = info.Kind()?;
+                    let name = if kind == COREWEBVIEW2_PROCESS_KIND_RENDERER {
+                        "renderer"
+                    } else if kind == COREWEBVIEW2_PROCESS_KIND_GPU {
+                        "gpu"
+                    } else if kind == COREWEBVIEW2_PROCESS_KIND_BROWSER {
+                        "browser"
+                    } else {
+                        "utility"
+                    };
+                    out.insert(info.ProcessId()? as u32, name.to_string());
+                }
+            }
+            Ok(out)
+        };
+        let _ = tx.send(read().unwrap_or_default());
+    });
+    if asked.is_err() {
+        return Default::default();
+    }
+    tokio::time::timeout(std::time::Duration::from_secs(2), rx).await.ok().and_then(Result::ok).unwrap_or_default()
+}
+
+#[cfg(not(windows))]
+pub async fn webview_kinds(_app: &tauri::AppHandle) -> std::collections::HashMap<u32, String> {
+    Default::default()
+}
 #[cfg(test)]
 mod tests {
     #[test]
