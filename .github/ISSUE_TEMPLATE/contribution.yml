@@ -1,0 +1,53 @@
+name: "Вклад: что добавлено"
+description: Запись о том, что вы добавили в проект своим pull request
+title: "Вклад: "
+labels: ["вклад"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Такой issue открывается к каждому pull request стороннего участника. Автор проверяет pull request вручную и закрывает этот issue, когда изменения приняты. Правила — в [CONTRIBUTING.md](https://github.com/Evire1337/evplayer/blob/tauri/CONTRIBUTING.md).
+  - type: input
+    id: pr
+    attributes:
+      label: Pull request
+      description: Ссылка на ваш pull request в ветку tauri
+      placeholder: https://github.com/Evire1337/evplayer/pull/…
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: Что добавлено
+      description: Что изменится для пользователя, простыми словами
+    validations:
+      required: true
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Что это
+      options:
+        - Новая функция
+        - Исправление ошибки
+        - Улучшение того, что есть
+        - Документация
+        - Сборка или CI
+    validations:
+      required: true
+  - type: checkboxes
+    id: areas
+    attributes:
+      label: Какие части затронуты
+      options:
+        - label: Интерфейс (src/pages, src/ui)
+        - label: Плеер и звук (src/player, src/audio, src/equalizer)
+        - label: Сервисы и импорт (src/services, src/library)
+        - label: Слушать вместе (src/jam)
+        - label: Rust-часть (src-tauri/src)
+        - label: Android (src-tauri/gen/android)
+        - label: Сборка, CI, документация
+  - type: textarea
+    id: tested
+    attributes:
+      label: Как проверено
+      description: Системы, шаги, тесты

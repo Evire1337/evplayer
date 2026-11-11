@@ -1,13 +1,10 @@
 name: Check
 
+# Runs only when the author starts it (Actions -> Check -> Run workflow, or
+# `gh workflow run check.yml --ref <branch>`): pushes and pull requests build nothing.
 on:
-  push:
-    branches: [tauri]
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
 
-# a draft pull request gets the quick part only (the web checks and a Windows installer to
-# try); the rest runs once it is marked ready, and on every push to tauri
 jobs:
   web:
     runs-on: ubuntu-latest
@@ -26,7 +23,6 @@ jobs:
       - run: pnpm run build
 
   rust:
-    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -92,7 +88,6 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
   linux:
-    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     strategy:
       fail-fast: false
       matrix:
@@ -132,7 +127,6 @@ jobs:
 
   # the phone version still builds (unsigned debug APK; releases build the signed one)
   android:
-    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
