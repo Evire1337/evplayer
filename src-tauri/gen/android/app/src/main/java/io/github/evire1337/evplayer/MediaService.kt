@@ -28,8 +28,9 @@ import kotlin.concurrent.thread
 /**
  * The playing song in the notification shade and on the lock screen, with previous / play
  * / next / like buttons and a seek bar. The music itself plays in the app's page; this
- * service only shows it and passes button presses back. While music plays it runs in the
- * foreground, which also keeps Android from closing the app in the background.
+ * service only shows it and passes button presses back. While a song is loaded, playing or
+ * paused, it runs in the foreground, as Spotify and SoundCloud do: the notification stays, and
+ * Android does not close the app in the background. Swiping the app away ends it.
  */
 class MediaService : Service() {
   companion object {
@@ -39,8 +40,6 @@ class MediaService : Service() {
     private const val ACTION_TOGGLE = "evplayer.toggle"
     private const val ACTION_NEXT = "evplayer.next"
     private const val ACTION_LIKE = "evplayer.like"
-    /** on pause the app stays a running music app (in "Active apps", not closed by Android) this long */
-    private const val PAUSED_KEEP_MS = 30L * 60 * 1000
 
     /** the latest state sent by the page */
     @Volatile var state: State? = null
@@ -104,17 +103,6 @@ class MediaService : Service() {
   private lateinit var session: MediaSessionCompat
   private var artUrl: String? = null
   private var art: Bitmap? = null
-  private var foreground = false
-  private val handler = Handler(Looper.getMainLooper())
-  private var detachPending = false
-  /** paused for a long time: the app becomes an ordinary background app again */
-  private val detach = Runnable {
-    detachPending = false
-    if (state?.playing != true && foreground) {
-      ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_DETACH)
-      foreground = false
-    }
-  }
 
   override fun onBind(intent: Intent?): IBinder? = null
 
@@ -162,7 +150,6 @@ class MediaService : Service() {
   }
 
   override fun onDestroy() {
-    handler.removeCallbacks(detach)
     instance = null
     session.release()
     super.onDestroy()
@@ -218,7 +205,7 @@ class MediaService : Service() {
       .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
       .setOnlyAlertOnce(true)
       .setShowWhen(false)
-      .setOngoing(s.playing)
+      .setOngoing(true)
       .addAction(android.R.drawable.ic_media_previous, "Предыдущий", actionIntent(ACTION_PREV))
       .addAction(
         if (s.playing) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play,
@@ -230,22 +217,10 @@ class MediaService : Service() {
       .setStyle(MediaStyle().setMediaSession(session.sessionToken).setShowActionsInCompactView(0, 1, 2))
       .build()
 
-    if (s.playing) {
-      handler.removeCallbacks(detach)
-      detachPending = false
-      val type = if (Build.VERSION.SDK_INT >= 29) ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK else 0
-      ServiceCompat.startForeground(this, NOTIFICATION_ID, notification, type)
-      foreground = true
-    } else {
-      // paused: like other music apps EvPlayer stays a running player for a while, so
-      // Android does not close it while you are in another app; after that the
-      // notification stays (to start again from it) but may be swiped away
-      getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification)
-      if (foreground && !detachPending) {
-        detachPending = true
-        handler.postDelayed(detach, PAUSED_KEEP_MS)
-      }
-    }
+    // playing or paused, the same: a running player whose notification stays (a paused
+    // foreground service costs no battery; it only keeps Android from closing the app)
+    val type = if (Build.VERSION.SDK_INT >= 29) ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK else 0
+    ServiceCompat.startForeground(this, NOTIFICATION_ID, notification, type)
     PlayerWidget.render(this, art)
   }
 
