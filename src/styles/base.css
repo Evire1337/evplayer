@@ -15,7 +15,8 @@
   color-scheme: dark;
 }
 
-* { box-sizing: border-box; }
+/* no blue flash over what is tapped (Android's WebView does it like a browser would) */
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 html, body, #root { height: 100%; margin: 0; }
 body {
   background: var(--ground);

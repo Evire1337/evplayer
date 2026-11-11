@@ -88,6 +88,13 @@ export default function SearchPage() {
     if (!useSearchState.getState().query) inputRef.current?.focus();
   }, []);
 
+  // a new query starts its results from the top, not under the field where the old ones were
+  const typed = useRef(false);
+  useEffect(() => {
+    if (typed.current) inputRef.current?.closest(".content")?.scrollTo({ top: 0 });
+    typed.current = true;
+  }, [query]);
+
   useEffect(() => {
     const q = query.trim();
     if (q.length < 2 || looksLikeLink(q)) {
