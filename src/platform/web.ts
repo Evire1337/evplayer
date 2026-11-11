@@ -1,3 +1,4 @@
+import { seedDemo } from "./demoData";
 import { installProxy } from "./net";
 
 // The page opened in a plain browser during development (`pnpm web`): there is no desktop side,
@@ -20,6 +21,8 @@ export function installWeb(): void {
   window.__EVPLAYER_WEB__ = true;
   window.__EVPLAYER_MEDIA__ = `${location.origin}/__ev/media`;
   installProxy(`${location.origin}/__ev/proxy/`);
+  // ?demo: sample library and history, to look at the design (platform/demoData.ts)
+  seedDemo();
 }
 
 /** the SoundCloud client id, from the dev server */
