@@ -18,7 +18,7 @@ vi.mock("@/services/youtube/direct", () => ({
 }));
 
 import { cancelKeeping, forgetTracks, keepTracks, watchJob, type KeepJob } from "./keep";
-import { keptUrl, useOffline } from "./store";
+import { keptUrl, useKeepLists, useOffline } from "./store";
 
 const track = (id: string, source: Track["source"] = "soundcloud"): Track => ({ id, source, title: id, artists: [{ id: "a", name: "A" }], durationMs: 1000 });
 const entry = (id: string): OfflineEntry => ({ id, file: `${id}.mp3`, ext: "mp3", size: 1, savedAt: "now" });
@@ -30,6 +30,7 @@ beforeEach(() => {
   calls = [];
   download = async (id) => entry(id);
   useOffline.setState({ entries: {}, progress: {}, loaded: true });
+  useKeepLists.setState({ failed: [] });
   (window as unknown as { evplayer: unknown }).evplayer = {
     offline: {
       download: (id: string, source: OfflineSource) => {
@@ -98,6 +99,25 @@ describe("keeping songs offline", () => {
     expect(useOffline.getState().entries["sc:2"]).toBeDefined();
     expect(useOffline.getState().entries["sc:bad"]).toBeUndefined();
     expect(last).toMatchObject({ total: 2, done: 2, failed: 1 });
+  });
+
+  it("does not start a song that failed again on its own, only when asked", async () => {
+    download = async (id) => {
+      if (id === "sc:bad") throw new Error("всё отказано");
+      return entry(id);
+    };
+    let done = idle();
+    keepTracks([track("sc:bad")], { auto: true });
+    await done;
+    expect(useKeepLists.getState().failed).toEqual(["sc:bad"]);
+    // the next start: the list tops itself up and leaves it out
+    expect(keepTracks([track("sc:bad")], { auto: true })).toBe(0);
+    // asked for by hand, it is tried again; once it works, it is no longer marked
+    download = async (id) => entry(id);
+    done = idle();
+    expect(keepTracks([track("sc:bad")])).toBe(1);
+    await done;
+    expect(useKeepLists.getState().failed).toEqual([]);
   });
 
   it("never runs more than two at once and can be cancelled", async () => {

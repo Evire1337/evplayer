@@ -46,6 +46,11 @@ export function keptBytes(entries: Record<string, OfflineEntry>): number {
  */
 interface KeepState {
   lists: string[];
+  /**
+   * Songs that could not be kept (no format that plays, removed from the service). The lists
+   * are not topped up with them again on every start; asking for one by hand tries again.
+   */
+  failed: string[];
   has: (scope: string) => boolean;
   add: (scopes: string[]) => void;
   remove: (scopes: string[]) => void;
@@ -55,10 +60,11 @@ export const useKeepLists = create<KeepState>()(
   persist(
     (set, get) => ({
       lists: [],
+      failed: [],
       has: (scope) => get().lists.includes(scope),
       add: (scopes) => set((s) => ({ lists: [...new Set([...s.lists, ...scopes])] })),
       remove: (scopes) => set((s) => ({ lists: s.lists.filter((l) => !scopes.includes(l)) })),
     }),
-    { name: "evplayer.offline.v1", storage: createJSONStorage(() => localStorage), partialize: (s) => ({ lists: s.lists }) },
+    { name: "evplayer.offline.v1", storage: createJSONStorage(() => localStorage), partialize: (s) => ({ lists: s.lists, failed: s.failed }) },
   ),
 );

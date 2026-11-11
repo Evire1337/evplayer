@@ -3,7 +3,7 @@ import type { OfflineSource } from "@/platform/api";
 import { soundCloudStreams } from "@/services/soundcloud/api";
 import { resolveYouTubeAudio, videoIdOf } from "@/services/youtube/direct";
 import { toast } from "@/ui/toasts";
-import { useOffline } from "./store";
+import { useKeepLists, useOffline } from "./store";
 import { isKeepable } from "./scopes";
 
 // Keeping songs: a queue that fetches a few at a time. Each song is asked for exactly as
@@ -66,6 +66,7 @@ async function keepOne(track: Track, signal: AbortSignal): Promise<void> {
     try {
       const entry = await api.download(track.id, source);
       useOffline.setState((s) => ({ entries: { ...s.entries, [track.id]: entry } }));
+      markFailed(track.id, false);
       return;
     } catch (error) {
       if (signal.aborted) throw error;
@@ -95,9 +96,12 @@ async function pump(): Promise<void> {
       try {
         await keepOne(track, controller.signal);
       } catch (error) {
-        if (!controller.signal.aborted && queue.job) {
-          queue.job.failed++;
-          queue.job.reason ??= messageOf(error);
+        if (!controller.signal.aborted) {
+          markFailed(track.id, true);
+          if (queue.job) {
+            queue.job.failed++;
+            queue.job.reason ??= messageOf(error);
+          }
         }
       } finally {
         queue.running.delete(track.id);
@@ -114,15 +118,28 @@ async function pump(): Promise<void> {
   }
 }
 
-/** add songs to the queue; the ones already kept or already waiting are skipped. Returns how many were new. */
-export function keepTracks(tracks: Track[]): number {
+function markFailed(id: string, failed: boolean): void {
+  useKeepLists.setState((s) => {
+    const has = s.failed.includes(id);
+    if (has === failed) return s;
+    return { failed: failed ? [...s.failed, id] : s.failed.filter((f) => f !== id) };
+  });
+}
+
+/**
+ * Add songs to the queue; the ones already kept or already waiting are skipped. Returns how
+ * many were new. uto: a list topping itself up, which leaves out songs that failed before
+ * (asked for by hand, they are tried again).
+ */
+export function keepTracks(tracks: Track[], { auto = false } = {}): number {
   if (!window.evplayer?.offline) {
     toast("Сохранение для офлайн работает только в приложении", "error");
     return 0;
   }
   const have = useOffline.getState().entries;
   const queued = new Set([...queue.waiting.map((t) => t.id), ...queue.running.keys()]);
-  const fresh = tracks.filter((t) => isKeepable(t) && !(t.id in have) && !queued.has(t.id) && queued.add(t.id));
+  const failed = new Set(auto ? useKeepLists.getState().failed : []);
+  const fresh = tracks.filter((t) => isKeepable(t) && !(t.id in have) && !failed.has(t.id) && !queued.has(t.id) && queued.add(t.id));
   if (!fresh.length) return 0;
   queue.job ??= { total: 0, done: 0, failed: 0, reason: null };
   queue.job.total += fresh.length;
