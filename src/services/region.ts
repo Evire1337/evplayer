@@ -6,7 +6,7 @@ import { useSettings } from "@/settings/store";
 // country", and a signed-in account can stay marked after the address changes. So the app
 // asks which country its connection is in (a neutral service, through the same route as the
 // requests, a VPN included) and does not talk to SoundCloud from the countries the person
-// chose. Songs then play from their YouTube Music copy. Off in Settings → Services.
+// chose. Songs then play from their YouTube Music copy. Off unless turned on in Settings → Services.
 
 export const COUNTRY_URL = "https://www.cloudflare.com/cdn-cgi/trace";
 /** the answer is trusted this long (a VPN may be switched on or off any time) */

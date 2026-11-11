@@ -172,7 +172,10 @@ const DEFAULTS = {
   overlayCorner: "top-center" as OverlayCorner,
   overlayShowLyrics: true,
   soundcloudClientId: "",
-  regionGuard: true,
+  // an app that was in use before there was a choice stays as it was (Russian); a new one follows the system
+  language: (existingInstall() ? "ru" : "auto") as Language,
+  // off: nothing changes for anyone until they ask for it (SoundCloud blocks by country only for some)
+  regionGuard: false,
   regionCountries: ["RU"],
   soundcloudAccount: null as SoundCloudAccount | null,
   soundcloudClientSecret: "",

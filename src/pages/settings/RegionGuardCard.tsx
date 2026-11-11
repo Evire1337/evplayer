@@ -33,12 +33,12 @@ export default function RegionGuardCard() {
       <div className="svc-head">
         <span className="svc-head-text">
           <strong>Страна подключения</strong>
-          <span className="muted small">SoundCloud закрывает треки по стране адреса, а аккаунт, замеченный с такого адреса, может остаться помеченным.</span>
+          <span className="muted small">В некоторых странах SoundCloud закрывает треки, а аккаунт, замеченный с такого адреса, может остаться помеченным. Если у вас этого нет, ничего включать не нужно.</span>
         </span>
       </div>
       <SwitchRow
         title="Не обращаться к SoundCloud из выбранных стран"
-        hint="Пока включён VPN другой страны, всё работает. Без него песни играют с YouTube Music, а аккаунт не помечают."
+        hint="Только если адрес вашего подключения в одной из отмеченных стран: тогда SoundCloud не трогаем (песни играют с YouTube Music), пока не включён VPN другой страны. В остальных странах ничего не меняется."
         checked={guard}
         onChange={(v) => set({ regionGuard: v })}
       />
