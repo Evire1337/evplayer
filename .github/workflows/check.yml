@@ -2,7 +2,7 @@ name: Check
 
 on:
   push:
-    branches: [desktop, tauri]
+    branches: [tauri]
   pull_request:
 
 jobs:
