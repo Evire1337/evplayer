@@ -2,6 +2,7 @@ import type { ArtistSummary, CollectionSummary, Track } from "@/types";
 import { useSettings } from "@/settings/store";
 import { formatsListed, mapScCollection, mapScTrack, mapScUser, rankTranscodings, trackAuthorization, transcodingsOf, type Transcoding } from "./mappers";
 import { joinedStream } from "@/platform/net";
+import { isWebDev, webClientId } from "@/platform/web";
 
 const isOggHls = (t: Transcoding) => t.protocol === "hls" && /ogg/i.test(t.mimeType);
 
@@ -15,8 +16,8 @@ async function getClientId(force = false): Promise<string> {
   if (own) return own;
   if (clientId && !force) return clientId;
   const bridge = window.evplayer;
-  if (!bridge) throw new Error("SoundCloud works in the desktop app only");
-  clientId = await bridge.soundcloudClientId(force);
+  if (!bridge && !isWebDev()) throw new Error("SoundCloud works in the desktop app only");
+  clientId = bridge ? await bridge.soundcloudClientId(force) : await webClientId(force);
   return clientId;
 }
 

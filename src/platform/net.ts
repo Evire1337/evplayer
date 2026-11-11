@@ -80,13 +80,17 @@ export function mediaStream(url: string): string {
  */
 export function joinedStream(playlistUrl: string): string | null {
   const base = typeof window !== "undefined" ? window.__EVPLAYER_MEDIA__ : undefined;
-  if (!base || !isOpenHost(playlistUrl)) return null;
+  // the dev server's bridge (a browser, no desktop side) does not join Ogg pieces
+  if (!base || !isOpenHost(playlistUrl) || (typeof window !== "undefined" && window.__EVPLAYER_WEB__)) return null;
   return `${base}/joined/${encodeURIComponent(playlistUrl)}`;
 }
 
-/** route the page's fetch and XHR calls to the services through the proxy */
-export function installProxy(): void {
-  proxyBase = schemeBase("evproxy");
+/**
+ * route the page's fetch and XHR calls to the services through the proxy
+ * @param base where the proxy is: the app's evproxy scheme, or the dev server's bridge in a browser
+ */
+export function installProxy(base: string = schemeBase("evproxy")): void {
+  proxyBase = base;
   const nativeFetch = window.fetch.bind(window);
   window.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
     const url = urlOf(input);
