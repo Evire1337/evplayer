@@ -135,6 +135,10 @@ pub fn browser_args(app: &AppHandle) -> String {
     // the first two are what Tauri passes by default; autoplay lets media keys and global
     // hotkeys start the music while the window is hidden, before any click in it
     let mut args = String::from("--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --autoplay-policy=no-user-gesture-required");
+    // the main window and the mini player share one page process instead of one each: minimized
+    // with the mini player up, that is one process fewer (~100 MB); a soft limit, the engine may
+    // still start another when it must
+    args.push_str(" --renderer-process-limit=1");
     if no_cache_flag(app).exists() {
         args.push_str(" --disk-cache-size=1");
     }
