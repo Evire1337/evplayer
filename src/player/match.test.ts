@@ -27,12 +27,14 @@ describe("match", () => {
   });
   it("takes a copy under another artist name when the title and length are the same", () => {
     const sc = tr("VVV (HE'S BACK)", "mikeeysmind", 80000);
-    expect(isSameRecording(sc, { ...tr("VVV (HE'S BACK)", "Mikeey", 81000), source: "youtube" })).toBe(true);
-    expect(isSameRecording(sc, { ...tr("VVV (HE'S BACK)", "Someone Else", 81000), source: "youtube" })).toBe(true);
+    expect(isSameRecording(sc, { ...tr("VVV (HE'S BACK)", "Mikeey", 81000), source: "youtube" }, { anyArtist: true })).toBe(true);
+    expect(isSameRecording(sc, { ...tr("VVV (HE'S BACK)", "Someone Else", 81000), source: "youtube" }, { anyArtist: true })).toBe(true);
+    // not among uploads on SoundCloud, where the same title by someone else is not the song
+    expect(isSameRecording(sc, { ...tr("VVV (HE'S BACK)", "Someone Else", 81000), source: "youtube" })).toBe(false);
     expect(isSameRecording(sc, { ...tr("VVV (HE'S BACK)", "Someone Else", 95000), source: "youtube" })).toBe(false);
     expect(isSameRecording(sc, { ...tr("VVV (HE'S BACK) (Sped Up)", "Mikeey", 81000), source: "youtube" })).toBe(false);
     // what was found on YouTube for it: a re-upload of the same part, and the artist's original (longer)
-    expect(isSameRecording(sc, { ...tr("VVV HE'S BACK (ALL CREDITS TO mikeeysmind) not my song", "CYBERMASK", 81000), source: "youtube" })).toBe(true);
+    expect(isSameRecording(sc, { ...tr("VVV HE'S BACK (ALL CREDITS TO mikeeysmind) not my song", "CYBERMASK", 81000), source: "youtube" }, { anyArtist: true })).toBe(true);
     const original = { ...tr("VVV", "mikeeysmind", 228000), source: "youtube" as const };
     expect(isSameRecording(sc, original)).toBe(true);
     expect(isOriginal(sc, original)).toBe(true);
@@ -40,6 +42,27 @@ describe("match", () => {
     expect(isOriginal(sc, { ...original, artists: [{ id: "x", name: "WizNation" }] })).toBe(false);
     expect(isOriginal(tr("Love Story", "Artist"), tr("Love", "Artist", 100000))).toBe(false);
     expect(isOriginal(sc, { ...original, title: "VVV (Remix)" })).toBe(false);
+  });
+  it("does not take a parody or another artist's song of the same name for the song", () => {
+    const spotify = tr("Not Like Us", "Kendrick Lamar", 274000, "spotify");
+    const original = tr("Not Like Us", "Kendrick Lamar", 275000, "original");
+    const stranger = tr("Not Like Us", "DJ Random", 276000, "stranger");
+    const parody = tr("Kendrick Lamar - Not Like Us (Parody)", "xX_fan_Xx", 274000, "parody");
+    const style = tr("Not Like Us (In the style of Kendrick Lamar)", "Karaoke Hits", 274000, "style");
+    expect(versionTags("Not Like Us (Parody)").has("parody")).toBe(true);
+    expect(versionTags("Песня (пародия)").has("parody")).toBe(true);
+    expect(isSameRecording(spotify, original)).toBe(true);
+    for (const other of [stranger, parody, style]) expect(isSameRecording(spotify, other)).toBe(false);
+    // an import takes the original, and nothing when only the others are there
+    expect(bestMatch(spotify, [stranger, parody, style, original], 0.65, { requireArtist: true })?.id).toBe("original");
+    expect(bestMatch(spotify, [stranger], 0.65, { requireArtist: true })).toBeNull();
+  });
+  it("does not import a preview, which would play from somewhere else than it shows", () => {
+    const wanted = tr("Blinding Lights", "The Weeknd", 200000);
+    const preview = { ...tr("Blinding Lights", "The Weeknd", 200000, "preview"), preview: true };
+    const full = tr("Blinding Lights", "The Weeknd", 201000, "full");
+    expect(bestMatch(wanted, [preview, full], 0.65, { playable: true })?.id).toBe("full");
+    expect(bestMatch(wanted, [preview], 0.65, { playable: true })).toBeNull();
   });
   it("builds a search query", () => {
     expect(searchQueryFor(tr("Daft Punk - Get Lucky (Official Video)", "convar"))).toBe("daft punk get lucky");

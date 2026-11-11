@@ -62,6 +62,13 @@ const VERSION_TAGS: Array<[string, RegExp]> = [
   ["acoustic", word("acoustic|акустик\\p{L}*")],
   // "Club Mix", "Extended Mix", but not "Original Mix"
   ["mix", word("(?<!original )mix")],
+  // sound-alikes and fan takes: the same title by someone else, often with the artist in the name
+  ["parody", word("parody|parodie|пародия|пародии")],
+  ["tribute", word("tribute|трибьют")],
+  ["imitation", word("in the style of|made famous by|originally performed by|type beat|в стиле")],
+  ["lofi", word("lo-?fi|лофи")],
+  ["tiktok", word("tik ?tok|тик ?ток")],
+  ["fanmade", word("fan ?made")],
 ];
 
 export function versionTags(title: string): Set<string> {
@@ -73,14 +80,21 @@ export function versionTags(title: string): Set<string> {
  * Good enough to play in place of the song: a close match of about the same length.
  * (bestMatch's threshold is for finding the song at all, e.g. when importing a list.)
  */
-export function isSameRecording(wanted: Track, candidate: Track): boolean {
+export function isSameRecording(wanted: Track, candidate: Track, options: { anyArtist?: boolean } = {}): boolean {
   const diff = wanted.durationMs && candidate.durationMs ? Math.abs(wanted.durationMs - candidate.durationMs) : Infinity;
   if (isOriginal(wanted, candidate)) return true;
   if (diff !== Infinity && diff > 15000) return false;
   if (matchScore(wanted, candidate) >= 0.8) return true;
   // the very same title, as long to a few seconds, and not another version: the same song even
-  // when the artist is written differently (a SoundCloud uploader's name is often not the artist's)
-  return diff < 3000 && titleScore(wanted, candidate) === 1 && sameVersion(wanted, candidate);
+  // when the artist is written differently. Only where the caller says the candidates are a
+  // catalogue (YouTube Music songs) and the wanted artist is just an uploader's name: among
+  // SoundCloud uploads the same title with any artist is a parody or a stranger's song.
+  return Boolean(options.anyArtist) && diff < 3000 && titleScore(wanted, candidate) === 1 && sameVersion(wanted, candidate);
+}
+
+/** 0..1: does the candidate name the wanted artist, as its artist or in its title */
+export function artistScore(wanted: Track, candidate: Track): number {
+  return nameOverlap(words(splitTitle(wanted).artist), words(`${candidate.artists.map((a) => a.name).join(" ")} ${candidate.title}`));
 }
 
 /** the title without what is in brackets: "VVV (HE'S BACK)" is "vvv" */
@@ -149,10 +163,17 @@ export function matchScore(wanted: Track, candidate: Track): number {
   return score;
 }
 
-export function bestMatch(wanted: Track, candidates: Track[], threshold = 0.72): Track | null {
+/**
+ * @param options.requireArtist the candidate must name the wanted artist (a list imported from
+ *   another service knows the artist: the same title by someone else is another song)
+ * @param options.playable skip what the service gives out only as a preview
+ */
+export function bestMatch(wanted: Track, candidates: Track[], threshold = 0.72, options: { requireArtist?: boolean; playable?: boolean } = {}): Track | null {
   let best: Track | null = null;
   let bestScore = threshold;
   for (const candidate of candidates) {
+    if (options.playable && candidate.preview) continue;
+    if (options.requireArtist && wanted.artists.length && artistScore(wanted, candidate) < 0.5) continue;
     const score = matchScore(wanted, candidate);
     if (score >= bestScore) {
       best = candidate;

@@ -33,10 +33,12 @@ export async function matchOne(wanted: NamedTrack, signal?: AbortSignal): Promis
   const query = `${wanted.artists[0] ?? ""} ${wanted.title}`.trim();
   const target = asTrack(wanted);
   const yt = await searchYouTubeMusic(query, signal).catch(() => [] as Track[]);
-  const fromYt = bestMatch(target, yt.slice(0, 8), 0.65);
+  // the artist is known: another artist's song of the same name (a parody, a stranger's) is no match
+  const fromYt = bestMatch(target, yt.slice(0, 8), 0.65, { requireArtist: true, playable: true });
   if (fromYt) return fromYt;
   const sc = await searchSoundCloud(query, signal).catch(() => ({ tracks: [] as Track[] }));
-  return bestMatch(target, sc.tracks.slice(0, 10), 0.65);
+  // a preview (SoundCloud Go+) is not the song: it would play from somewhere else than it shows
+  return bestMatch(target, sc.tracks.slice(0, 10), 0.65, { requireArtist: true, playable: true });
 }
 
 export async function matchTracks(

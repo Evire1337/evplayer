@@ -27,7 +27,8 @@ async function youTubeMatch(track: Track, signal?: AbortSignal): Promise<Track |
   let found: Track | null = null;
   for (const query of queries) {
     const ranked = (await searchYouTubeMusic(query, signal))
-      .filter((t) => isSameRecording(track, t))
+      // YouTube Music songs are a catalogue: a SoundCloud uploader's name need not be the artist's
+      .filter((t) => isSameRecording(track, t, { anyArtist: true }))
       // the artist's own release first, then the closest copy
       .sort((a, b) => Number(isOriginal(track, b)) - Number(isOriginal(track, a)) || matchScore(track, b) - matchScore(track, a));
     found = ranked[0] ?? null;
@@ -45,7 +46,7 @@ async function soundCloudMatches(track: Track, signal?: AbortSignal): Promise<Tr
   const found = tracks
     .map((t) => ({ t, score: matchScore(track, t) }))
     // played in place of the song: the same recording, not a remix of about the same name
-    .filter((x) => isSameRecording(track, x.t))
+    .filter((x) => !x.t.preview && isSameRecording(track, x.t))
     .sort((a, b) => b.score - a.score)
     .slice(0, COPIES_TRIED)
     .map((x) => x.t);
