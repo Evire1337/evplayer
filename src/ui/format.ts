@@ -1,3 +1,4 @@
+import { currentLang, localeOf } from "@/i18n/lang";
 export function formatTime(ms: number): string {
   if (!Number.isFinite(ms) || ms < 0) return "0:00";
   const total = Math.floor(ms / 1000);
@@ -9,7 +10,7 @@ export function formatTime(ms: number): string {
 
 export function formatCount(value: number | undefined): string | undefined {
   if (value === undefined) return undefined;
-  return new Intl.NumberFormat("ru", { notation: "compact", maximumFractionDigits: 1 }).format(value);
+  return new Intl.NumberFormat(localeOf(currentLang()), { notation: "compact", maximumFractionDigits: 1 }).format(value);
 }
 
 export function artistLine(artists: { name: string }[]): string {

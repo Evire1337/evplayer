@@ -14,6 +14,8 @@ const ATTRIBUTES = ["aria-label", "placeholder", "title", "data-tip", "alt"] as 
  * What the app shows as content, not as interface, stays as it is: songs, artists and lyrics
  * (a Russian song line like "Нет" must not become "No"). Only the app's own words are translated.
  */
+/** the made-for-you cards reuse the song-card classes for words of the app's own */
+const APP_OWN = ".smart-card";
 const CONTENT = "[data-no-translate], script, style, textarea, canvas, .lyrics, .lyric-line, .track-title, .track-artist, .track-card-title, .track-card-artist, .queue-name, .queue-sub, .artist-name";
 
 /** the Russian original of a text node, and what it was last turned into */
@@ -106,6 +108,12 @@ function applyGroup(parent: Element): void {
   for (const run of runsOf(parent)) applyRun(run);
 }
 
+/** songs, artists and lyrics: shown as they are */
+function isContent(el: Element): boolean {
+  const hit = el.closest(CONTENT);
+  return hit !== null && !hit.closest(APP_OWN);
+}
+
 function applyText(node: Text): void {
   // part of a run of text nodes: the run is read as a whole
   if (node.parentElement) applyGroup(node.parentElement);
@@ -140,7 +148,7 @@ function walk(root: Node): void {
   if (root.nodeType !== Node.ELEMENT_NODE) return;
   const el = root as Element;
   // what the app shows as data (a song's title, a name someone typed) is not interface text
-  if (el.closest(CONTENT)) return;
+  if (isContent(el)) return;
   for (const name of ATTRIBUTES) if (el.hasAttribute(name)) applyAttribute(el, name);
   applyGroup(el);
   for (const child of Array.from(el.childNodes)) walk(child);
@@ -149,13 +157,13 @@ function walk(root: Node): void {
 function onMutations(records: MutationRecord[]): void {
   for (const r of records) {
     if (r.type === "characterData") {
-      if (r.target.parentElement?.closest(CONTENT)) continue;
+      if (r.target.parentElement && isContent(r.target.parentElement)) continue;
       applyText(r.target as Text);
     } else if (r.type === "attributes") applyAttribute(r.target as Element, r.attributeName!);
     else {
       r.addedNodes.forEach(walk);
       // a text node came or went: the run it was part of reads differently now
-      if (r.target.nodeType === Node.ELEMENT_NODE && !(r.target as Element).closest(CONTENT)) applyGroup(r.target as Element);
+      if (r.target.nodeType === Node.ELEMENT_NODE && !isContent(r.target as Element)) applyGroup(r.target as Element);
     }
   }
 }

@@ -1,10 +1,12 @@
+import { currentLang } from "@/i18n/lang";
 import type { CollectionSummary, Track } from "@/types";
 
 // Search on YouTube Music: the same public search the music.youtube.com page uses.
 // Results become ordinary tracks with ids "yt:VIDEO_ID".
 
 const ENDPOINT = "https://music.youtube.com/youtubei/v1";
-const CLIENT = { clientName: "WEB_REMIX", clientVersion: "1.20241023.01.00", hl: "ru", gl: "US" };
+/** YouTube words its labels ("Album", "subscribers") in the language the page asks for */
+const client = () => ({ clientName: "WEB_REMIX", clientVersion: "1.20241023.01.00", hl: currentLang() === "en" ? "en" : "ru", gl: "US" });
 
 // "Songs" filter; not every country has it, then the "Videos" filter is used
 const SONGS = "EgWKAQIIAWoKEAkQBRAKEAMQBA%3D%3D";
@@ -110,7 +112,7 @@ async function call(path: string, body: Json, signal?: AbortSignal): Promise<unk
   const res = await fetch(`${ENDPOINT}/${path}?prettyPrint=false`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ context: { client: CLIENT }, ...body }),
+    body: JSON.stringify({ context: { client: client() }, ...body }),
     signal,
   });
   if (!res.ok) throw new Error(`YouTube Music ответил ${res.status}`);
