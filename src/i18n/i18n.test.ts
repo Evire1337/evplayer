@@ -85,4 +85,36 @@ describe("the page in English", () => {
     expect(added.textContent).toBe("Главная");
     expect(document.documentElement.lang).toBe("ru");
   });
+
+  it("reads a run of text nodes as one text, and follows what React writes into one of them", async () => {
+    // {done} из {total} · {share}%  is six text nodes
+    document.body.innerHTML = "<div id=\"pill\"></div>";
+    const pill = document.getElementById("pill")!;
+    for (const part of ["46", " из ", "190", " · ", "24", "%"]) pill.append(document.createTextNode(part));
+    useSettings.setState({ language: "en" });
+    stop = startTranslator();
+    expect(pill.textContent).toBe("46 of 190 · 24%");
+
+    // the share changes: React writes the fifth node only
+    (pill.childNodes[4] as Text).data = "25";
+    await tick();
+    expect(pill.textContent).toBe("46 of 190 · 25%");
+
+    useSettings.setState({ language: "ru" });
+    expect(pill.textContent).toBe("46 из 190 · 25%");
+  });
+
+  it("reads a run of text next to an element too (the session banner)", () => {
+    document.body.innerHTML = "<span id=\"t\"></span>";
+    const t = document.getElementById("t")!;
+    t.append(document.createTextNode("Вместе: "), document.createTextNode("1 слушатель"));
+    const small = document.createElement("small");
+    small.textContent = "Вы организатор";
+    t.append(small);
+    useSettings.setState({ language: "en" });
+    stop = startTranslator();
+    expect(t.textContent).toBe("Together: 1 listenerYou are the host");
+    useSettings.setState({ language: "ru" });
+    expect(t.textContent).toBe("Вместе: 1 слушательВы организатор");
+  });
 });

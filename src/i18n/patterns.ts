@@ -58,6 +58,7 @@ export const EN_PATTERNS: Pattern[] = [
   [/^«(.+)» сохранён в библиотеку$/, (m) => `"${m[1]}" saved to the library`],
   [/^Убрать «(.+)» из истории$/, (m) => `Remove "${m[1]}" from history`],
   [/^Организатор: (.+)$/, (m) => `Host: ${m[1]}`],
+  [/^Вместе: (.+)$/, (m, piece) => `Together: ${piece(m[1])}`],
   [/^Слушаете вместе: (.+)$/, (m) => `Listening together: ${m[1]}`],
   [/^Исключить (.+)$/, (m) => `Remove ${m[1]}`],
   [/^Цвет (.+)$/, (m) => `Colour ${m[1]}`],

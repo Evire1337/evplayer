@@ -19,13 +19,97 @@ const CONTENT = "[data-no-translate], script, style, textarea, canvas, .lyrics, 
 /** the Russian original of a text node, and what it was last turned into */
 const texts = new WeakMap<Text, { original: string; shown: string }>();
 const attributes = new WeakMap<Element, Map<string, { original: string; shown: string }>>();
+/**
+ * React writes "46 из 190 · 24%" as six text nodes in a row. Read piece by piece it is not
+ * a text anyone translated, so a run of text nodes (two or more side by side) is read as a
+ * whole: the whole goes into its first node and the others are emptied.
+ */
+interface Group {
+  nodes: Text[];
+  originals: string[];
+  shown: string;
+}
+/** by the first node of the run */
+const groups = new WeakMap<Text, Group>();
+const merged = new WeakSet<Text>();
+const touchedGroups = new Set<WeakRef<Text>>();
 /** every node touched, to put the Russian back (a WeakRef: nodes that go away are not held) */
 const touched = new Set<WeakRef<Text | Element>>();
 
 let lang: Lang = "ru";
 let observer: MutationObserver | null = null;
 
+/** the Russian text of a node, whatever this file has made of it */
+function originalOf(node: Text): string {
+  const known = texts.get(node);
+  return known && node.data === known.shown ? known.original : node.data;
+}
+
+/** the runs of text nodes, two or more side by side, among the children of an element */
+function runsOf(parent: Element): Text[][] {
+  const runs: Text[][] = [];
+  let run: Text[] = [];
+  for (const kid of Array.from(parent.childNodes)) {
+    if (kid.nodeType === Node.TEXT_NODE) run.push(kid as Text);
+    else {
+      if (run.length > 1) runs.push(run);
+      run = [];
+    }
+  }
+  if (run.length > 1) runs.push(run);
+  return runs;
+}
+
+/** true when the run is translated as a whole (and written) */
+function applyRun(nodes: Text[]): boolean {
+  let group = groups.get(nodes[0]);
+  // other nodes than the ones merged before: start again
+  if (group && (group.nodes.length !== nodes.length || group.nodes.some((n, i) => n !== nodes[i]))) {
+    group.nodes.forEach((n) => merged.delete(n));
+    groups.delete(nodes[0]);
+    group = undefined;
+  }
+  let originals: string[];
+  if (group) {
+    // what React wrote since: the first node holds the translation, the others are empty
+    const last = group;
+    originals = last.originals.slice();
+    nodes.forEach((n, i) => {
+      if (n.data !== (i === 0 ? last.shown : "")) originals[i] = n.data;
+    });
+  } else {
+    originals = nodes.map(originalOf);
+  }
+  const combined = originals.join("");
+  const shown = translate(combined, lang);
+  if (shown === combined) {
+    if (group) {
+      nodes.forEach((n, i) => {
+        n.data = originals[i];
+        merged.delete(n);
+      });
+      groups.delete(nodes[0]);
+    }
+    return false;
+  }
+  groups.set(nodes[0], { nodes, originals, shown });
+  touchedGroups.add(new WeakRef(nodes[0]));
+  nodes.forEach((n, i) => {
+    merged.add(n);
+    const want = i === 0 ? shown : "";
+    if (n.data !== want) n.data = want;
+  });
+  return true;
+}
+
+function applyGroup(parent: Element): void {
+  for (const run of runsOf(parent)) applyRun(run);
+}
+
 function applyText(node: Text): void {
+  // part of a run of text nodes: the run is read as a whole
+  if (node.parentElement) applyGroup(node.parentElement);
+  if (merged.has(node)) return;
   const known = texts.get(node);
   // the text is what this file wrote last: nothing to do
   if (known && node.data === known.shown) return;
@@ -58,6 +142,7 @@ function walk(root: Node): void {
   // what the app shows as data (a song's title, a name someone typed) is not interface text
   if (el.closest(CONTENT)) return;
   for (const name of ATTRIBUTES) if (el.hasAttribute(name)) applyAttribute(el, name);
+  applyGroup(el);
   for (const child of Array.from(el.childNodes)) walk(child);
 }
 
@@ -67,12 +152,28 @@ function onMutations(records: MutationRecord[]): void {
       if (r.target.parentElement?.closest(CONTENT)) continue;
       applyText(r.target as Text);
     } else if (r.type === "attributes") applyAttribute(r.target as Element, r.attributeName!);
-    else r.addedNodes.forEach(walk);
+    else {
+      r.addedNodes.forEach(walk);
+      // a text node came or went: the run it was part of reads differently now
+      if (r.target.nodeType === Node.ELEMENT_NODE && !(r.target as Element).closest(CONTENT)) applyGroup(r.target as Element);
+    }
   }
 }
 
 /** puts the Russian text back everywhere this file changed it */
 function restore(): void {
+  for (const ref of touchedGroups) {
+    const first = ref.deref();
+    const group = first && groups.get(first);
+    if (group) {
+      group.nodes.forEach((n, i) => {
+        n.data = group.originals[i];
+        merged.delete(n);
+      });
+    }
+    if (first) groups.delete(first);
+  }
+  touchedGroups.clear();
   for (const ref of touched) {
     const node = ref.deref();
     if (!node) {
