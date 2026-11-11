@@ -10,7 +10,9 @@ use serde::Serialize;
 pub struct ProcessInfo {
     pub pid: u32,
     pub name: String,
-    /// working set: what Task Manager shows as the process's memory
+    /// the process's own memory, as Task Manager's "Memory" column shows it: on Windows the
+    /// private working set, elsewhere the resident memory that is not file-backed. The working
+    /// set alone would count the browser engine's shared libraries once in every process.
     pub memory: u64,
     /// processor time used since the process started
     pub cpu_ms: u64,
@@ -23,7 +25,6 @@ pub fn processes() -> Vec<ProcessInfo> {
     use std::collections::HashMap;
     use windows_sys::Win32::Foundation::{CloseHandle, FILETIME, INVALID_HANDLE_VALUE};
     use windows_sys::Win32::System::Diagnostics::ToolHelp::{CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W, TH32CS_SNAPPROCESS};
-    use windows_sys::Win32::System::ProcessStatus::{K32GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS};
     use windows_sys::Win32::System::Threading::{GetCurrentProcessId, GetProcessTimes, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION};
 
     // every process with its parent and name
@@ -75,9 +76,7 @@ pub fn processes() -> Vec<ProcessInfo> {
                 if handle.is_null() {
                     return None;
                 }
-                let mut counters: PROCESS_MEMORY_COUNTERS = std::mem::zeroed();
-                counters.cb = std::mem::size_of::<PROCESS_MEMORY_COUNTERS>() as u32;
-                let memory = if K32GetProcessMemoryInfo(handle, &mut counters, counters.cb) != 0 { counters.WorkingSetSize as u64 } else { 0 };
+                let memory = own_memory(handle);
                 let zero = FILETIME { dwLowDateTime: 0, dwHighDateTime: 0 };
                 let (mut created, mut exited, mut kernel, mut user) = (zero, zero, zero, zero);
                 let cpu_ms = if GetProcessTimes(handle, &mut created, &mut exited, &mut kernel, &mut user) != 0 { ticks(kernel) + ticks(user) } else { 0 };
@@ -88,16 +87,38 @@ pub fn processes() -> Vec<ProcessInfo> {
         .collect()
 }
 
+/// The private working set: memory only this process uses, which is what Task Manager shows.
+/// Windows before 10 21H2 does not know the longer structure; there the plain working set is
+/// the best there is.
+#[cfg(windows)]
+unsafe fn own_memory(handle: windows_sys::Win32::Foundation::HANDLE) -> u64 {
+    use windows_sys::Win32::System::ProcessStatus::{K32GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS, PROCESS_MEMORY_COUNTERS_EX2};
+    let mut ex2: PROCESS_MEMORY_COUNTERS_EX2 = std::mem::zeroed();
+    ex2.cb = std::mem::size_of::<PROCESS_MEMORY_COUNTERS_EX2>() as u32;
+    if K32GetProcessMemoryInfo(handle, &mut ex2 as *mut PROCESS_MEMORY_COUNTERS_EX2 as *mut PROCESS_MEMORY_COUNTERS, ex2.cb) != 0 && ex2.PrivateWorkingSetSize > 0 {
+        return ex2.PrivateWorkingSetSize as u64;
+    }
+    let mut basic: PROCESS_MEMORY_COUNTERS = std::mem::zeroed();
+    basic.cb = std::mem::size_of::<PROCESS_MEMORY_COUNTERS>() as u32;
+    if K32GetProcessMemoryInfo(handle, &mut basic, basic.cb) != 0 {
+        basic.WorkingSetSize as u64
+    } else {
+        0
+    }
+}
+
+/// A "VmRSS:   1234 kB" line of /proc/self/status, in bytes.
+#[cfg(not(windows))]
+fn status_kb(status: &str, key: &str) -> Option<u64> {
+    status.lines().find_map(|l| l.strip_prefix(key)).and_then(|v| v.trim().trim_end_matches("kB").trim().parse::<u64>().ok()).map(|kb| kb * 1024)
+}
+
 #[cfg(not(windows))]
 pub fn processes() -> Vec<ProcessInfo> {
-    // /proc/self: resident memory from status, processor time from stat (in clock ticks)
+    // /proc/self: the process's own resident memory (not the libraries it shares) from status,
+    // processor time from stat (in clock ticks)
     let status = std::fs::read_to_string("/proc/self/status").unwrap_or_default();
-    let memory = status
-        .lines()
-        .find_map(|l| l.strip_prefix("VmRSS:"))
-        .and_then(|v| v.trim().trim_end_matches("kB").trim().parse::<u64>().ok())
-        .map(|kb| kb * 1024)
-        .unwrap_or(0);
+    let memory = status_kb(&status, "RssAnon:").or_else(|| status_kb(&status, "VmRSS:")).unwrap_or(0);
     let stat = std::fs::read_to_string("/proc/self/stat").unwrap_or_default();
     // fields after the name in brackets: utime and stime are the 12th and 13th of them
     let after = stat.rsplit_once(')').map(|(_, rest)| rest).unwrap_or("");
