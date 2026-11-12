@@ -1,6 +1,7 @@
 import { discordAppId, useSettings } from "@/settings/store";
 import { currentTrack, usePlayer } from "@/player/store";
 import { artistLine } from "@/ui/format";
+import { resolveLang } from "@/i18n/lang";
 import { globalMap } from "@/settings/shortcuts";
 import { useLibrary } from "@/library/store";
 import { runAction, type Command } from "./actions";
@@ -44,7 +45,7 @@ export function startBridge(): void {
     if (keys.some((k) => s[k] !== prev[k])) pushSettings();
     const discordKeys: Array<keyof typeof s> = ["discordEnabled", "discordShowArtwork", "discordShowPaused", "discordShowTimeline", "discordShowButton", "discordStatusShows", "discordJoin"];
     if (discordKeys.some((k) => s[k] !== prev[k])) pushPresence(true);
-    if (s.overlayShowLyrics !== prev.overlayShowLyrics) pushOverlay();
+    if (s.overlayShowLyrics !== prev.overlayShowLyrics || s.language !== prev.language) pushOverlay();
     if (s.noCache !== prev.noCache) void api.setNoCache(s.noCache);
   });
   // the flag file can be missing (a fresh install restored from a backup): write it again
@@ -106,6 +107,8 @@ export function startBridge(): void {
       positionMs: Math.round(s.positionMs / 500) * 500,
       durationMs: s.durationMs,
       liked: track ? isLiked(track.id) : false,
+      // the mini player has no dictionary of its own: it is told which language to speak
+      lang: resolveLang(useSettings.getState().language),
       line: useSettings.getState().overlayShowLyrics ? useLyricsLine.getState().line : null,
     };
     const key = JSON.stringify(state);

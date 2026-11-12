@@ -15,7 +15,20 @@ interface OverlayState {
   durationMs: number;
   liked: boolean;
   line: string | null;
+  lang?: "ru" | "en";
 }
+
+/** the few words of this window; the main window's dictionary is not loaded here on purpose */
+const WORDS = {
+  open: ["Открыть EvPlayer", "Open EvPlayer"],
+  nothing: ["Ничего не играет", "Nothing playing"],
+  hint: ["Включите трек в EvPlayer", "Play a song in EvPlayer"],
+  like: ["Нравится", "Like"],
+  prev: ["Предыдущий", "Previous"],
+  pause: ["Пауза", "Pause"],
+  play: ["Играть", "Play"],
+  next: ["Следующий", "Next"],
+} as const;
 
 const api = () => window.evplayer?.overlay;
 
@@ -69,31 +82,32 @@ export default function OverlayApp() {
   const cmd = (action: string, value?: number) => api()?.command(action, value);
   const track = state?.track;
   const playing = state?.status === "playing";
+  const say = (word: keyof typeof WORDS): string => WORDS[word][state?.lang === "en" ? 1 : 0];
   const progress = state?.durationMs ? Math.min(1, pos / state.durationMs) : 0;
 
   return (
     <div className="overlay">
       <div className="overlay-card">
-        <button type="button" className="overlay-art" onClick={() => cmd("showWindow")} aria-label="Открыть EvPlayer">
+        <button type="button" className="overlay-art" onClick={() => cmd("showWindow")} aria-label={say("open")}>
           <Artwork src={track?.artwork} lazy={false} size="row" />
           <span className="overlay-art-hover"><IconExpand size={13} /></span>
         </button>
         {/* only the title area moves the window: buttons stay outside it, so their clicks always land */}
         <div className="overlay-text" data-tauri-drag-region>
-          <span className="overlay-title" data-tauri-drag-region>{track?.title ?? "Ничего не играет"}</span>
-          <span className="overlay-sub" data-tauri-drag-region>{state?.line ?? track?.artist ?? "Включите трек в EvPlayer"}</span>
+          <span className="overlay-title" data-tauri-drag-region>{track?.title ?? say("nothing")}</span>
+          <span className="overlay-sub" data-tauri-drag-region>{state?.line ?? track?.artist ?? say("hint")}</span>
         </div>
         <div className="overlay-controls">
-          <button type="button" className={`overlay-btn${state?.liked ? " is-liked" : ""}`} aria-label="Нравится" onClick={() => cmd("like")} disabled={!track}>
+          <button type="button" className={`overlay-btn${state?.liked ? " is-liked" : ""}`} aria-label={say("like")} onClick={() => cmd("like")} disabled={!track}>
             {state?.liked ? <IconHeartFill size={15} /> : <IconHeart size={15} />}
           </button>
-          <button type="button" className="overlay-btn" aria-label="Предыдущий" onClick={() => cmd("prevTrack")} disabled={!track}>
+          <button type="button" className="overlay-btn" aria-label={say("prev")} onClick={() => cmd("prevTrack")} disabled={!track}>
             <IconPrev size={15} />
           </button>
-          <button type="button" className="overlay-btn is-main" aria-label={playing ? "Пауза" : "Играть"} onClick={() => cmd("togglePlay")} disabled={!track}>
+          <button type="button" className="overlay-btn is-main" aria-label={playing ? say("pause") : say("play")} onClick={() => cmd("togglePlay")} disabled={!track}>
             {playing ? <IconPause size={15} /> : <IconPlay size={15} />}
           </button>
-          <button type="button" className="overlay-btn" aria-label="Следующий" onClick={() => cmd("next")} disabled={!track}>
+          <button type="button" className="overlay-btn" aria-label={say("next")} onClick={() => cmd("next")} disabled={!track}>
             <IconNext size={15} />
           </button>
         </div>
