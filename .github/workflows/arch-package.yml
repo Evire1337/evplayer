@@ -1,0 +1,41 @@
+# Adds the Arch package to a release that is already out (when the release run could not).
+# Only by hand: Actions -> Arch package -> Run workflow, with the tag, e.g. v0.7.5.
+name: Arch package
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag, e.g. v0.7.5
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  arch:
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+    env:
+      TAG: ${{ inputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the package
+        shell: bash
+        run: |
+          pacman -Syu --noconfirm --needed pacman-contrib github-cli
+          VERSION="${TAG#v}"
+          useradd -m builder
+          mkdir /home/builder/pkg
+          sed "s/^pkgver=.*/pkgver=${VERSION}/" packaging/arch/PKGBUILD > /home/builder/pkg/PKGBUILD
+          chown -R builder /home/builder/pkg
+          cd /home/builder/pkg
+          sudo -u builder updpkgsums
+          sudo -u builder makepkg --nodeps --noconfirm
+          cp PKGBUILD "$GITHUB_WORKSPACE/PKGBUILD"
+          cp evplayer-bin-*.pkg.tar.zst "$GITHUB_WORKSPACE/"
+      - name: Add it to the release
+        shell: bash
+        run: gh release upload "$TAG" -R "$GITHUB_REPOSITORY" PKGBUILD evplayer-bin-*.pkg.tar.zst --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
