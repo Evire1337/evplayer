@@ -5,7 +5,10 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.IntentFilter
+import android.media.AudioManager
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.graphics.Bitmap
@@ -101,6 +104,17 @@ class MediaService : Service() {
   }
 
   private lateinit var session: MediaSessionCompat
+
+  /**
+   * The headphones were pulled out or the Bluetooth speaker went away: Android announces it
+   * ("becoming noisy") so that music does not suddenly play from the phone's speaker. The
+   * page decides, because "Pause when headphones are unplugged" is a setting.
+   */
+  private val noisy = object : BroadcastReceiver() {
+    override fun onReceive(context: Context?, intent: Intent?) {
+      if (intent?.action == AudioManager.ACTION_AUDIO_BECOMING_NOISY && isPlaying) MainActivity.command("deviceLost")
+    }
+  }
   private var artUrl: String? = null
   private var art: Bitmap? = null
 
@@ -109,6 +123,7 @@ class MediaService : Service() {
   override fun onCreate() {
     super.onCreate()
     instance = this
+    registerReceiver(noisy, IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY))
     if (Build.VERSION.SDK_INT >= 26) {
       val channel = NotificationChannel(CHANNEL, "Воспроизведение", NotificationManager.IMPORTANCE_LOW)
       channel.setShowBadge(false)
@@ -151,6 +166,11 @@ class MediaService : Service() {
 
   override fun onDestroy() {
     instance = null
+    try {
+      unregisterReceiver(noisy)
+    } catch (e: IllegalArgumentException) {
+      // it was never registered
+    }
     session.release()
     super.onDestroy()
   }

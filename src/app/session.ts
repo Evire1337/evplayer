@@ -51,15 +51,24 @@ export function restoreSession(): void {
   startMirror();
 }
 
+/**
+ * Whether a sound output went away between two looks at the list. The browser may hide the
+ * ids until a microphone is allowed (all are then empty), so with no ids the count decides.
+ */
+export function outputLost(before: string[], after: string[]): boolean {
+  if (before.some(Boolean)) return before.filter(Boolean).some((id) => !after.includes(id));
+  return after.length < before.length;
+}
+
 function watchOutputDevices(): void {
   const devices = navigator.mediaDevices;
   if (!devices?.enumerateDevices) return;
-  let outputs = "";
-  const read = async () => (await devices.enumerateDevices()).filter((d) => d.kind === "audiooutput").map((d) => d.deviceId).sort().join(",");
+  let outputs: string[] | null = null;
+  const read = async () => (await devices.enumerateDevices()).filter((d) => d.kind === "audiooutput").map((d) => d.deviceId).sort();
   void read().then((v) => (outputs = v));
   devices.addEventListener("devicechange", async () => {
     const now = await read();
-    const lost = outputs && now.split(",").length < outputs.split(",").length;
+    const lost = outputs !== null && outputLost(outputs, now);
     outputs = now;
     if (lost && useSettings.getState().pauseOnDeviceChange && usePlayer.getState().status === "playing") player.toggle();
   });

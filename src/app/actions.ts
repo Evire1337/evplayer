@@ -3,15 +3,20 @@ import { currentTrack, usePlayer } from "@/player/store";
 import { useLibrary } from "@/library/store";
 import { useNavigation } from "@/ui/navigation";
 import type { ShortcutAction } from "@/settings/shortcuts";
+import { useSettings } from "@/settings/store";
 
 // One place that knows what each command does: keys in the window, system-wide keys,
 // the tray menu and the mini player all end up here.
 
-export type Command = ShortcutAction | "togglePlay" | "seekTo" | "prevTrack";
+export type Command = ShortcutAction | "togglePlay" | "seekTo" | "prevTrack" | "deviceLost";
 
 export function runAction(action: Command, value?: number): void {
   const s = usePlayer.getState();
   switch (action) {
+    // the phone says the headphones went away (Android's "becoming noisy"): pause, if the setting wants it
+    case "deviceLost":
+      if (s.status === "playing" && useSettings.getState().pauseOnDeviceChange) player.toggle();
+      return;
     case "playPause":
     case "togglePlay":
       return player.toggle();
