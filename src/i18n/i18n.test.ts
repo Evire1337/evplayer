@@ -34,6 +34,8 @@ describe("translating a text", () => {
     expect(translate("Понравившиеся · 9 треков", "en")).toBe("Liked songs · 9 tracks");
     expect(translate("· создан 10 Nov 2026", "en")).toBe("· created 10 Nov 2026");
     expect(translate("12 МБ на диске", "en")).toBe("12 MB on the disk");
+    expect(translate("· aac 160 кбит/с", "en")).toBe("· aac 160 kbps");
+    expect(translate("mp3 ~128 кбит/с", "en")).toBe("mp3 ~128 kbps");
   });
 
   it("keeps a Russian text that has no translation, as it is", () => {
