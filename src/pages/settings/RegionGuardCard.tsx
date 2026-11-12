@@ -33,12 +33,12 @@ export default function RegionGuardCard() {
       <div className="svc-head">
         <span className="svc-head-text">
           <strong>Страна подключения</strong>
-          <span className="muted small">В некоторых странах SoundCloud закрывает треки, а аккаунт, замеченный с такого адреса, может остаться помеченным. Если у вас этого нет, ничего включать не нужно.</span>
+          <span className="muted small">Если вы подключаетесь из страны, где SoundCloud ограничивает доступ, EvPlayer может вообще не заходить на SoundCloud и играть песни с YouTube Music. Так ваш аккаунт SoundCloud не «светится» с такого адреса. Если вас это не касается, ничего включать не нужно.</span>
         </span>
       </div>
       <SwitchRow
-        title="Не обращаться к SoundCloud из выбранных стран"
-        hint="Только если адрес вашего подключения в одной из отмеченных стран: тогда SoundCloud не трогаем (песни играют с YouTube Music), пока не включён VPN другой страны. В остальных странах ничего не меняется."
+        title="Не заходить на SoundCloud из выбранных стран"
+        hint="Работает только пока вы в одной из отмеченных стран: SoundCloud не открывается, песни играют с YouTube Music. Включите VPN другой страны, и всё вернётся. В остальных странах ничего не меняется."
         checked={guard}
         onChange={(v) => set({ regionGuard: v })}
       />
@@ -65,7 +65,7 @@ export default function RegionGuardCard() {
           </div>
           <div className="svc-actions">
             <Pill tone={country ? (ok ? "ok" : "warn") : "off"}>{country ? `Сейчас: ${country}` : "Страна не определена"}</Pill>
-            <span className="muted small">{country ? (ok ? "SoundCloud доступен" : "SoundCloud не трогаю: включите VPN") : "Проверка не ответила: ничего не ограничиваю"}</span>
+            <span className="muted small">{country ? (ok ? "SoundCloud доступен" : "SoundCloud закрыт: включите VPN другой страны") : "Проверка не ответила: ничего не ограничиваю"}</span>
             <button type="button" className="btn ghost" disabled={checking} onClick={look}>
               {checking ? <span className="spinner small-spin" /> : <IconRefresh size={15} />} Проверить
             </button>

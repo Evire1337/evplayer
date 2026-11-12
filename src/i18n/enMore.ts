@@ -13,6 +13,11 @@ export const MORE: Record<string, string> = {
   "Копии как обычные файлы «Исполнитель - Название» с тегами и обложкой: для другого плеера или телефона. Скачанное остаётся как было": "Copies as ordinary \"Artist - Title\" files with tags and cover, for another player or a phone. What is downloaded stays as it was",
   "Выбрать папку…": "Choose folder…",
   "Пока нечего сохранять: скачайте песни или плейлист": "Nothing to save yet: download songs or a playlist first",
+  // region guard
+  "Если вы подключаетесь из страны, где SoundCloud ограничивает доступ, EvPlayer может вообще не заходить на SoundCloud и играть песни с YouTube Music. Так ваш аккаунт SoundCloud не «светится» с такого адреса. Если вас это не касается, ничего включать не нужно.": "If you connect from a country where SoundCloud restricts access, EvPlayer can stay away from SoundCloud and play songs from YouTube Music instead, so your SoundCloud account is not seen from such an address. If this does not concern you, there is nothing to turn on.",
+  "Не заходить на SoundCloud из выбранных стран": "Stay away from SoundCloud in the chosen countries",
+  "Работает только пока вы в одной из отмеченных стран: SoundCloud не открывается, песни играют с YouTube Music. Включите VPN другой страны, и всё вернётся. В остальных странах ничего не меняется.": "Only while you are in one of the marked countries: SoundCloud is not opened and songs play from YouTube Music. Turn on a VPN in another country and it all comes back. Nowhere else does anything change.",
+  "SoundCloud закрыт: включите VPN другой страны": "SoundCloud is off: turn on a VPN in another country",
   // about
   "Версия": "Version",
   "· открытый проект, лицензия MIT": "· an open project, MIT licence",
