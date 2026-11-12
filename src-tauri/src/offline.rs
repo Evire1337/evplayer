@@ -327,7 +327,7 @@ pub struct ExportResult {
 /// "Artist - Title" as a file name every system accepts
 pub fn export_name(artist: &str, title: &str) -> String {
     let raw = if artist.trim().is_empty() { title.trim().to_string() } else { format!("{} - {}", artist.trim(), title.trim()) };
-    let clean: String = raw.chars().map(|c| if c.is_control() || "<>:\"/\|?*"\|?*".contains(c) { '_' } else { c }).collect();
+    let clean: String = raw.chars().map(|c| if c.is_control() || r#"<>:"/\|?*"#.contains(c) { '_' } else { c }).collect();
     let clean = clean.trim().trim_end_matches('.').trim();
     let clean: String = clean.chars().take(120).collect();
     if clean.is_empty() { "track".into() } else { clean }
