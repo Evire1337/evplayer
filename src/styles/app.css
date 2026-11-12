@@ -422,7 +422,7 @@ img { display: block; max-width: 100%; }
 .lyric-line {
   text-align: left;
   font-weight: 800;
-  font-size: clamp(24px, calc(var(--lyric-scale) * 1cqi), 64px);
+  font-size: calc(clamp(24px, calc(var(--lyric-scale) * 1cqi), 64px) * var(--lyric-mult, 1));
   line-height: 1.16;
   color: rgba(238, 247, 244, 0.42);
   filter: blur(1.2px);
@@ -437,7 +437,7 @@ img { display: block; max-width: 100%; }
 .lyric-line.is-past { color: rgba(238, 247, 244, 0.28); filter: none; }
 .lyric-line.is-far { filter: none; }
 .lyric-line.is-active { color: #fff; filter: none; transform: scale(1.06); text-shadow: 0 2px 30px rgba(0, 0, 0, 0.25); }
-.lyric-line.is-plain { margin: 0; filter: none; color: var(--ink); font-size: clamp(20px, calc(var(--lyric-scale) * 0.75cqi), 44px); cursor: text; user-select: text; }
+.lyric-line.is-plain { margin: 0; filter: none; color: var(--ink); font-size: calc(clamp(20px, calc(var(--lyric-scale) * 0.75cqi), 44px) * var(--lyric-mult, 1)); cursor: text; user-select: text; }
 .lyrics-source { font-size: 11.5px; color: var(--ink-3); padding-bottom: 12px; }
 /* nudging the lyrics: pinned to the bottom of the lyrics, shown on hover (or once used) */
 .lyrics-shift {
@@ -555,8 +555,9 @@ kbd { font: 600 12px var(--font); padding: 3px 8px; border-radius: 7px; backgrou
 .now-source { font-size: 12.5px; color: var(--ink-3); }
 .now-art { transition: box-shadow 400ms ease; }
 .app:not(.no-glow) .now-art { box-shadow: 0 6px 22px rgba(0, 0, 0, 0.5), 0 0 18px rgba(111, 240, 196, 0.16); }
-.lyrics-s .now-lyrics { --lyric-scale: 4.2; }
-.lyrics-l .now-lyrics { --lyric-scale: 6.6; }
+/* a step of the "Text size" setting multiplies the size the space gives: the clamp alone hid it in a narrow column and on a phone */
+.lyrics-s .now-lyrics { --lyric-mult: 0.8; }
+.lyrics-l .now-lyrics { --lyric-mult: 1.25; }
 .no-lyrics-blur .lyric-line, .no-lyrics-blur .lyric-line.is-near { filter: none; }
 .queue-head { display: flex; align-items: center; justify-content: space-between; }
 .queue-list li.drop-before { box-shadow: inset 0 2px 0 var(--accent); }
