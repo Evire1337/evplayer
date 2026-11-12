@@ -263,7 +263,7 @@ export async function importFromLink(text: string, target?: ImportTarget): Promi
     if (running !== controller) return;
     if (controller.signal.aborted) progress.finish({ ok: false, text: "Загрузка отменена" });
     else {
-      toast(message, "error");
+      // the progress panel shows the failure: a toast with the same words would say it twice
       progress.finish({ ok: false, text: `Не загрузилось: ${message}` });
     }
   } finally {
