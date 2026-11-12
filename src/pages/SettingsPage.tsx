@@ -156,7 +156,7 @@ function Playback() {
             ]}
           />
         </Row>
-        <SwitchRow title="Текст с Genius" hint="Если в LRCLIB нет текста, взять обычный (без синхронизации) с genius.com" checked={s.geniusFallback} onChange={(v) => s.set({ geniusFallback: v })} />
+        <SwitchRow title="Запасные тексты" hint="Если в LRCLIB нет текста, взять обычный (без синхронизации) с genius.com, а если и там нет — с lyrics.ovh" checked={s.geniusFallback} onChange={(v) => s.set({ geniusFallback: v })} />
       </Card>
       {!isPhone && <Card title="Окно">
         <SwitchRow title="Закрытие прячет в трей" hint="Крестик убирает окно к часам, музыка продолжает играть. Выйти — через меню значка" checked={s.closeToTray} onChange={(v) => s.set({ closeToTray: v })} />

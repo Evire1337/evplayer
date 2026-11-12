@@ -22,6 +22,7 @@ const OPEN_HOSTS: &[&str] = &[
     "*googleusercontent.com",
     "*lrclib.net",
     "*genius.com",
+    "api.lyrics.ovh",
     "api.deezer.com",
     "open.spotify.com",
     "accounts.spotify.com",

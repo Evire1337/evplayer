@@ -296,6 +296,8 @@ const settings: Record<string, string> = {
   "Поиск и тексты": "Search and lyrics",
   "Где искать по умолчанию": "Where to search by default",
   "Текст с Genius": "Lyrics from Genius",
+  "Запасные тексты": "Fallback lyrics",
+  "Если в LRCLIB нет текста, взять обычный (без синхронизации) с genius.com, а если и там нет — с lyrics.ovh": "If LRCLIB has no lyrics, take plain ones (not synced) from genius.com, and from lyrics.ovh if it has none either",
   "Если в LRCLIB нет текста, взять обычный (без синхронизации) с genius.com": "If LRCLIB has no lyrics, take plain ones (not synced) from genius.com",
   "Окно": "Window",
   "Закрытие прячет в трей": "Closing hides to the tray",

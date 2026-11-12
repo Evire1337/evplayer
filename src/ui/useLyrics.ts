@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { Track } from "@/types";
 import { findLyrics, readings } from "@/services/lyrics/lrclib";
 import { findGeniusLyrics } from "@/services/lyrics/genius";
+import { findOvhLyrics } from "@/services/lyrics/lyricsovh";
 import { parseLrc, type LyricLine } from "@/services/lyrics/lrc";
 import { keeps, useSettings } from "@/settings/store";
 
@@ -26,6 +27,11 @@ async function load(track: Track, signal: AbortSignal): Promise<LyricsState> {
     for (const r of readings(track)) {
       const text = await findGeniusLyrics(r, signal).catch(() => undefined);
       if (text) return { status: "ready", source: "Genius", ...parseLrc(text) };
+    }
+    // Genius did not have it either: lyrics.ovh, which needs the names spelled exactly
+    for (const r of readings(track)) {
+      const text = await findOvhLyrics(r, signal).catch(() => undefined);
+      if (text) return { status: "ready", source: "lyrics.ovh", ...parseLrc(text) };
     }
   }
   return { status: "missing" };
