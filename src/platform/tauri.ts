@@ -97,6 +97,7 @@ export function createTauriApi(): EvPlayerApi {
       remove: (ids) => invoke("offline_remove", { ids }),
       clear: () => invoke("offline_clear"),
       openFolder: () => fire("offline_open_folder"),
+      exportTo: (items) => invoke("offline_export", { items }),
       onProgress: (cb) => on("offline:progress", cb),
       mediaUrl: (id) => (window.__EVPLAYER_MEDIA__ ? `${window.__EVPLAYER_MEDIA__}/offline/${encodeURIComponent(id)}` : null),
     },

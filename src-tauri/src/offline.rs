@@ -305,6 +305,104 @@ impl Offline {
     }
 }
 
+/// one kept song to be copied out as an ordinary, named and tagged file
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportItem {
+    pub id: String,
+    pub title: String,
+    pub artist: String,
+    pub artwork: Option<String>,
+}
+
+/// what a copy-out did: how many songs landed in the folder, how many were not kept any more
+#[derive(Clone, Debug, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportResult {
+    pub copied: usize,
+    pub missing: usize,
+    pub folder: String,
+}
+
+/// "Artist - Title" as a file name every system accepts
+pub fn export_name(artist: &str, title: &str) -> String {
+    let raw = if artist.trim().is_empty() { title.trim().to_string() } else { format!("{} - {}", artist.trim(), title.trim()) };
+    let clean: String = raw.chars().map(|c| if c.is_control() || "<>:\"/\|?*".contains(c) { '_' } else { c }).collect();
+    let clean = clean.trim().trim_end_matches('.').trim();
+    let clean: String = clean.chars().take(120).collect();
+    if clean.is_empty() { "track".into() } else { clean }
+}
+
+/// a free name in `folder`: "x.mp3", then "x (2).mp3", ...
+fn free_path(folder: &Path, name: &str, ext: &str) -> PathBuf {
+    let mut path = folder.join(format!("{name}.{ext}"));
+    let mut n = 2;
+    while path.exists() {
+        path = folder.join(format!("{name} ({n}).{ext}"));
+        n += 1;
+    }
+    path
+}
+
+/// writes title, artist and cover into the copy; formats the tag library cannot write to
+/// (WebM from YouTube) are left with just the readable name
+fn tag_copy(path: &Path, item: &ExportItem) {
+    use lofty::config::WriteOptions;
+    use lofty::file::{AudioFile, TaggedFileExt};
+    use lofty::picture::{MimeType, Picture, PictureType};
+    use lofty::prelude::Accessor;
+    use lofty::tag::Tag;
+    let Ok(mut tagged) = lofty::read_from_path(path) else { return };
+    if tagged.primary_tag().is_none() {
+        let kind = tagged.primary_tag_type();
+        tagged.insert_tag(Tag::new(kind));
+    }
+    let Some(tag) = tagged.primary_tag_mut() else { return };
+    tag.set_title(item.title.clone());
+    if !item.artist.trim().is_empty() {
+        tag.set_artist(item.artist.clone());
+    }
+    if let Some(bytes) = item.artwork.as_deref().and_then(cover_bytes) {
+        let mime = if bytes.starts_with(&[0x89, b'P', b'N', b'G']) { MimeType::Png } else { MimeType::Jpeg };
+        tag.push_picture(Picture::new_unchecked(PictureType::CoverFront, Some(mime), None, bytes));
+    }
+    let _ = tagged.save_to_path(path, WriteOptions::default());
+}
+
+/// the cover's bytes (at most a few MB), or nothing when the picture cannot be fetched
+fn cover_bytes(address: &str) -> Option<Vec<u8>> {
+    let url = url::Url::parse(address).ok()?;
+    let res = get(&url, crate::proxy::is_open_host).ok()?.send().ok()?;
+    let res = ok_reply(res).ok()?;
+    let mut bytes = Vec::new();
+    res.take(5 * 1024 * 1024).read_to_end(&mut bytes).ok()?;
+    (bytes.len() > 100).then_some(bytes)
+}
+
+impl Offline {
+    /// copies kept songs into `folder` as "Artist - Title.ext" with tags; the kept originals
+    /// stay where they are
+    pub fn export(&self, items: &[ExportItem], folder: &Path) -> Result<ExportResult, String> {
+        fs::create_dir_all(folder).map_err(|e| format!("не удалось открыть папку: {e}"))?;
+        let mut result = ExportResult { folder: folder.to_string_lossy().into_owned(), ..Default::default() };
+        for item in items {
+            let Some(from) = self.path_of(&item.id) else {
+                result.missing += 1;
+                continue;
+            };
+            let ext = from.extension().and_then(|e| e.to_str()).unwrap_or("mp3").to_string();
+            let to = free_path(folder, &export_name(&item.artist, &item.title), &ext);
+            if fs::copy(&from, &to).is_err() {
+                result.missing += 1;
+                continue;
+            }
+            tag_copy(&to, item);
+            result.copied += 1;
+        }
+        Ok(result)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -400,6 +498,16 @@ mod tests {
         let offline = Offline::new(&temp("hosts"));
         let err = offline.fetch("sc:5", &Source::File { url: "https://example.com/a".into() }, crate::proxy::is_open_host, &|_, _| {}).unwrap_err();
         assert!(err.contains("не разрешён"));
+    }
+
+    #[test]
+    fn export_names_are_safe_and_unique() {
+        assert_eq!(export_name("AC/DC", "Who: Made?"), "AC_DC - Who_ Made_");
+        assert_eq!(export_name("", "Solo."), "Solo");
+        assert_eq!(export_name(" ", " "), "track");
+        let dir = temp("export_names");
+        fs::write(dir.join("a.mp3"), b"x").unwrap();
+        assert_eq!(free_path(&dir, "a", "mp3"), dir.join("a (2).mp3"));
     }
 
     #[test]

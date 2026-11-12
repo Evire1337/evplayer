@@ -4,7 +4,8 @@ import { soundCloudStreams } from "@/services/soundcloud/api";
 import { resolveYouTubeAudio, videoIdOf } from "@/services/youtube/direct";
 import { toast } from "@/ui/toasts";
 import { useKeepLists, useOffline } from "./store";
-import { isKeepable } from "./scopes";
+import { artistLine } from "@/ui/format";
+import { isKeepable, keptTracks } from "./scopes";
 
 // Keeping songs: a queue that fetches a few at a time. Each song is asked for exactly as
 // the player would ask for it to play (SoundCloud's own formats, YouTube's audio), so only
@@ -222,4 +223,19 @@ export function listenForProgress(): () => void {
       useOffline.setState((s) => ({ progress: { ...s.progress, [id]: total > 0 ? Math.min(1, done / total) : -1 } }));
     }) ?? (() => undefined)
   );
+}
+
+/**
+ * Copies the kept songs into a folder the person picks as "Artist - Title" files with tags
+ * and cover, to use in any other player or to move to a phone. Returns a line to show, or
+ * null when the folder dialog is closed.
+ */
+export async function exportKept(): Promise<string | null> {
+  const bridge = window.evplayer?.offline;
+  if (!bridge) return null;
+  const items = keptTracks().map((t) => ({ id: t.id, title: t.title, artist: artistLine(t.artists), artwork: t.artwork }));
+  if (!items.length) return "Пока нечего сохранять: скачайте песни или плейлист";
+  const result = await bridge.exportTo(items);
+  if (!result) return null;
+  return result.missing ? `Сохранено песен: ${result.copied}, не нашлось: ${result.missing}` : `Сохранено песен: ${result.copied}`;
 }

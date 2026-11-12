@@ -36,6 +36,7 @@ describe("translating a text", () => {
     expect(translate("12 МБ на диске", "en")).toBe("12 MB on the disk");
     expect(translate("· aac 160 кбит/с", "en")).toBe("· aac 160 kbps");
     expect(translate("mp3 ~128 кбит/с", "en")).toBe("mp3 ~128 kbps");
+    expect(translate("Сохранено песен: 5, не нашлось: 1", "en")).toBe("Songs saved: 5, not found: 1");
   });
 
   it("keeps a Russian text that has no translation, as it is", () => {

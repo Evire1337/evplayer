@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import type { Track } from "@/types";
 import { useLibrary } from "@/library/store";
-import { LIKES_SCOPE, isKeepable, scopeStatus, scopeTracks, tracksOf } from "./scopes";
+import { LIKES_SCOPE, isKeepable, keptTracks, scopeStatus, scopeTracks, tracksOf } from "./scopes";
 
 const track = (id: string, source: Track["source"] = "soundcloud"): Track => ({ id, source, title: id, artists: [{ id: "a", name: "A" }], durationMs: 1000 });
 
@@ -25,5 +25,12 @@ describe("offline scopes", () => {
     useLibrary.getState().addLikes([track("sc:1"), track("sc:2"), track("sc:3")]);
     expect(scopeStatus(LIKES_SCOPE, { "sc:2": true })).toEqual({ total: 3, kept: 1 });
     expect(scopeStatus("no-such-playlist", {})).toEqual({ total: 0, kept: 0 });
+  });
+
+  it("lists the kept songs the library knows by name, for copying out", () => {
+    const pl = useLibrary.getState().createPlaylist("Mix");
+    useLibrary.getState().addToPlaylist(pl.id, [track("sc:1"), track("sc:2")]);
+    useLibrary.getState().addLikes([track("sc:2"), track("sc:3")]);
+    expect(keptTracks({ "sc:2": true, "sc:3": true, "sc:99": true }).map((t) => t.id).sort()).toEqual(["sc:2", "sc:3"]);
   });
 });

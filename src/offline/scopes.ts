@@ -38,3 +38,9 @@ export function tracksOf(scopes: string[]): Track[] {
   const seen = new Set<string>();
   return scopes.flatMap(scopeTracks).filter((t) => !seen.has(t.id) && seen.add(t.id) !== undefined);
 }
+
+/** the kept songs the library knows by name (the likes and every playlist), once each */
+export function keptTracks(kept: Record<string, unknown> = useOffline.getState().entries): Track[] {
+  const scopes = [LIKES_SCOPE, ...useLibrary.getState().playlists.map((p) => p.id)];
+  return tracksOf(scopes).filter((t) => t.id in kept);
+}

@@ -113,6 +113,21 @@ export interface OfflineEntry {
   savedAt: string;
 }
 
+/** a kept song to copy out as an ordinary file named "Artist - Title" */
+export interface OfflineExportItem {
+  id: string;
+  title: string;
+  artist: string;
+  artwork?: string;
+}
+
+export interface OfflineExportResult {
+  copied: number;
+  /** songs that were not on disk any more */
+  missing: number;
+  folder: string;
+}
+
 /** where the desktop side fetches a song from: one file, or an HLS playlist laid end to end */
 export interface OfflineSource {
   kind: "file" | "hls";
@@ -176,6 +191,11 @@ export interface EvPlayerApi {
     remove: (ids: string[]) => Promise<void>;
     clear: () => Promise<void>;
     openFolder: () => void;
+    /**
+     * Asks for a folder and copies the songs there as tagged files; null when the person
+     * closes the dialog. Computers only: phones answer with an error.
+     */
+    exportTo: (items: OfflineExportItem[]) => Promise<OfflineExportResult | null>;
     onProgress: (cb: (progress: OfflineProgress) => void) => Off;
     /** where a kept song is played from */
     mediaUrl: (id: string) => string | null;

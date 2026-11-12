@@ -8,6 +8,11 @@ export const MORE: Record<string, string> = {
   // files
   "MP3, FLAC, M4A/AAC, OGG/Opus, WAV. Файлы остаются на месте — EvPlayer только читает их.": "MP3, FLAC, M4A/AAC, OGG/Opus, WAV. The files stay where they are — EvPlayer only reads them.",
   "Пока пусто": "Nothing yet",
+  // offline: copy out to a folder
+  "Сохранить в папку": "Save to a folder",
+  "Копии как обычные файлы «Исполнитель - Название» с тегами и обложкой: для другого плеера или телефона. Скачанное остаётся как было": "Copies as ordinary \"Artist - Title\" files with tags and cover, for another player or a phone. What is downloaded stays as it was",
+  "Выбрать папку…": "Choose folder…",
+  "Пока нечего сохранять: скачайте песни или плейлист": "Nothing to save yet: download songs or a playlist first",
   // about
   "Версия": "Version",
   "· открытый проект, лицензия MIT": "· an open project, MIT licence",

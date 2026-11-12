@@ -252,6 +252,23 @@ fn offline_clear(state: tauri::State<'_, AppState>) {
     state.offline.clear();
 }
 
+/// copies kept songs into a folder the person picks, as ordinary tagged files (desktop only:
+/// phones have no folder picker here); None when the dialog is closed without a folder
+#[tauri::command]
+async fn offline_export(app: AppHandle, items: Vec<offline::ExportItem>) -> Result<Option<offline::ExportResult>, String> {
+    #[cfg(desktop)]
+    {
+        let offline = app.state::<AppState>().offline.clone();
+        let Some(folder) = app.dialog().file().blocking_pick_folder().and_then(|p| p.into_path().ok()) else { return Ok(None) };
+        tauri::async_runtime::spawn_blocking(move || offline.export(&items, &folder).map(Some)).await.map_err(|e| e.to_string())?
+    }
+    #[cfg(mobile)]
+    {
+        let _ = (app, items);
+        Err("Сохранение в папку пока есть только на компьютере".into())
+    }
+}
+
 #[tauri::command]
 fn offline_open_folder(app: AppHandle, state: tauri::State<'_, AppState>) {
     let _ = app.opener().open_path(state.offline.folder().to_string_lossy(), None::<&str>);
@@ -673,6 +690,7 @@ pub fn run() {
             offline_remove,
             offline_clear,
             offline_open_folder,
+            offline_export,
             local_pick,
             local_add_paths,
             local_remove,

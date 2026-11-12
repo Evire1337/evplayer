@@ -27,7 +27,7 @@ import { Card, Row, SwitchRow, TabHeader } from "./settings/parts";
 import Dialog from "@/ui/components/Dialog";
 import { askPhoneToKeepRunning, onPhoneVisible, phoneKeepsRunning } from "@/platform/androidMedia";
 import { offlineSupported, keptBytes, useKeepLists, useOffline } from "@/offline/store";
-import { cancelKeeping, forgetTracks } from "@/offline/keep";
+import { cancelKeeping, exportKept, forgetTracks } from "@/offline/keep";
 import { openDownloadDialog } from "@/offline/dialog";
 import { scopeTitle } from "@/offline/scopes";
 
@@ -50,6 +50,11 @@ function OfflineCard() {
       <Row title="Папка со скачанным" hint="Файлы лежат там под служебными именами">
         <button type="button" className="btn ghost" onClick={() => window.evplayer?.offline.openFolder()}>Открыть</button>
       </Row>
+      {count > 0 && !isPhone && (
+        <Row title="Сохранить в папку" hint="Копии как обычные файлы «Исполнитель - Название» с тегами и обложкой: для другого плеера или телефона. Скачанное остаётся как было">
+          <button type="button" className="btn ghost" onClick={() => void exportKept().then((line) => line && toast(line)).catch((e) => toast(String(e), "error"))}>Выбрать папку…</button>
+        </Row>
+      )}
       {count > 0 && (
         <Row title="Удалить всё скачанное" hint="Песни останутся в плейлистах и будут играть из интернета">
           <button
