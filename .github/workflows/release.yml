@@ -228,7 +228,6 @@ jobs:
       - name: Add it to the release
         shell: bash
         run: |
-          git config --global --add safe.directory "$GITHUB_WORKSPACE"
           gh release upload "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" PKGBUILD evplayer-bin-*.pkg.tar.zst --clobber
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
