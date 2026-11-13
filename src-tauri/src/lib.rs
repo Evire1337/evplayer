@@ -140,6 +140,12 @@ pub fn browser_args(app: &AppHandle) -> String {
     // with the mini player up, that is one process fewer (~100 MB); a soft limit, the engine may
     // still start another when it must
     args.push_str(" --renderer-process-limit=1");
+    // The media flyout of Windows 11 (volume, media keys) names the program that owns the
+    // playing session, and that is the browser engine's process, not ours: without its own id
+    // it is shown as "Unknown app". The engine takes the id from here (see identity.rs for
+    // the name and picture registered under it).
+    #[cfg(windows)]
+    args.push_str(&format!(" --app-user-model-id={}", identity::APP_ID));
     if no_cache_flag(app).exists() {
         args.push_str(" --disk-cache-size=1");
     }
