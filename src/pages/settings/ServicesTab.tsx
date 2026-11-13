@@ -18,6 +18,7 @@ import { formatAddedAt } from "@/ui/dates";
 import { IconFolder, IconHeart, IconLink, IconListPlus, IconPlug, IconRefresh, IconUser } from "@/ui/components/Icons";
 import { Card, Pill, SwitchRow, TabHeader } from "./parts";
 import RegionGuardCard from "./RegionGuardCard";
+import ProxyCard from "./ProxyCard";
 
 function ServiceBadge({ name, color }: { name: string; color: string }) {
   return (
@@ -226,6 +227,7 @@ function SoundCloudCard() {
 
       <SoundCloudSync />
       <RegionGuardCard />
+      <ProxyCard />
 
       <button type="button" className="svc-more" onClick={() => setAdvanced((v) => !v)}>{advanced ? "Скрыть дополнительно" : "Дополнительно"}</button>
       {advanced && (

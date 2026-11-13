@@ -13,6 +13,7 @@ mod migrate;
 mod offline;
 mod proxy;
 mod services;
+mod userproxy;
 // desktop: tray, mini player window, installer updates; phones get stand-ins
 #[cfg(desktop)]
 mod overlay;
@@ -146,6 +147,9 @@ pub fn browser_args(app: &AppHandle) -> String {
     // the name and picture registered under it).
     #[cfg(windows)]
     args.push_str(&format!(" --app-user-model-id={}", identity::APP_ID));
+    if let Some(arg) = userproxy::browser_arg() {
+        args.push_str(&arg);
+    }
     if no_cache_flag(app).exists() {
         args.push_str(" --disk-cache-size=1");
     }
@@ -207,6 +211,18 @@ fn open_data_folder(app: AppHandle, state: tauri::State<'_, AppState>) {
 /// the browser storage, which the system writes to disk with a delay: a program that is
 /// closed, updated or killed right after a change can lose the change. The file is written
 /// at once and is what the page falls back to when the storage turns out older.
+/// the proxy address saved for the next start ("" when none)
+#[tauri::command]
+fn proxy_get(state: tauri::State<'_, AppState>) -> String {
+    userproxy::saved(&state.data_dir)
+}
+
+/// saves a proxy address ("" removes it); it is used from the next start
+#[tauri::command]
+fn proxy_set(state: tauri::State<'_, AppState>, address: String) -> Result<(), String> {
+    userproxy::save(&state.data_dir, &address)
+}
+
 #[tauri::command]
 fn library_copy_save(state: tauri::State<'_, AppState>, data: String) -> Result<(), String> {
     let path = state.data_dir.join("library-copy.json");
@@ -705,6 +721,8 @@ pub fn run() {
             set_no_cache,
             open_data_folder,
             library_copy_save,
+            proxy_get,
+            proxy_set,
             library_copy_load,
             show_window,
             open_url,
@@ -752,6 +770,8 @@ pub fn run() {
         .setup(|app| {
             let handle = app.handle().clone();
             let dir = data_dir(&handle);
+            // the user's own proxy, before the first connection is made
+            userproxy::load(&dir);
             // Windows names the playing app by this id (the media flyout said "Unknown app")
             identity::register(&dir);
             let library = Library::new(dir.clone());

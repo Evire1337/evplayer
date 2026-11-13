@@ -93,7 +93,7 @@ fn serve_file(req: Request, path: &Path) {
 pub(crate) fn blocking_client() -> &'static reqwest::blocking::Client {
     static CLIENT: std::sync::OnceLock<reqwest::blocking::Client> = std::sync::OnceLock::new();
     CLIENT.get_or_init(|| {
-        reqwest::blocking::Client::builder()
+        crate::userproxy::apply_blocking(reqwest::blocking::Client::builder())
             .connect_timeout(Duration::from_secs(15))
             .timeout(None)
             .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36")

@@ -153,6 +153,8 @@ export interface EvPlayerApi {
   setNoCache: (on: boolean) => Promise<void>;
   openDataFolder: () => Promise<void>;
   /** a file copy of likes and playlists, in case the browser storage loses the last changes */
+  /** the user's own HTTP proxy for every connection; the saved address is used from the next start */
+  proxy: { get: () => Promise<string>; set: (address: string) => Promise<void> };
   libraryCopy: { save: (json: string) => Promise<void>; load: () => Promise<string | null> };
   onPlayerCommand: (cb: (action: string, value?: number) => void) => Off;
   showWindow: () => void;

@@ -37,6 +37,7 @@ export function createTauriApi(): EvPlayerApi {
     clearCache: () => invoke("clear_cache"),
     setNoCache: (on) => invoke("set_no_cache", { on }),
     openDataFolder: () => invoke("open_data_folder"),
+    proxy: { get: () => invoke("proxy_get"), set: (address) => invoke("proxy_set", { address }) },
     libraryCopy: { save: (json) => invoke("library_copy_save", { data: json }), load: () => invoke("library_copy_load") },
     onPlayerCommand: (cb) => {
       const offDesktop = on<{ action: string; value?: number | null }>("player:command", (p) => cb(p.action, p.value ?? undefined));

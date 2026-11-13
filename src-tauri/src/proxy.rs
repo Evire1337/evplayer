@@ -55,7 +55,7 @@ pub fn is_open_host(url: &url::Url) -> bool {
 pub fn client() -> &'static reqwest::Client {
     static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
     CLIENT.get_or_init(|| {
-        reqwest::Client::builder()
+        crate::userproxy::apply(reqwest::Client::builder())
             .cookie_store(true)
             .connect_timeout(Duration::from_secs(15))
             .timeout(Duration::from_secs(60))
