@@ -179,8 +179,10 @@ class PlayerEngine {
 
     usePlayer.subscribe((s, prev) => {
       if (s.volume !== prev.volume || s.muted !== prev.muted) {
+        this.graph.setMaster(s.muted ? 0 : s.volume);
         for (const deck of this.decks) {
-          deck.audio.volume = s.volume;
+          // through the graph the knob is the graph's own (audio/graph.ts)
+          deck.audio.volume = this.graph.active ? 1 : s.volume;
           deck.audio.muted = s.muted;
         }
       }
@@ -190,6 +192,7 @@ class PlayerEngine {
     this.setupMediaSession();
 
     this.graph = createAudioGraph(this.decks.map((d) => d.audio));
+    this.graph.setMaster(state.muted ? 0 : state.volume);
     useEffects.subscribe((fx) => this.applyEffects(fx));
     // something that needs the sound graph was switched on while music plays: wire it in now
     const wireIfNeeded = () => {

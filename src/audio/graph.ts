@@ -41,6 +41,9 @@ class AudioGraph {
   private pending: EffectSettings = { pitchSemitones: 0, reverb: false, reverbAmount: 0.5 };
   private gains = new Map<HTMLAudioElement, GainNode>();
   private pendingGain = new Map<HTMLAudioElement, number>();
+  /** the volume knob, last in the chain: some systems (WebKitGTK on Linux) ignore the element's own volume once its sound goes through the graph, so 0 still played */
+  private master: GainNode | null = null;
+  private pendingMaster = 1;
 
   constructor(private readonly decks: HTMLAudioElement[]) {}
 
@@ -80,9 +83,14 @@ class AudioGraph {
       mix.connect(post);
       post.connect(dry).connect(eq.input);
       highpass.connect(convolver).connect(wet).connect(eq.input);
-      eq.output.connect(ctx.destination);
+      const master = ctx.createGain();
+      master.gain.value = this.pendingMaster;
+      eq.output.connect(master).connect(ctx.destination);
+      // from now on the knob is the graph's: the elements play at full level into it
+      for (const audio of this.decks) audio.volume = 1;
 
       this.ctx = ctx;
+      this.master = master;
       this.mix = mix;
       this.post = post;
       this.reverbIn = highpass;
@@ -177,6 +185,14 @@ class AudioGraph {
   /** can decks be faded against each other right now */
   get canFade(): boolean {
     return this.ctx !== null && this.ctx.state === "running";
+  }
+
+  /** the volume (0 to 1; 0 when muted) */
+  setMaster(value: number): void {
+    this.pendingMaster = value;
+    if (!this.master || !this.ctx) return;
+    this.master.gain.cancelScheduledValues(0);
+    this.master.gain.setValueAtTime(value, this.ctx.currentTime);
   }
 
   /** a deck's level, now */
