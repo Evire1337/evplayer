@@ -4,7 +4,7 @@ import type { Track } from "@/types";
 
 const API = "https://lrclib.net/api";
 
-interface Record {
+export interface Record {
   trackName?: string;
   artistName?: string;
   duration?: number;
@@ -33,6 +33,25 @@ export function readings(track: Pick<Track, "title" | "artists">): Array<{ title
   return out;
 }
 
+/**
+ * How far (seconds) a record's length may be from the song's for its line times to be trusted.
+ * The lines are timed for one exact version: a version a few seconds longer or shorter (an
+ * extended mix, a sped-up edit, a radio cut) has the text running ahead or behind the singer,
+ * and the error grows toward the end. Past this the words are shown without times instead.
+ */
+export const SYNC_MAX_DIFF_S = 3;
+/** the plain words are the same for versions this close in length */
+const TEXT_MAX_DIFF_S = 20;
+
+const lengthDiffS = (record: Record, durationMs: number): number | null => (durationMs && record.duration ? Math.abs(durationMs / 1000 - record.duration) : null);
+
+/** whether the record's times can be followed for a song of this length (unknown length: yes) */
+export function syncedFits(record: Record, durationMs: number): boolean {
+  if (!record.syncedLyrics) return false;
+  const diff = lengthDiffS(record, durationMs);
+  return diff === null || diff <= SYNC_MAX_DIFF_S;
+}
+
 function score(record: Record, title: string, durationMs: number): number {
   if (record.instrumental || !(record.syncedLyrics || record.plainLyrics)) return -1;
   const want = normalizeTitle(title);
@@ -40,15 +59,41 @@ function score(record: Record, title: string, durationMs: number): number {
   if (!want || !got) return -1;
   let s = want === got ? 60 : want.includes(got) || got.includes(want) ? 35 : -100;
   if (s < 0) return -1;
-  if (durationMs && record.duration) {
-    const diff = Math.abs(durationMs / 1000 - record.duration);
-    if (diff > 20) return -1;
+  const diff = lengthDiffS(record, durationMs);
+  if (diff !== null) {
+    if (diff > TEXT_MAX_DIFF_S) return -1;
     // the closest length wins: synced lines are timed for that exact version of the song,
     // and a version a second longer is usually a second off all the way through
     s += Math.max(0, 30 - diff * 6);
   }
-  if (record.syncedLyrics) s += 10;
+  if (syncedFits(record, durationMs)) s += 10;
   return s;
+}
+
+/** the record that suits the song best, and whether its times can be followed */
+export function pickRecord(candidates: Record[], track: Pick<Track, "title" | "artists" | "durationMs">): { record: Record; synced: boolean } | null {
+  let best: Record | null = null;
+  let bestScore = 0;
+  for (const r of readings(track)) {
+    for (const c of candidates) {
+      const s = score(c, r.title, track.durationMs);
+      if (s > bestScore) {
+        bestScore = s;
+        best = c;
+      }
+    }
+  }
+  return best ? { record: best, synced: syncedFits(best, track.durationMs) } : null;
+}
+
+/** the words of a timed text, without the times */
+function stripTimes(text: string): string {
+  return text
+    .replace(/\[\d{1,3}:\d{1,2}(?:[.:]\d{1,3})?\]/g, "")
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .join("\n");
 }
 
 export interface FoundLyrics {
@@ -71,20 +116,11 @@ export async function findLyrics(track: Pick<Track, "title" | "artists" | "durat
     const res = await fetch(`${API}/search?${new URLSearchParams({ q: `${r.artist} ${normalizeTitle(r.title)}` })}`, { signal }).catch(() => null);
     if (res?.ok) candidates.push(...((await res.json()) as Record[]));
   }
-  let best: { record: Record; title: string } | null = null;
-  let bestScore = 0;
-  for (const r of readings(track)) {
-    for (const c of candidates) {
-      const s = score(c, r.title, track.durationMs);
-      if (s > bestScore) {
-        bestScore = s;
-        best = { record: c, title: r.title };
-      }
-    }
-  }
-  if (!best) return null;
-  const synced = best.record.syncedLyrics?.trim();
-  return synced
-    ? { synced: true, text: synced, source: "LRCLIB" }
-    : { synced: false, text: best.record.plainLyrics?.trim() ?? "", source: "LRCLIB" };
+  const pick = pickRecord(candidates, track);
+  if (!pick) return null;
+  const { record, synced } = pick;
+  // a version of another length: its words are right, its times are not
+  if (synced && record.syncedLyrics?.trim()) return { synced: true, text: record.syncedLyrics.trim(), source: "LRCLIB" };
+  const words = record.plainLyrics?.trim() || stripTimes(record.syncedLyrics ?? "");
+  return words ? { synced: false, text: words, source: "LRCLIB" } : null;
 }
