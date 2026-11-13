@@ -18,6 +18,8 @@ export interface Track {
   permalink?: string;
   /** the service gives out only a short preview of it (SoundCloud Go+): it plays from elsewhere */
   preview?: boolean;
+  /** YouTube Music marks it "explicit": the uncensored version (a clean one has no mark) */
+  explicit?: boolean;
 }
 
 export interface ArtistSummary {

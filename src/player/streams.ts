@@ -34,12 +34,39 @@ async function youTubeMatch(track: Track, signal?: AbortSignal): Promise<Track |
       // YouTube Music songs are a catalogue: a SoundCloud uploader's name need not be the artist's
       .filter((t) => isSameRecording(track, t, { anyArtist: true }))
       // the artist's own release first, then the closest copy
-      .sort((a, b) => Number(isOriginal(track, b)) - Number(isOriginal(track, a)) || matchScore(track, b) - matchScore(track, a));
+      // (of the censored and the uncensored one of the same song, the uncensored)
+      .sort((a, b) => Number(isOriginal(track, b)) - Number(isOriginal(track, a)) || Number(b.explicit ?? false) - Number(a.explicit ?? false) || matchScore(track, b) - matchScore(track, a));
     found = ranked[0] ?? null;
     if (found) break;
   }
   youTubeMatches.set(track.id, found);
   return found;
+}
+
+const twins = new Map<string, Track | null>();
+/** how long the look for an uncensored twin may delay the start of a song */
+const TWIN_WAIT_MS = 2500;
+
+/**
+ * The uncensored version of a YouTube Music song that is not marked as one (None when it is
+ * marked, or there is none). Songs saved by older versions carry no mark, and YouTube Music
+ * often lists the censored version first: this finds the same recording with the "E" mark.
+ */
+async function uncensoredTwin(track: Track, signal?: AbortSignal): Promise<Track | null> {
+  if (track.explicit || track.source !== "youtube") return null;
+  if (twins.has(track.id)) return twins.get(track.id) ?? null;
+  let finished = false;
+  const search = (async () => {
+    const found = (await searchYouTubeMusic(searchQueryFor(track), signal))
+      .filter((t) => t.explicit && t.id !== track.id && isSameRecording(track, t) && Math.abs(t.durationMs - track.durationMs) <= 4000)
+      .sort((a, b) => matchScore(track, b) - matchScore(track, a));
+    finished = true;
+    return found[0] ?? null;
+  })().catch(() => null);
+  const twin = await Promise.race([search, new Promise<null>((r) => setTimeout(() => r(null), TWIN_WAIT_MS))]);
+  // an answer that came is remembered (also "none"); one that did not is asked again next time
+  if (finished && !signal?.aborted) twins.set(track.id, twin);
+  return twin;
 }
 
 /** uploads of the same song on SoundCloud, most alike first */
@@ -114,7 +141,9 @@ export async function* streamCandidates(track: Track, signal?: AbortSignal): Asy
       return;
     }
     case "youtube": {
-      const videoId = videoIdOf(track.id);
+      // a song saved before the marks existed may be the censored version: play its uncensored twin
+      const twin = await uncensoredTwin(track, signal);
+      const videoId = videoIdOf(twin?.id ?? track.id);
       if (videoId) {
         try {
           const direct = await resolveYouTubeAudio(videoId, signal);

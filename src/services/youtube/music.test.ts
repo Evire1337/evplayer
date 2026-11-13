@@ -57,3 +57,23 @@ describe("youtube radio", () => {
     expect(list[1].artists[0].name).toBe("Snoh Aalegra");
   });
 });
+
+import { explicitFirst, isExplicit } from "./music";
+import type { Track } from "@/types";
+
+describe("uncensored versions", () => {
+  const song = (id: string, title: string, explicit?: boolean): Track => ({ id, source: "youtube", title, artists: [{ id: "a", name: "Kendrick Lamar" }], durationMs: 1000, ...(explicit ? { explicit } : {}) });
+
+  it("reads the explicit mark", () => {
+    expect(isExplicit({ badges: [{ musicInlineBadgeRenderer: { icon: { iconType: "MUSIC_EXPLICIT_BADGE" } } }] })).toBe(true);
+    expect(isExplicit({ badges: [{ musicInlineBadgeRenderer: { icon: { iconType: "OTHER" } } }] })).toBe(false);
+    expect(isExplicit({})).toBe(false);
+  });
+
+  it("puts the uncensored version before its censored twin and leaves the rest", () => {
+    const list = [song("yt:clean00000", "Money Trees"), song("yt:other00000", "Alright", true), song("yt:expl000000", "Money Trees", true)];
+    expect(explicitFirst(list).map((t) => t.id)).toEqual(["yt:expl000000", "yt:clean00000", "yt:other00000"]);
+    // no twin: the order stays
+    expect(explicitFirst([song("yt:a0000000000", "X"), song("yt:b0000000000", "Y", true)]).map((t) => t.id)).toEqual(["yt:a0000000000", "yt:b0000000000"]);
+  });
+});

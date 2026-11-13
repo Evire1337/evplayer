@@ -1,5 +1,6 @@
 import { currentLang } from "@/i18n/lang";
 import type { CollectionSummary, Track } from "@/types";
+import { simplify } from "@/player/match";
 
 // Search on YouTube Music: the same public search the music.youtube.com page uses.
 // Results become ordinary tracks with ids "yt:VIDEO_ID".
@@ -92,7 +93,31 @@ export function parseListItem(item: Json): Track | null {
     artwork: bestThumb(item),
     plays,
     permalink: `https://music.youtube.com/watch?v=${videoId}`,
+    ...(isExplicit(item) ? { explicit: true } : {}),
   };
+}
+
+/** the "E" mark YouTube Music puts on the uncensored version of a song */
+export function isExplicit(item: Json): boolean {
+  const badges = Array.isArray(item.badges) ? (item.badges as Json[]) : [];
+  return badges.some((b) => ((b.musicInlineBadgeRenderer as Json | undefined)?.icon as Json | undefined)?.iconType === "MUSIC_EXPLICIT_BADGE");
+}
+
+const twinKey = (t: Track): string => `${simplify(t.title)}|${simplify(t.artists[0]?.name ?? "")}`;
+
+/**
+ * YouTube Music lists a song's censored and uncensored versions as two entries. The censored
+ * one (words bleeped out) is no use to anyone who wants the song, so where both are in the
+ * list the uncensored one goes first. The rest keeps its order.
+ */
+export function explicitFirst(tracks: Track[]): Track[] {
+  const out: Track[] = [];
+  for (const t of tracks) {
+    const at = t.explicit ? out.findIndex((o) => !o.explicit && twinKey(o) === twinKey(t)) : -1;
+    if (at >= 0) out.splice(at, 0, t);
+    else out.push(t);
+  }
+  return out;
 }
 
 export function parseSearch(response: unknown): Track[] {
@@ -121,8 +146,8 @@ async function call(path: string, body: Json, signal?: AbortSignal): Promise<unk
 
 export async function searchYouTubeMusic(query: string, signal?: AbortSignal): Promise<Track[]> {
   const songs = parseSearch(await call("search", { query, params: SONGS }, signal));
-  if (songs.length) return songs;
-  return parseSearch(await call("search", { query, params: VIDEOS }, signal));
+  if (songs.length) return explicitFirst(songs);
+  return explicitFirst(parseSearch(await call("search", { query, params: VIDEOS }, signal)));
 }
 
 const ALBUMS = "EgWKAQIYAWoKEAkQAxAEEAkQBQ%3D%3D";
