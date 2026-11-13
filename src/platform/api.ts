@@ -152,6 +152,8 @@ export interface EvPlayerApi {
   /** keep no cache on disk (takes full effect after a restart) */
   setNoCache: (on: boolean) => Promise<void>;
   openDataFolder: () => Promise<void>;
+  /** a file copy of likes and playlists, in case the browser storage loses the last changes */
+  libraryCopy: { save: (json: string) => Promise<void>; load: () => Promise<string | null> };
   onPlayerCommand: (cb: (action: string, value?: number) => void) => Off;
   showWindow: () => void;
   onWindowVisible: (cb: (visible: boolean) => void) => Off;

@@ -26,6 +26,8 @@ void import("./app/migrate")
         if (isPhone) useSettings.getState().set({ noCache: true, noServiceCache: true, noLoudnessMemory: true });
         // English: the texts of the page are swapped for the dictionary's (src/i18n)
         startTranslator();
+        // likes and playlists: the file copy wins when the storage lost the last changes
+        void import("./library/copy").then((c) => c.restoreLibraryCopy().then(c.startLibraryCopy));
         session.restoreSession();
         bridge.startBridge();
         shortcuts.startShortcuts();

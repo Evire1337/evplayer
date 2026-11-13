@@ -197,6 +197,23 @@ fn open_data_folder(app: AppHandle, state: tauri::State<'_, AppState>) {
     let _ = app.opener().open_path(state.data_dir.to_string_lossy(), None::<&str>);
 }
 
+/// A second copy of likes and playlists next to the program's data. The page keeps them in
+/// the browser storage, which the system writes to disk with a delay: a program that is
+/// closed, updated or killed right after a change can lose the change. The file is written
+/// at once and is what the page falls back to when the storage turns out older.
+#[tauri::command]
+fn library_copy_save(state: tauri::State<'_, AppState>, data: String) -> Result<(), String> {
+    let path = state.data_dir.join("library-copy.json");
+    let tmp = state.data_dir.join("library-copy.json.tmp");
+    std::fs::write(&tmp, data).map_err(|e| e.to_string())?;
+    std::fs::rename(&tmp, &path).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn library_copy_load(state: tauri::State<'_, AppState>) -> Option<String> {
+    std::fs::read_to_string(state.data_dir.join("library-copy.json")).ok()
+}
+
 /// a web page in the system browser (the phone downloads a new APK this way)
 #[tauri::command]
 fn open_url(app: AppHandle, url: String) -> Result<(), String> {
@@ -681,6 +698,8 @@ pub fn run() {
             clear_cache,
             set_no_cache,
             open_data_folder,
+            library_copy_save,
+            library_copy_load,
             show_window,
             open_url,
             local_list,

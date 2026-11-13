@@ -33,6 +33,8 @@ export interface Playlist {
 interface LibraryState {
   likes: LikedTrack[];
   playlists: Playlist[];
+  /** when likes or playlists last changed (ms): tells the saved copy from the stale one */
+  savedAt?: number;
   toggleLike: (track: Track) => void;
   /** like many at once (an import); returns how many were new */
   addLikes: (tracks: Track[]) => number;
