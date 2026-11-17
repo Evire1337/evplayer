@@ -185,8 +185,11 @@ class PlayerEngine {
   engageStems(key: string): boolean {
     this.followers ??= new StemFollowers(this.graph);
     const s = useSettings.getState();
-    const ok = this.followers.engage(this.cur.audio, key, stemGains(s.stemFaders, s.stemMuted, s.stemSolo));
-    useStems.setState({ engaged: ok ? key : null });
+    const ok = this.followers.engage(this.cur.audio, key, stemGains(s.stemFaders, s.stemMuted, s.stemSolo), () => {
+      // the tracks did not start: the deck is heard, and this song is left as it is
+      useStems.setState((st) => ({ engaged: null, broken: { ...st.broken, [key]: true } }));
+    });
+    useStems.setState((st) => ({ engaged: ok ? key : null, broken: ok ? st.broken : { ...st.broken, [key]: true } }));
     return ok;
   }
 

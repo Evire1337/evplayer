@@ -23,6 +23,8 @@ let offPlayer: (() => void) | null = null;
 let offStems: (() => void) | null = null;
 let offSettings: (() => void) | null = null;
 const queue: Track[] = [];
+/** the song being split now */
+let runningId: string | null = null;
 
 const api = () => window.evplayer?.stems;
 
@@ -82,15 +84,24 @@ async function drain(): Promise<void> {
       const track = queue.shift()!;
       const key = keys.get(track.id);
       if (!key || useStems.getState().jobs[key]?.status === "ready") continue;
+      runningId = track.id;
       try {
         await work(track, key);
       } catch (error) {
         if (!controller || controller.signal.aborted) break;
-        setJob(key, { status: "error", error: error instanceof Error ? error.message : String(error) });
+        const message = error instanceof Error ? error.message : String(error);
+        if (/отменено/.test(message)) {
+          // skipped past: not a failure, and it can be asked for again
+          keys.delete(track.id);
+          useStems.setState((st) => ({ jobs: Object.fromEntries(Object.entries(st.jobs).filter(([k]) => k !== key)) }));
+        } else {
+          setJob(key, { status: "error", error: message });
+        }
       }
     }
   } finally {
     running = false;
+    runningId = null;
   }
 }
 
@@ -128,13 +139,25 @@ export function reconcile(): void {
     if (st.engaged) player.releaseStems();
     return;
   }
-  for (const t of wanted()) {
+  const coming = wanted();
+  // songs that are no longer current or next (skipped past) are let go, and the one playing goes first
+  const ids = new Set(coming.map((t) => t.id));
+  for (let i = queue.length - 1; i >= 0; i--) {
+    if (ids.has(queue[i].id)) continue;
+    const key = keys.get(queue[i].id);
+    queue.splice(i, 1);
+    if (key) useStems.setState((s) => ({ jobs: Object.fromEntries(Object.entries(s.jobs).filter(([k]) => k !== key)) }));
+  }
+  if (runningId && !ids.has(runningId)) void api()?.cancel();
+  const now = coming[0]?.id;
+  queue.sort((a, b) => Number(b.id === now) - Number(a.id === now));
+  for (const t of coming) {
     if (!keys.has(t.id)) enqueue(t);
   }
   const cur = currentTrack();
   const status = usePlayer.getState().status;
   const key = cur ? keys.get(cur.id) : undefined;
-  const ready = key ? st.jobs[key]?.status === "ready" : false;
+  const ready = key ? st.jobs[key]?.status === "ready" && !st.broken[key] : false;
   if (key && ready && (status === "playing" || status === "paused") && st.engaged !== key) player.engageStems(key);
   else if (st.engaged && st.engaged !== key) player.releaseStems();
 }
@@ -208,7 +231,7 @@ export async function stopStems(): Promise<void> {
   offProgress = offModel = offPlayer = offStems = offSettings = null;
   keys.clear();
   player.releaseStems(true);
-  useStems.setState({ phase: "off", modelShare: 0, error: undefined, jobs: {}, engaged: null });
+  useStems.setState({ phase: "off", modelShare: 0, error: undefined, jobs: {}, engaged: null, broken: {} });
   const stems = api();
   if (stems) {
     await stems.cancel().catch(() => undefined);
@@ -218,9 +241,14 @@ export async function stopStems(): Promise<void> {
 }
 
 export async function clearStemsCache(): Promise<void> {
+  // the tracks that play are let go first: their files are about to be deleted
+  player.releaseStems();
+  useStems.setState((s) => ({ jobs: Object.fromEntries(Object.entries(s.jobs).filter(([, j]) => j.status !== "ready")), broken: {} }));
   await api()?.clearCache();
-  useStems.setState((s) => ({ jobs: Object.fromEntries(Object.entries(s.jobs).filter(([, j]) => j.status !== "ready")) }));
   await refreshCache();
+  // what is playing is split again
+  keys.clear();
+  reconcile();
 }
 
 export { applyGains };

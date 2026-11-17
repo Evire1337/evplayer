@@ -993,3 +993,4 @@ html.saver .now-art::before, html.saver .now-art::after { display: none !importa
   .studio-lane-label { border-right: 0; padding-bottom: 4px; }
   .studio-lane-wave { min-height: 70px; }
 }
+.studio-eyebrow { margin-right: 2px; }

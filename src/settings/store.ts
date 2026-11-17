@@ -1,5 +1,6 @@
 import type { MixKey } from "@/audio/soundMixer";
 import type { Part, StemFaders } from "@/stems/model";
+import type { CustomStemPreset } from "@/stems/presets";
 import type { Language } from "@/i18n/lang";
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
@@ -84,6 +85,8 @@ export interface SettingsState {
   stemFaders: StemFaders;
   stemMuted: Part[];
   stemSolo: Part | null;
+  /** the user's own quick settings of "Дорожки" */
+  stemPresets: CustomStemPreset[];
   /** double click on a track plays it, single click only selects */
   doubleClickToPlay: boolean;
   // appearance
@@ -185,6 +188,7 @@ const DEFAULTS = {
   stemFaders: { vocals: 1, drums: 1, bass: 1, other: 1 } as StemFaders,
   stemMuted: [] as Part[],
   stemSolo: null as Part | null,
+  stemPresets: [] as CustomStemPreset[],
   doubleClickToPlay: false,
   animatedBackdrop: true,
   coverGlow: true,

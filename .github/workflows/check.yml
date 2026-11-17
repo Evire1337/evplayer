@@ -5,12 +5,13 @@ name: Check
 on:
   workflow_dispatch:
     inputs:
-      android:
-        description: "Build the phone version too (yes / no)"
-        default: "yes"
+      platforms:
+        description: "What to build: all, or windows (only the Windows installer)"
+        default: "all"
 
 jobs:
   web:
+    if: ${{ inputs.platforms == 'all' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -27,6 +28,7 @@ jobs:
       - run: pnpm run build
 
   rust:
+    if: ${{ inputs.platforms == 'all' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -70,6 +72,7 @@ jobs:
   # before a release
   # the Arch package (packaging/arch/PKGBUILD) still builds: from the latest release's .deb
   arch:
+    if: ${{ inputs.platforms == 'all' }}
     runs-on: ubuntu-latest
     container: archlinux:base-devel
     steps:
@@ -92,6 +95,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
   linux:
+    if: ${{ inputs.platforms == 'all' }}
     strategy:
       fail-fast: false
       matrix:
@@ -131,7 +135,7 @@ jobs:
 
   # the phone version still builds (unsigned debug APK; releases build the signed one)
   android:
-    if: ${{ inputs.android != 'no' }}
+    if: ${{ inputs.platforms == 'all' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

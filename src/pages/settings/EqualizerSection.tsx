@@ -65,7 +65,7 @@ function NumberField({ label, value, suffix, step, min, max, onChange }: { label
   );
 }
 
-function NameDialog({ title, initial, open, onClose, onSubmit, multiline }: { title: string; initial: string; open: boolean; onClose: () => void; onSubmit: (v: string) => string | void; multiline?: boolean }) {
+export function NameDialog({ title, initial, open, onClose, onSubmit, multiline }: { title: string; initial: string; open: boolean; onClose: () => void; onSubmit: (v: string) => string | void; multiline?: boolean }) {
   const [value, setValue] = useState(initial);
   const [error, setError] = useState("");
   return (

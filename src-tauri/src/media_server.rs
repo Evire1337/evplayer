@@ -382,8 +382,9 @@ impl MediaServer {
             bytes.iter().map(|b| format!("{b:02x}")).collect()
         };
         let prefix = format!("/{secret}/");
-        // a few workers: two decks, a cover or two, seeking — never many at once
-        for _ in 0..6 {
+        // workers: two decks, a cover or two, seeking, and the four tracks of a split song, each of
+        // which holds its connection while it plays
+        for _ in 0..16 {
             let server = server.clone();
             let library = library.clone();
             let offline = offline.clone();

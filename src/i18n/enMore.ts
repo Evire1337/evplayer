@@ -324,4 +324,5 @@ export const MORE: Record<string, string> = {
   "Лёгкий режим: песня делится не на инструменты, а по тому, где в записи стоит звук, поэтому голос с широкой реверберацией может оставить след. Включите нейросеть, и дорожки будут настоящими.": "Light mode: the song is divided not into instruments but by where each sound sits in the recording, so a voice with a wide reverb can leave a trace. Switch the neural network on and the tracks become real.",
   "Разделение на дорожки работает только в приложении для компьютера": "Splitting into tracks works only in the desktop app",
   "Разделение на дорожки есть только на компьютере": "Splitting into tracks is only on computers",
+  "Свои": "Own",
 };

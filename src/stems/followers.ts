@@ -2,8 +2,12 @@ import { PARTS, driftAction, type Part } from "./model";
 
 // The four tracks of a split song play on four elements that follow the song's own deck: the
 // deck keeps the clock (play, pause, seek, speed all happen to it, as for any song) and the
-// tracks are pulled along. While they play, the deck itself is silent, so what is heard is the
-// four tracks through the same sound chain as everything else (speed, pitch, reverb, equalizer).
+// tracks are pulled along. Once all four really play, the deck itself goes silent, so what is
+// heard is the four tracks through the same sound chain as everything else (speed, pitch,
+// reverb, equalizer). If they do not start, the deck stays heard: a song is never left silent.
+//
+// The four elements (and their places in the sound graph) are made once and used for song
+// after song; they are let go only when the switch is turned off.
 
 /** what the followers need from the sound graph (audio/graph.ts) */
 export interface FollowerHost {
@@ -19,13 +23,13 @@ export function stemUrl(key: string, part: Part): string | null {
   return base ? `${base}/stem/${key}/${part}.wav` : null;
 }
 
-/** how long the deck waits for the tracks to start before it is heard again */
-const START_WAIT_MS = 4000;
+/** how long the tracks get to start before they are given up on */
+const START_WAIT_MS = 6000;
 
 export class StemFollowers {
   private elements: HTMLAudioElement[] = [];
   private deck: HTMLAudioElement | null = null;
-  private listeners: Array<() => void> = [];
+  private cleanup: Array<() => void> = [];
   private waiting: ReturnType<typeof setTimeout> | undefined;
 
   constructor(private readonly host: FollowerHost) {}
@@ -34,48 +38,68 @@ export class StemFollowers {
     return this.deck !== null;
   }
 
-  /** the tracks of the song `key` start following `deck`; false if they cannot (no server, no graph) */
-  engage(deck: HTMLAudioElement, key: string, gains: number[]): boolean {
-    this.release();
-    const urls = PARTS.map((p) => stemUrl(key, p));
-    if (urls.some((u) => u === null)) return false;
-    const elements = urls.map((url) => {
+  /** the four elements, made once; false if the graph would not take them */
+  private ensureElements(): boolean {
+    if (this.elements.length === PARTS.length) return true;
+    const made = PARTS.map(() => {
       const el = new Audio();
       el.crossOrigin = "anonymous";
       el.preload = "auto";
-      el.src = url as string;
       return el;
     });
-    // a track the graph would not take is no use: let everything go
-    if (elements.some((el) => this.host.addFollower(el) === null)) {
-      for (const el of elements) this.drop(el);
+    if (made.some((el) => this.host.addFollower(el) === null)) {
       this.host.dropFollowers();
       return false;
     }
-    this.elements = elements;
+    this.elements = made;
+    return true;
+  }
+
+  /**
+   * The tracks of the song `key` start following `deck`. `failed` is called if they do not start
+   * (a file that is gone, a server that does not answer): the deck is heard again by then.
+   */
+  engage(deck: HTMLAudioElement, key: string, gains: number[], failed: () => void): boolean {
+    this.release();
+    const urls = PARTS.map((p) => stemUrl(key, p));
+    if (urls.some((u) => u === null) || !this.ensureElements()) return false;
+
     this.deck = deck;
     this.host.setFollowerGains(gains);
+    this.elements.forEach((el, i) => {
+      el.src = urls[i] as string;
+      el.load();
+    });
     this.copyRate();
     this.seekAll();
 
-    const on = (type: string, fn: () => void) => {
-      deck.addEventListener(type, fn);
-      this.listeners.push(() => deck.removeEventListener(type, fn));
+    const listen = (target: HTMLElement, type: string, fn: () => void, once = false) => {
+      target.addEventListener(type, fn, { once });
+      this.cleanup.push(() => target.removeEventListener(type, fn));
     };
-    on("play", () => this.playAll());
-    on("pause", () => this.pauseAll());
-    on("seeked", () => this.seekAll());
-    on("ratechange", () => this.copyRate());
-    on("timeupdate", () => this.follow());
-    on("ended", () => this.pauseAll());
+    listen(deck, "play", () => this.playAll());
+    listen(deck, "pause", () => this.pauseAll());
+    listen(deck, "seeked", () => this.seekAll());
+    listen(deck, "ratechange", () => this.copyRate());
+    listen(deck, "timeupdate", () => this.follow());
+    listen(deck, "ended", () => this.pauseAll());
 
-    // heard from the tracks once all four play; the deck stays silent from then on
-    let playing = 0;
-    const heard = () => {
-      if (++playing === elements.length) this.silenceDeck();
+    const fail = () => {
+      this.release();
+      failed();
     };
-    for (const el of elements) el.addEventListener("playing", heard, { once: true });
-    this.waiting = setTimeout(() => this.silenceDeck(), START_WAIT_MS);
+    for (const el of this.elements) listen(el, "error", fail);
+
+    // the deck goes silent once all four play; not before, and not at all if they never do
+    let playing = 0;
+    for (const el of this.elements) {
+      listen(el, "playing", () => {
+        if (++playing === this.elements.length) this.silenceDeck();
+      }, true);
+    }
+    this.waiting = setTimeout(() => {
+      if (playing < this.elements.length) fail();
+    }, START_WAIT_MS);
     if (!deck.paused) this.playAll();
     return true;
   }
@@ -84,16 +108,18 @@ export class StemFollowers {
     if (this.deck) this.host.setFollowerGains(gains);
   }
 
-  /** the tracks stop following; the deck is heard again. `drop` also lets the elements go */
+  /** the tracks stop following and are emptied; the deck is heard again. `drop` lets the elements go too */
   release(drop = false): void {
     clearTimeout(this.waiting);
-    for (const off of this.listeners) off();
-    this.listeners = [];
+    for (const off of this.cleanup) off();
+    this.cleanup = [];
     if (this.deck) this.host.setDeckMuted(this.deck, false);
     this.deck = null;
-    for (const el of this.elements) this.drop(el);
-    this.elements = [];
-    if (drop) this.host.dropFollowers();
+    for (const el of this.elements) this.empty(el);
+    if (drop) {
+      this.elements = [];
+      this.host.dropFollowers();
+    }
   }
 
   private silenceDeck(): void {
@@ -101,10 +127,13 @@ export class StemFollowers {
     if (this.deck) this.host.setDeckMuted(this.deck, true);
   }
 
-  private drop(el: HTMLAudioElement): void {
+  /** stops a track and lets its connection to the media server go */
+  private empty(el: HTMLAudioElement): void {
     el.pause();
-    el.removeAttribute("src");
-    el.load();
+    if (el.getAttribute("src")) {
+      el.removeAttribute("src");
+      el.load();
+    }
   }
 
   private playAll(): void {
@@ -147,4 +176,3 @@ export class StemFollowers {
     }
   }
 }
-

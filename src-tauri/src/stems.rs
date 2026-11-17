@@ -48,6 +48,8 @@ mod real {
     pub const PEAKS: usize = 900;
     /// a mask's tiny share so that silence does not divide by zero
     const EPS: f32 = 1e-10;
+    /// how many of the network's top bins give the share carried up to the bins it does not see
+    const TAIL_BINS: usize = 128;
 
     const MODEL_BASE: &str = "https://huggingface.co/Best-Practice/spleeter-4stems-onnx/resolve/main";
     /// the four models, with what a good copy of each looks like (sha-256)
@@ -178,7 +180,8 @@ mod real {
             }
             // a share of the processor, not all of it: the music has to go on playing
             let threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(2);
-            let threads = (threads / 2).clamp(1, 4);
+            let threads = (threads * 3 / 4).clamp(2, 8);
+            let _low = priority::lower();
             let mut sessions = Vec::with_capacity(PARTS.len());
             for part in PARTS {
                 let session = Session::builder()
@@ -229,8 +232,14 @@ mod real {
             dir_bytes(&self.cache_dir())
         }
 
+        /// removes the finished songs (what is being written right now is left alone)
         pub fn clear_cache(&self) {
-            let _ = fs::remove_dir_all(self.cache_dir());
+            let Ok(rd) = fs::read_dir(self.cache_dir()) else { return };
+            for d in rd.flatten() {
+                if d.path().is_dir() && !d.file_name().to_string_lossy().ends_with(".tmp") {
+                    let _ = fs::remove_dir_all(d.path());
+                }
+            }
         }
 
         /// the oldest songs go until the folder fits `limit` bytes (never the one just made)
@@ -276,6 +285,8 @@ mod real {
         fn separate_inner(&self, key: &str, pcm: &[u8], report: &dyn Fn(f32)) -> Result<StemsMeta, String> {
             let mut guard = self.sessions.lock().map_err(e)?;
             let sessions = guard.as_mut().ok_or("модель не загружена")?;
+            // the music keeps its share of the processor: the splitter works at a lower priority
+            let _low = priority::lower();
 
             let n = pcm.len() / 4;
             let frames = (PAD + n).div_ceil(HOP);
@@ -304,6 +315,7 @@ mod real {
             let mut frame_spec = vec![Complex32::new(0.0, 0.0); BINS];
             let mut frame_out = vec![0f32; N_FFT];
             let mut written = 0usize;
+            let mut masks = vec![vec![0f32; F]; PARTS.len()];
 
             for s in 0..splits {
                 if self.cancel.load(Ordering::SeqCst) {
@@ -349,17 +361,29 @@ mod real {
                     weight.add(at, &frame_out);
                     for c in 0..2 {
                         let base = (c * T + t) * F;
-                        let denom: Vec<f32> = (0..F).map(|f| (0..PARTS.len()).map(|p| est[p][base + f] * est[p][base + f]).sum::<f32>() + EPS).collect();
+                        // the masks of the four parts for every bin: Spleeter's ratio masks, made
+                        // sharper (squared and shared out again), so a part does not keep a trace
+                        // of another; they still add up to one, so the parts add up to the song
+                        for f in 0..F {
+                            let denom: f32 = (0..PARTS.len()).map(|p| est[p][base + f] * est[p][base + f]).sum::<f32>() + EPS;
+                            let mut sum = 0f32;
+                            for p in 0..PARTS.len() {
+                                let m = (est[p][base + f] * est[p][base + f] + EPS / PARTS.len() as f32) / denom;
+                                masks[p][f] = m * m;
+                                sum += m * m;
+                            }
+                            for p in 0..PARTS.len() {
+                                masks[p][f] /= sum;
+                            }
+                        }
                         for p in 0..PARTS.len() {
-                            let mut mean = 0f32;
                             let src = &spec[(c * T + t) * BINS..(c * T + t + 1) * BINS];
                             for f in 0..F {
-                                let m = (est[p][base + f] * est[p][base + f] + EPS / PARTS.len() as f32) / denom[f];
-                                mean += m;
-                                frame_spec[f] = src[f] * m;
+                                frame_spec[f] = src[f] * masks[p][f];
                             }
-                            // above what the network sees the average share is carried up
-                            let tail = mean / F as f32;
+                            // above what the network sees, the share of its top bins is carried up
+                            // (the hiss of a voice and the cymbals live there)
+                            let tail = masks[p][F - TAIL_BINS..].iter().sum::<f32>() / TAIL_BINS as f32;
                             for f in F..BINS {
                                 frame_spec[f] = src[f] * tail;
                             }
@@ -395,6 +419,46 @@ mod real {
     }
 
     // ---- the pieces ------------------------------------------------------------------
+
+    /// the program works at a lower priority while the splitter runs (the sound of the page is
+    /// made in other processes and keeps its priority), and gets its own back afterwards
+    mod priority {
+        #[cfg(windows)]
+        pub struct Lowered(u32);
+
+        #[cfg(windows)]
+        pub fn lower() -> Lowered {
+            use windows_sys::Win32::System::Threading::{GetCurrentProcess, GetPriorityClass, SetPriorityClass, BELOW_NORMAL_PRIORITY_CLASS};
+            // SAFETY: the pseudo-handle of this process is always valid
+            unsafe {
+                let me = GetCurrentProcess();
+                let before = GetPriorityClass(me);
+                SetPriorityClass(me, BELOW_NORMAL_PRIORITY_CLASS);
+                Lowered(before)
+            }
+        }
+
+        #[cfg(windows)]
+        impl Drop for Lowered {
+            fn drop(&mut self) {
+                use windows_sys::Win32::System::Threading::{GetCurrentProcess, SetPriorityClass};
+                if self.0 != 0 {
+                    // SAFETY: as above
+                    unsafe {
+                        SetPriorityClass(GetCurrentProcess(), self.0);
+                    }
+                }
+            }
+        }
+
+        #[cfg(not(windows))]
+        pub struct Lowered;
+
+        #[cfg(not(windows))]
+        pub fn lower() -> Lowered {
+            Lowered
+        }
+    }
 
     /// the periodic Hann window the networks were trained with
     pub fn hann() -> Vec<f32> {

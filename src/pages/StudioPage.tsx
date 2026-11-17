@@ -11,6 +11,12 @@ import { useStems } from "@/stems/store";
 import SoundPanel from "@/ui/components/SoundPanel";
 import { IconBass, IconMic, IconRefresh, IconSliders, IconWidth } from "@/ui/components/Icons";
 import { Card, Pill, SwitchRow, TabHeader } from "./settings/parts";
+import { NameDialog } from "./settings/EqualizerSection";
+import { addPreset, decodeStemPreset, encodeStemPreset, movePreset, newPreset, overwritePreset, removePreset, renamePreset, samePresetLevels } from "@/stems/presets";
+import { IconMore } from "@/ui/components/Icons";
+import { openMenu } from "@/ui/menu";
+import { toast } from "@/ui/toasts";
+import { useReorder } from "@/ui/useReorder";
 
 // "Дорожки": the studio. With the switch on, a song is split into vocals, drums, bass and the
 // rest by a neural network on this computer (src-tauri/src/stems.rs), and each track has its
@@ -136,6 +142,82 @@ function LiveWave({ lane, history, dim }: { lane: MixKey; history: React.Mutable
     return () => clearInterval(timer);
   }, [lane, history]);
   return <canvas ref={ref} className={`studio-wave${dim ? " is-dim" : ""}`} aria-hidden="true" />;
+}
+
+/** the quick settings of the four tracks: ready-made ones, and the user's own, like the equalizer's */
+function StemPresets() {
+  const s = useSettings();
+  const set = useSettings((x) => x.set);
+  const list = s.stemPresets;
+  const reorder = useReorder((from, to) => set({ stemPresets: movePreset(list, from, to) }), "x");
+  const [dialog, setDialog] = useState<{ kind: "save" | "rename" | "import"; id?: string; initial: string } | null>(null);
+  const apply = (faders: typeof s.stemFaders, muted: Part[]) => set({ stemFaders: { ...faders }, stemMuted: [...muted], stemSolo: null });
+  return (
+    <>
+      <div className="chip-row studio-presets" role="group" aria-label="Быстрые настройки">
+        {STEM_PRESETS.map((p) => {
+          const on = samePreset(p, s.stemFaders, s.stemMuted, s.stemSolo);
+          return (
+            <button key={p.name} type="button" className={`chip${on ? " is-on" : ""}`} aria-pressed={on} onClick={() => apply(p.faders, p.muted)}>
+              {p.name}
+            </button>
+          );
+        })}
+      </div>
+      <div className="chip-row studio-presets" role="group" aria-label="Свои пресеты">
+        <span className="eyebrow studio-eyebrow">Свои</span>
+        {list.map((p, i) => {
+          const on = s.stemSolo === null && samePresetLevels(p, s.stemFaders, s.stemMuted);
+          return (
+            <span key={p.id} className={`chip is-draggable${on ? " is-on" : ""}${reorder.hint(i) ? ` drop-${reorder.hint(i)}` : ""}`} {...reorder.rowProps(i)}>
+              <button type="button" onClick={() => apply(p.faders, p.muted)}>{p.name}</button>
+              <button
+                type="button"
+                className="chip-more"
+                aria-label={`Ещё: ${p.name}`}
+                onClick={(e) => {
+                  const r = e.currentTarget.getBoundingClientRect();
+                  openMenu({ clientX: r.left, clientY: r.bottom + 4 }, [
+                    { label: "Сохранить текущие настройки сюда", onSelect: () => { set({ stemPresets: overwritePreset(list, p.id, s.stemFaders, s.stemMuted) }); toast(`«${p.name}» обновлён`); } },
+                    { label: "Переименовать", onSelect: () => setDialog({ kind: "rename", id: p.id, initial: p.name }) },
+                    { label: "Скопировать код пресета", onSelect: () => void navigator.clipboard.writeText(encodeStemPreset(p)).then(() => toast("Код скопирован — отправьте его другу")) },
+                    { label: "Удалить", danger: true, onSelect: () => set({ stemPresets: removePreset(list, p.id) }) },
+                  ]);
+                }}
+              >
+                <IconMore size={14} />
+              </button>
+            </span>
+          );
+        })}
+        <button type="button" className="chip is-add" onClick={() => setDialog({ kind: "save", initial: "" })}>+ Сохранить текущие</button>
+        <button type="button" className="chip is-add" onClick={() => setDialog({ kind: "import", initial: "" })}>Вставить код</button>
+      </div>
+      {dialog && (
+        <NameDialog
+          open
+          title={dialog.kind === "save" ? "Новый пресет" : dialog.kind === "rename" ? "Переименовать пресет" : "Пресет по коду"}
+          initial={dialog.initial}
+          multiline={dialog.kind === "import"}
+          onClose={() => setDialog(null)}
+          onSubmit={(value) => {
+            if (dialog.kind === "save") {
+              const created = newPreset(value, s.stemFaders, s.stemMuted);
+              set({ stemPresets: addPreset(list, created) });
+              toast(`Пресет «${created.name}» сохранён`);
+            } else if (dialog.kind === "rename" && dialog.id) {
+              set({ stemPresets: renamePreset(list, dialog.id, value) });
+            } else {
+              const created = decodeStemPreset(value);
+              if (!created) return "Код повреждён — скопируйте его целиком";
+              set({ stemPresets: addPreset(list, created) });
+              toast(`Пресет «${created.name}» добавлен`);
+            }
+          }}
+        />
+      )}
+    </>
+  );
 }
 
 function Lane({ title, hint, hue, icon, value, max, muted, solo, dim, onValue, onMute, onSolo, children }: {
@@ -294,25 +376,20 @@ export default function StudioPage() {
           </button>
         </header>
 
-        <div className="chip-row studio-presets" role="group" aria-label="Быстрые настройки">
-          {neural
-            ? STEM_PRESETS.map((p) => {
-                const on = samePreset(p, s.stemFaders, s.stemMuted, s.stemSolo);
-                return (
-                  <button key={p.name} type="button" className={`chip${on ? " is-on" : ""}`} aria-pressed={on} onClick={() => set({ stemFaders: p.faders, stemMuted: p.muted, stemSolo: null })}>
-                    {p.name}
-                  </button>
-                );
-              })
-            : LIGHT_PRESETS.map((p) => {
-                const on = MIX_KEYS.every((k) => Math.abs(light[k] - p.faders[k]) < 0.001) && !s.mixMuted.length && !s.mixSolo;
-                return (
-                  <button key={p.name} type="button" className={`chip${on ? " is-on" : ""}`} aria-pressed={on} onClick={() => set({ mixVoice: p.faders.voice, mixBass: p.faders.bass, mixWidth: p.faders.width, mixMuted: [], mixSolo: null })}>
-                    {p.name}
-                  </button>
-                );
-              })}
-        </div>
+        {neural ? (
+          <StemPresets />
+        ) : (
+          <div className="chip-row studio-presets" role="group" aria-label="Быстрые настройки">
+            {LIGHT_PRESETS.map((p) => {
+              const on = MIX_KEYS.every((k) => Math.abs(light[k] - p.faders[k]) < 0.001) && !s.mixMuted.length && !s.mixSolo;
+              return (
+                <button key={p.name} type="button" className={`chip${on ? " is-on" : ""}`} aria-pressed={on} onClick={() => set({ mixVoice: p.faders.voice, mixBass: p.faders.bass, mixWidth: p.faders.width, mixMuted: [], mixSolo: null })}>
+                  {p.name}
+                </button>
+              );
+            })}
+          </div>
+        )}
 
         {neural && job && job.status !== "ready" && (
           <div className="studio-job">
