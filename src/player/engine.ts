@@ -1,5 +1,8 @@
-import { effectiveLevels, isFlat, type MixerLevels, type MixKey } from "@/audio/soundMixer";
+import { FLAT, effectiveLevels, isFlat, type MixerLevels, type MixKey } from "@/audio/soundMixer";
 import type { BandMeters } from "@/audio/meters";
+import { StemFollowers } from "@/stems/followers";
+import { stemGains } from "@/stems/model";
+import { useStems } from "@/stems/store";
 import Hls from "hls.js";
 import type { Track } from "@/types";
 import { currentTrack, nextIndex, prevIndex, shuffledQueue, usePlayer } from "./store";
@@ -89,6 +92,8 @@ function needsSoundGraph(): boolean {
 type MixerSettings = { mixVoice: number; mixBass: number; mixWidth: number; mixMuted: MixKey[]; mixSolo: MixKey | null };
 
 function mixerLevels(s: MixerSettings = useSettings.getState()): MixerLevels {
+  // the split tracks are the mixer then: nothing is cut from them a second time
+  if (useStems.getState().engaged) return FLAT;
   return effectiveLevels({ voice: s.mixVoice, bass: s.mixBass, width: s.mixWidth }, s.mixMuted, s.mixSolo);
 }
 
@@ -105,6 +110,7 @@ class PlayerEngine {
   private loadAbort: AbortController | null = null;
   private loadToken = 0;
   private graph: AudioGraph;
+  private followers: StemFollowers | null = null;
   private firstTrack = true;
   // the next song, waiting on the other deck
   private prepared: Prepared | null = null;
@@ -175,6 +181,26 @@ class PlayerEngine {
     return this.graph.active;
   }
 
+  /** the four split tracks of the song `key` play in place of the deck's sound; false if they cannot */
+  engageStems(key: string): boolean {
+    this.followers ??= new StemFollowers(this.graph);
+    const s = useSettings.getState();
+    const ok = this.followers.engage(this.cur.audio, key, stemGains(s.stemFaders, s.stemMuted, s.stemSolo));
+    useStems.setState({ engaged: ok ? key : null });
+    return ok;
+  }
+
+  /** the deck's own sound again; `drop` also lets the four elements and their graph nodes go */
+  releaseStems(drop = false): void {
+    this.followers?.release(drop);
+    if (drop) this.followers = null;
+    if (useStems.getState().engaged) useStems.setState({ engaged: null });
+  }
+
+  setStemGains(gains: number[]): void {
+    this.followers?.setGains(gains);
+  }
+
   /** taps on the song's parts for the "Дорожки" page; null while the sound graph is not running */
   openMeters(): BandMeters | null {
     return this.graph.openMeters();
@@ -213,6 +239,9 @@ class PlayerEngine {
     useEffects.subscribe((fx) => this.applyEffects(fx));
     // the mixer is a setting for every song, not an effect that resets with the track
     this.graph.setMixer(mixerLevels());
+    useStems.subscribe((s, prev) => {
+      if (s.engaged !== prev.engaged) this.graph.setMixer(mixerLevels());
+    });
     useSettings.subscribe((s, prev) => {
       if (s.mixVoice !== prev.mixVoice || s.mixBass !== prev.mixBass || s.mixWidth !== prev.mixWidth || s.mixMuted !== prev.mixMuted || s.mixSolo !== prev.mixSolo) this.graph.setMixer(mixerLevels(s));
     });
@@ -605,6 +634,7 @@ class PlayerEngine {
     if (this.transitioning) this.finishTransition();
     this.dropPrepared();
     this.prepareSkip = null;
+    this.releaseStems();
     this.unload(this.cur);
     usePlayer.setState({ status: "loading", positionMs: 0, durationMs: track.durationMs, error: undefined, route: undefined, quality: undefined });
     this.begin(track);
@@ -761,6 +791,7 @@ class PlayerEngine {
       this.advance(false);
       return;
     }
+    this.releaseStems();
     const old = this.cur;
     this.active = 1 - this.active;
     const now = this.cur;

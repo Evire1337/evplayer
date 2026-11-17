@@ -144,6 +144,22 @@ export interface OfflineProgress {
 export type AddResult = { added: LocalTrackRecord[]; skipped: number };
 type Off = () => void;
 
+/** the song splitter on the desktop side (src-tauri/src/stems.rs) */
+export interface StemsState {
+  supported: boolean;
+  modelReady: boolean;
+  loaded: boolean;
+  cacheBytes: number;
+}
+
+export interface StemsMeta {
+  key: string;
+  seconds: number;
+  /** per track (vocals, drums, bass, other): loudness values 0 to 255 over the whole song */
+  peaks: number[][];
+  bytes: number;
+}
+
 export interface EvPlayerApi {
   version: () => Promise<string>;
   soundcloudClientId: (force?: boolean) => Promise<string>;
@@ -155,6 +171,23 @@ export interface EvPlayerApi {
   /** a file copy of likes and playlists, in case the browser storage loses the last changes */
   /** the user's own HTTP proxy for every connection; the saved address is used from the next start */
   proxy: { get: () => Promise<string>; set: (address: string) => Promise<void> };
+  /** splitting songs into vocals, drums, bass and the rest: nothing is loaded until `load` */
+  stems: {
+    state: () => Promise<StemsState>;
+    /** the one-time download of the model */
+    downloadModel: () => Promise<void>;
+    /** switch on: opens the networks */
+    load: () => Promise<void>;
+    /** switch off: drops them and stops what runs */
+    unload: () => Promise<void>;
+    cancel: () => Promise<void>;
+    meta: (key: string) => Promise<StemsMeta | null>;
+    clearCache: () => Promise<void>;
+    /** `pcm` is 16-bit little-endian stereo at 44.1 kHz; `limitBytes` is what the finished songs may take */
+    separate: (key: string, pcm: Uint8Array, limitBytes: number) => Promise<StemsMeta>;
+    onModel: (cb: (done: number, total: number) => void) => Off;
+    onProgress: (cb: (key: string, share: number) => void) => Off;
+  };
   libraryCopy: { save: (json: string) => Promise<void>; load: () => Promise<string | null> };
   onPlayerCommand: (cb: (action: string, value?: number) => void) => Off;
   showWindow: () => void;

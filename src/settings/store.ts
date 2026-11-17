@@ -1,4 +1,5 @@
 import type { MixKey } from "@/audio/soundMixer";
+import type { Part, StemFaders } from "@/stems/model";
 import type { Language } from "@/i18n/lang";
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
@@ -76,6 +77,13 @@ export interface SettingsState {
   /** switched off in the mixer, and the one that plays alone */
   mixMuted: MixKey[];
   mixSolo: MixKey | null;
+  /** the neural splitter of "Дорожки" (stems.rs): nothing is loaded while it is off */
+  stemsOn: boolean;
+  /** what the split songs may take on disk, in MB */
+  stemsCacheMb: number;
+  stemFaders: StemFaders;
+  stemMuted: Part[];
+  stemSolo: Part | null;
   /** double click on a track plays it, single click only selects */
   doubleClickToPlay: boolean;
   // appearance
@@ -172,6 +180,11 @@ const DEFAULTS = {
   mixWidth: 1,
   mixMuted: [] as MixKey[],
   mixSolo: null as MixKey | null,
+  stemsOn: false,
+  stemsCacheMb: 2000,
+  stemFaders: { vocals: 1, drums: 1, bass: 1, other: 1 } as StemFaders,
+  stemMuted: [] as Part[],
+  stemSolo: null as Part | null,
   doubleClickToPlay: false,
   animatedBackdrop: true,
   coverGlow: true,

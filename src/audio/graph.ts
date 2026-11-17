@@ -42,6 +42,10 @@ class AudioGraph {
   private building: Promise<void> | null = null;
   private pending: EffectSettings = { pitchSemitones: 0, reverb: false, reverbAmount: 0.5 };
   private gains = new Map<HTMLAudioElement, GainNode>();
+  /** a deck's switch: shut while the four split tracks play in its place */
+  private gates = new Map<HTMLAudioElement, GainNode>();
+  /** the four split tracks that follow the playing deck, each with its own level */
+  private followers: GainNode[] = [];
   private pendingGain = new Map<HTMLAudioElement, number>();
   /** the decks meet here, before the vocal cut and everything else */
   private deckBus: GainNode | null = null;
@@ -84,8 +88,10 @@ class AudioGraph {
       for (const audio of this.decks) {
         const gain = ctx.createGain();
         gain.gain.value = this.pendingGain.get(audio) ?? 1;
-        ctx.createMediaElementSource(audio).connect(gain).connect(deckBus);
+        const gate = ctx.createGain();
+        ctx.createMediaElementSource(audio).connect(gain).connect(gate).connect(deckBus);
         this.gains.set(audio, gain);
+        this.gates.set(audio, gate);
         audio.addEventListener("play", this.onPlay);
         audio.addEventListener("pause", this.onPause);
         audio.addEventListener("ended", this.onPause);
@@ -231,6 +237,32 @@ class AudioGraph {
   /** can decks be faded against each other right now */
   get canFade(): boolean {
     return this.ctx !== null && this.ctx.state === "running";
+  }
+
+  /** shuts or opens a deck's sound without touching its level (the split tracks play instead) */
+  setDeckMuted(audio: HTMLAudioElement, muted: boolean): void {
+    const gate = this.gates.get(audio);
+    if (gate && this.ctx) gate.gain.setTargetAtTime(muted ? 0 : 1, this.ctx.currentTime, 0.01);
+  }
+
+  /** brings an element in as one of the split tracks; null while the graph is not running */
+  addFollower(audio: HTMLAudioElement): GainNode | null {
+    if (!this.ctx || !this.deckBus) return null;
+    const gain = this.ctx.createGain();
+    this.ctx.createMediaElementSource(audio).connect(gain).connect(this.deckBus);
+    this.followers.push(gain);
+    return gain;
+  }
+
+  setFollowerGains(values: number[]): void {
+    if (!this.ctx) return;
+    this.followers.forEach((g, i) => g.gain.setTargetAtTime(values[i] ?? 0, this.ctx!.currentTime, 0.02));
+  }
+
+  /** lets the split tracks go (the page drops their elements): nothing of them stays in the graph */
+  dropFollowers(): void {
+    for (const g of this.followers) g.disconnect();
+    this.followers = [];
   }
 
   /** the volume (0 to 1; 0 when muted) */

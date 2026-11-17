@@ -38,6 +38,18 @@ export function createTauriApi(): EvPlayerApi {
     setNoCache: (on) => invoke("set_no_cache", { on }),
     openDataFolder: () => invoke("open_data_folder"),
     proxy: { get: () => invoke("proxy_get"), set: (address) => invoke("proxy_set", { address }) },
+    stems: {
+      state: () => invoke("stems_state"),
+      downloadModel: () => invoke("stems_download_model"),
+      load: () => invoke("stems_load"),
+      unload: () => invoke("stems_unload"),
+      cancel: () => invoke("stems_cancel"),
+      meta: (key) => invoke("stems_meta", { key }),
+      clearCache: () => invoke("stems_cache_clear"),
+      separate: (key, pcm, limitBytes) => invoke("stems_separate", pcm, { headers: { "x-stems-key": key, "x-stems-limit": String(limitBytes) } }),
+      onModel: (cb) => on<{ done: number; total: number }>("stems:model", (p) => cb(p.done, p.total)),
+      onProgress: (cb) => on<{ key: string; share: number }>("stems:progress", (p) => cb(p.key, p.share)),
+    },
     libraryCopy: { save: (json) => invoke("library_copy_save", { data: json }), load: () => invoke("library_copy_load") },
     onPlayerCommand: (cb) => {
       const offDesktop = on<{ action: string; value?: number | null }>("player:command", (p) => cb(p.action, p.value ?? undefined));
