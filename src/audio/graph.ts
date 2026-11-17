@@ -1,4 +1,5 @@
-import { createVocalCut, type VocalCutStage } from "./vocalCut";
+import { createMeters, type BandMeters } from "./meters";
+import { createSoundMixer, FLAT, isFlat, type MixerLevels, type SoundMixerStage } from "./soundMixer";
 import { makeImpulse } from "./impulse";
 import { semitonesToRatio } from "./pitch";
 import { createEqBus } from "@/equalizer/eqAudio";
@@ -44,9 +45,10 @@ class AudioGraph {
   private pendingGain = new Map<HTMLAudioElement, number>();
   /** the decks meet here, before the vocal cut and everything else */
   private deckBus: GainNode | null = null;
-  private vocal: VocalCutStage | null = null;
-  private vocalOn = false;
-  private pendingVocal = 0;
+  private mixer: SoundMixerStage | null = null;
+  private mixerOn = false;
+  private pendingMixer: MixerLevels = FLAT;
+  private meters: BandMeters | null = null;
   /** the volume knob, last in the chain: some systems (WebKitGTK on Linux) ignore the element's own volume once its sound goes through the graph, so 0 still played */
   private master: GainNode | null = null;
   private pendingMaster = 1;
@@ -107,7 +109,7 @@ class AudioGraph {
       this.dry = dry;
       this.wet = wet;
       this.write(this.pending);
-      this.setVocalCut(this.pendingVocal);
+      this.setMixer(this.pendingMixer);
     })();
     return this.building;
   }
@@ -124,24 +126,36 @@ class AudioGraph {
     this.dry!.gain.setTargetAtTime(1 - amount * 0.35, now, 0.05);
   }
 
-  /** takes the voice out of the middle of the song (0 = off, 1 = fully); costs nothing while off */
-  setVocalCut(amount: number): void {
-    this.pendingVocal = amount;
+  /** taps that show what each part of the song carries (for the "Дорожки" page); null until the graph runs */
+  openMeters(): BandMeters | null {
+    if (!this.ctx || !this.deckBus) return null;
+    this.meters ??= createMeters(this.ctx, this.deckBus);
+    return this.meters;
+  }
+
+  closeMeters(): void {
+    this.meters?.dispose();
+    this.meters = null;
+  }
+
+  /** the voice, bass and width levels of every song (audio/soundMixer.ts); costs nothing while all are 100% */
+  setMixer(levels: MixerLevels): void {
+    this.pendingMixer = levels;
     if (!this.ctx || !this.deckBus || !this.mix) return;
-    const on = amount > 0;
+    const on = !isFlat(levels);
     if (on) {
-      this.vocal ??= createVocalCut(this.ctx);
-      this.vocal.setAmount(amount);
+      this.mixer ??= createSoundMixer(this.ctx);
+      this.mixer.setLevels(levels);
     }
-    if (on === this.vocalOn) return;
-    this.vocalOn = on;
-    if (on && this.vocal) {
+    if (on === this.mixerOn) return;
+    this.mixerOn = on;
+    if (on && this.mixer) {
       this.deckBus.disconnect(this.mix);
-      this.deckBus.connect(this.vocal.input);
-      this.vocal.output.connect(this.mix);
-    } else if (this.vocal) {
-      this.deckBus.disconnect(this.vocal.input);
-      this.vocal.output.disconnect(this.mix);
+      this.deckBus.connect(this.mixer.input);
+      this.mixer.output.connect(this.mix);
+    } else if (this.mixer) {
+      this.deckBus.disconnect(this.mixer.input);
+      this.mixer.output.disconnect(this.mix);
       this.deckBus.connect(this.mix);
     }
   }

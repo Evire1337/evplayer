@@ -1,3 +1,4 @@
+import type { MixKey } from "@/audio/soundMixer";
 import type { Language } from "@/i18n/lang";
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
@@ -68,8 +69,13 @@ export interface SettingsState {
   resumeOnStart: boolean;
   /** pause when headphones are unplugged or the output device changes */
   pauseOnDeviceChange: boolean;
-  /** "without vocals" for every song: how much of the middle of the recording is taken out (0 = off, 1 = fully) */
-  vocalCut: number;
+  /** the sound mixer, for every song (audio/soundMixer.ts): levels of the voice, the bass and the stereo width, 1 = as recorded */
+  mixVoice: number;
+  mixBass: number;
+  mixWidth: number;
+  /** switched off in the mixer, and the one that plays alone */
+  mixMuted: MixKey[];
+  mixSolo: MixKey | null;
   /** double click on a track plays it, single click only selects */
   doubleClickToPlay: boolean;
   // appearance
@@ -161,7 +167,11 @@ const DEFAULTS = {
   crossfade: 0,
   resumeOnStart: true,
   pauseOnDeviceChange: true,
-  vocalCut: 0,
+  mixVoice: 1,
+  mixBass: 1,
+  mixWidth: 1,
+  mixMuted: [] as MixKey[],
+  mixSolo: null as MixKey | null,
   doubleClickToPlay: false,
   animatedBackdrop: true,
   coverGlow: true,

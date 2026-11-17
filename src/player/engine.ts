@@ -1,3 +1,5 @@
+import { effectiveLevels, isFlat, type MixerLevels, type MixKey } from "@/audio/soundMixer";
+import type { BandMeters } from "@/audio/meters";
 import Hls from "hls.js";
 import type { Track } from "@/types";
 import { currentTrack, nextIndex, prevIndex, shuffledQueue, usePlayer } from "./store";
@@ -81,7 +83,13 @@ function needsSoundGraph(): boolean {
   if (!isPhone) return true;
   const eq = useEqualizerStore.getState();
   const fx = useEffects.getState();
-  return eq.enabled || eq.normalize || fx.reverb || (!fx.linked && fx.pitch !== 0) || useSettings.getState().crossfade > 0 || useSettings.getState().vocalCut > 0;
+  return eq.enabled || eq.normalize || fx.reverb || (!fx.linked && fx.pitch !== 0) || useSettings.getState().crossfade > 0 || !isFlat(mixerLevels());
+}
+
+type MixerSettings = { mixVoice: number; mixBass: number; mixWidth: number; mixMuted: MixKey[]; mixSolo: MixKey | null };
+
+function mixerLevels(s: MixerSettings = useSettings.getState()): MixerLevels {
+  return effectiveLevels({ voice: s.mixVoice, bass: s.mixBass, width: s.mixWidth }, s.mixMuted, s.mixSolo);
 }
 
 /** the same songs (in any order: a shuffled queue is still the same list) */
@@ -167,6 +175,15 @@ class PlayerEngine {
     return this.graph.active;
   }
 
+  /** taps on the song's parts for the "Дорожки" page; null while the sound graph is not running */
+  openMeters(): BandMeters | null {
+    return this.graph.openMeters();
+  }
+
+  closeMeters(): void {
+    this.graph.closeMeters();
+  }
+
   /** the element that is playing (for code that only needs to read it) */
   get audio(): HTMLAudioElement {
     return this.cur.audio;
@@ -194,10 +211,10 @@ class PlayerEngine {
     this.graph = createAudioGraph(this.decks.map((d) => d.audio));
     this.graph.setMaster(state.muted ? 0 : state.volume);
     useEffects.subscribe((fx) => this.applyEffects(fx));
-    // "without vocals" is a setting for every song, not an effect that resets with the track
-    this.graph.setVocalCut(useSettings.getState().vocalCut);
+    // the mixer is a setting for every song, not an effect that resets with the track
+    this.graph.setMixer(mixerLevels());
     useSettings.subscribe((s, prev) => {
-      if (s.vocalCut !== prev.vocalCut) this.graph.setVocalCut(s.vocalCut);
+      if (s.mixVoice !== prev.mixVoice || s.mixBass !== prev.mixBass || s.mixWidth !== prev.mixWidth || s.mixMuted !== prev.mixMuted || s.mixSolo !== prev.mixSolo) this.graph.setMixer(mixerLevels(s));
     });
     // something that needs the sound graph was switched on while music plays: wire it in now
     const wireIfNeeded = () => {

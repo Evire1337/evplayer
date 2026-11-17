@@ -11,6 +11,7 @@ const LibraryPage = lazy(() => import("@/pages/LibraryPage"));
 import NowPlayingPage from "@/pages/NowPlayingPage";
 const PlaylistPage = lazy(() => import("@/pages/PlaylistPage"));
 const FilesPage = lazy(() => import("@/pages/FilesPage"));
+const StudioPage = lazy(() => import("@/pages/StudioPage"));
 const SettingsPage = lazy(() => import("@/pages/SettingsPage"));
 const ArtistPage = lazy(() => import("@/pages/ArtistPage"));
 const SmartPage = lazy(() => import("@/pages/SmartPage"));
@@ -105,6 +106,7 @@ export default function App() {
         {page === "library" && <LibraryPage />}
         {page === "playlist" && <PlaylistPage />}
         {page === "files" && <FilesPage />}
+        {page === "studio" && <StudioPage />}
         {page === "settings" && <SettingsPage />}
         {page === "artist" && <ArtistPage />}
         {page === "smart" && <SmartPage />}

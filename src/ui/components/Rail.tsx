@@ -1,6 +1,6 @@
 import logo from "@/logo.svg";
 import { useNavigation, type Page } from "../navigation";
-import { IconDisc, IconFolder, IconHome, IconJam, IconLibrary, IconSearch, IconSettings } from "./Icons";
+import { IconDisc, IconFolder, IconHome, IconJam, IconLibrary, IconSearch, IconSettings, IconSliders } from "./Icons";
 import { useJam } from "@/jam/store";
 
 const ITEMS: { page: Page; label: string; icon: (p: { size?: number }) => React.ReactNode }[] = [
@@ -9,6 +9,7 @@ const ITEMS: { page: Page; label: string; icon: (p: { size?: number }) => React.
   { page: "search", label: "Поиск", icon: IconSearch },
   { page: "library", label: "Библиотека", icon: IconLibrary },
   { page: "files", label: "Мои файлы", icon: IconFolder },
+  { page: "studio", label: "Дорожки", icon: IconSliders },
 ];
 
 // the floating column of sections on the left

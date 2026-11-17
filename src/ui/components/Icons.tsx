@@ -48,6 +48,9 @@ export const IconSettings = (p: P) => <Svg {...p}><circle cx="12" cy="12" r="3" 
 export const IconDownload = (p: P) => <Svg {...p}><path d="M12 4v11M8 11l4 4 4-4" /><path d="M5 19h14" /></Svg>;
 export const IconBack = (p: P) => <Svg {...p}><path d="M15 5l-7 7 7 7" /></Svg>;
 export const IconSparkle = (p: P) => <Svg {...p}><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z" /><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z" /></Svg>;
+export const IconMic = (p: P) => <Svg {...p}><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M6 11a6 6 0 0 0 12 0M12 17v4" /></Svg>;
+export const IconBass = (p: P) => <Svg {...p}><path d="M3 12c2-6 3-6 5 0s3 6 5 0 3-6 5 0 1 3 3 3" /></Svg>;
+export const IconWidth = (p: P) => <Svg {...p}><path d="M3 12h18M7 8l-4 4 4 4M17 8l4 4-4 4" /></Svg>;
 export const IconMusic = (p: P) => <Svg {...p}><path d="M9 18V6l10-2v12" /><circle cx="6.5" cy="18" r="2.5" /><circle cx="16.5" cy="16" r="2.5" /></Svg>;
 export const IconPlayCircle = (p: P) => <Svg {...p}><circle cx="12" cy="12" r="8.5" /><path d="M10 8.8v6.4l5.2-3.2z" fill="currentColor" stroke="none" /></Svg>;
 export const IconEq = (p: P) => <Svg {...p}><path d="M6 4v16M12 4v16M18 4v16" /><rect x="4" y="13" width="4" height="3" rx="1" fill="currentColor" /><rect x="10" y="7" width="4" height="3" rx="1" fill="currentColor" /><rect x="16" y="11" width="4" height="3" rx="1" fill="currentColor" /></Svg>;

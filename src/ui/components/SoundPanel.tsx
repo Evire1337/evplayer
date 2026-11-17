@@ -1,18 +1,12 @@
 import { clampPitch, clampSpeed, effectivePitch, MAX_PITCH, MAX_SPEED, MIN_SPEED, SPEED_PRESETS, useEffects } from "@/player/effects";
-import { useSettings } from "@/settings/store";
 import { Stepper, Toggle } from "./Controls";
 
 export default function SoundPanel() {
   const fx = useEffects();
   const set = useEffects.setState;
   const pitch = effectivePitch(fx);
-  const vocalCut = useSettings((s) => s.vocalCut);
-  const setSetting = useSettings((s) => s.set);
   return (
     <div className="sound-panel">
-      <Toggle id="fx-vocalcut" title="Без вокала" hint="Для всех песен сразу: убирает голос, который стоит по центру записи. Приём простой, на некоторых песнях остаётся след голоса" checked={vocalCut > 0} onChange={(on) => setSetting({ vocalCut: on ? 1 : 0 })} />
-      {vocalCut > 0 && <Stepper id="fx-vocalcut-amount" label="Насколько убирать" value={Math.round(vocalCut * 100)} display={`${Math.round(vocalCut * 100)}%`} min={10} max={100} step={5} onChange={(v) => setSetting({ vocalCut: Math.min(1, Math.max(0.1, v / 100)) })} />}
-
       <div className="preset-row" role="group" aria-label="Быстрая скорость">
         {SPEED_PRESETS.map((p) => (
           <button key={p} type="button" className={`preset${Math.abs(fx.speed - p) < 0.001 ? " is-on" : ""}`} onClick={() => set({ speed: p })}>
