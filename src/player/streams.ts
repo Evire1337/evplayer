@@ -1,7 +1,7 @@
 import type { Track } from "@/types";
 import { searchSoundCloud, soundCloudStreams } from "@/services/soundcloud/api";
 import { searchYouTubeMusic } from "@/services/youtube/music";
-import { isOriginal, isSameRecording, matchScore, searchQueryFor, simplify, splitTitle } from "./match";
+import { copyOrder, isOriginal, isSameRecording, matchScore, searchQueryFor, simplify, splitTitle } from "./match";
 import { mediaUrl } from "@/files/localFiles";
 import { keptUrl } from "@/offline/store";
 import { resolveYouTubeAudio, videoIdOf, type DirectStream } from "@/services/youtube/direct";
@@ -34,8 +34,8 @@ async function youTubeMatch(track: Track, signal?: AbortSignal): Promise<Track |
       // YouTube Music songs are a catalogue: a SoundCloud uploader's name need not be the artist's
       .filter((t) => isSameRecording(track, t, { anyArtist: true }))
       // the artist's own release first, then the closest copy
-      // (of the censored and the uncensored one of the same song, the uncensored)
-      .sort((a, b) => Number(isOriginal(track, b)) - Number(isOriginal(track, a)) || Number(b.explicit ?? false) - Number(a.explicit ?? false) || matchScore(track, b) - matchScore(track, a));
+      // (between equally close copies, the uncensored one)
+      .sort((a, b) => copyOrder(track, a, b));
     found = ranked[0] ?? null;
     if (found) break;
   }
@@ -58,7 +58,9 @@ async function uncensoredTwin(track: Track, signal?: AbortSignal): Promise<Track
   let finished = false;
   const search = (async () => {
     const found = (await searchYouTubeMusic(searchQueryFor(track), signal))
-      .filter((t) => t.explicit && t.id !== track.id && isSameRecording(track, t) && Math.abs(t.durationMs - track.durationMs) <= 4000)
+      // strictly the same release: the artist's own song of the same title and version, as long to
+      // a few seconds (a remix or another artist's song with the mark is not the twin)
+      .filter((t) => t.explicit && t.id !== track.id && isOriginal(track, t) && Math.abs(t.durationMs - track.durationMs) <= 4000)
       .sort((a, b) => matchScore(track, b) - matchScore(track, a));
     finished = true;
     return found[0] ?? null;

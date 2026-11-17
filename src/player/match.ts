@@ -163,6 +163,22 @@ export function matchScore(wanted: Track, candidate: Track): number {
   return score;
 }
 
+/** scores this close are the same quality of match: only then does the uncensored one decide */
+const SCORE_TIE = 0.05;
+
+/**
+ * Orders copies of one song, best first (for Array.sort): the artist's own release, then the
+ * closest match; between matches that are about equally close, the uncensored version. The
+ * mark never lifts a worse match over a better one: a remix with the mark is still a remix.
+ */
+export function copyOrder(wanted: Track, a: Track, b: Track): number {
+  const original = Number(isOriginal(wanted, b)) - Number(isOriginal(wanted, a));
+  if (original) return original;
+  const gap = matchScore(wanted, b) - matchScore(wanted, a);
+  if (Math.abs(gap) >= SCORE_TIE) return gap;
+  return Number(b.explicit ?? false) - Number(a.explicit ?? false) || gap;
+}
+
 /**
  * @param options.requireArtist the candidate must name the wanted artist (a list imported from
  *   another service knows the artist: the same title by someone else is another song)
@@ -175,7 +191,8 @@ export function bestMatch(wanted: Track, candidates: Track[], threshold = 0.72, 
     if (options.playable && candidate.preview) continue;
     if (options.requireArtist && wanted.artists.length && artistScore(wanted, candidate) < 0.5) continue;
     const score = matchScore(wanted, candidate);
-    if (score >= bestScore) {
+    // on a tie the later one wins, unless the earlier is the uncensored version
+    if (score > bestScore || (score === bestScore && !(best?.explicit && !candidate.explicit))) {
       best = candidate;
       bestScore = score;
     }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bestMatch, isOriginal, isSameRecording, matchScore, searchQueryFor, simplify, versionTags } from "./match";
+import { bestMatch, copyOrder, isOriginal, isSameRecording, matchScore, searchQueryFor, simplify, versionTags } from "./match";
 import type { Track } from "@/types";
 
 const tr = (title: string, artist: string, durationMs = 200000, id = title): Track => ({
@@ -78,5 +78,27 @@ describe("match", () => {
     expect(isSameRecording(yt, tr("OUENZA - He's back [Phonk Remix]", "someone", 186000))).toBe(false);
     expect(isSameRecording(yt, tr("He's back", "OUENZA", 212000))).toBe(false);
     expect(isSameRecording(yt, tr("He's Back", "OUENZA", 185000))).toBe(true);
+  });
+});
+
+describe("uncensored copies", () => {
+  const wanted = tr("Money Trees", "Kendrick Lamar", 386000, "want");
+  const clean = tr("Money Trees", "Kendrick Lamar", 386000, "clean");
+  const explicit: Track = { ...tr("Money Trees", "Kendrick Lamar", 386000, "explicit"), explicit: true };
+  const remix: Track = { ...tr("Money Trees (Remix)", "DJ Someone", 330000, "remix"), explicit: true };
+
+  it("takes the uncensored one between equally close copies", () => {
+    expect([clean, explicit].sort((a, b) => copyOrder(wanted, a, b)).map((t) => t.id)).toEqual(["explicit", "clean"]);
+    expect([explicit, clean].sort((a, b) => copyOrder(wanted, a, b)).map((t) => t.id)).toEqual(["explicit", "clean"]);
+  });
+
+  it("never lets the mark lift a remix over the real song", () => {
+    expect([remix, clean].sort((a, b) => copyOrder(wanted, a, b)).map((t) => t.id)).toEqual(["clean", "remix"]);
+  });
+
+  it("on equal scores in a list import the uncensored one wins whatever the order", () => {
+    const target = tr("Money Trees", "Kendrick Lamar", 386000, "name:Money Trees");
+    expect(bestMatch(target, [explicit, clean], 0.65, { requireArtist: true })?.id).toBe("explicit");
+    expect(bestMatch(target, [clean, explicit], 0.65, { requireArtist: true })?.id).toBe("explicit");
   });
 });
