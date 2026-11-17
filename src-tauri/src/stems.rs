@@ -84,6 +84,8 @@ mod real {
         sessions: Mutex<Option<Vec<Session>>>,
         cancel: AtomicBool,
         working: AtomicBool,
+        /// the song being split now (its folder is served while it is written, and is not cleared)
+        active: Mutex<String>,
     }
 
     fn e(err: impl std::fmt::Display) -> String {
@@ -97,7 +99,7 @@ mod real {
 
     impl Stems {
         pub fn new(data_dir: &Path) -> Arc<Self> {
-            Arc::new(Self { dir: data_dir.join("stems"), sessions: Mutex::new(None), cancel: AtomicBool::new(false), working: AtomicBool::new(false) })
+            Arc::new(Self { dir: data_dir.join("stems"), sessions: Mutex::new(None), cancel: AtomicBool::new(false), working: AtomicBool::new(false), active: Mutex::new(String::new()) })
         }
 
         fn model_dir(&self) -> PathBuf {
@@ -235,8 +237,10 @@ mod real {
         /// removes the finished songs (what is being written right now is left alone)
         pub fn clear_cache(&self) {
             let Ok(rd) = fs::read_dir(self.cache_dir()) else { return };
+            let active = self.active.lock().map(|a| a.clone()).unwrap_or_default();
             for d in rd.flatten() {
-                if d.path().is_dir() && !d.file_name().to_string_lossy().ends_with(".tmp") {
+                let name = d.file_name().to_string_lossy().to_string();
+                if d.path().is_dir() && !name.ends_with(".tmp") && name != active {
                     let _ = fs::remove_dir_all(d.path());
                 }
             }
@@ -277,7 +281,17 @@ mod real {
                 return Err("уже идёт другое разделение".into());
             }
             self.cancel.store(false, Ordering::SeqCst);
+            if let Ok(mut a) = self.active.lock() {
+                *a = key.to_string();
+            }
             let result = self.separate_inner(key, pcm, report);
+            if let Ok(mut a) = self.active.lock() {
+                a.clear();
+            }
+            // a song that was not finished leaves nothing behind (only a finished one has its meta.json)
+            if result.is_err() {
+                let _ = fs::remove_dir_all(self.cache_dir().join(key));
+            }
             self.working.store(false, Ordering::SeqCst);
             result
         }
@@ -296,7 +310,9 @@ mod real {
             let fwd = planner.plan_fft_forward(N_FFT);
             let inv = planner.plan_fft_inverse(N_FFT);
 
-            let work = self.cache_dir().join(format!("{key}.tmp"));
+            // the parts are written where they are served from, so the player can start on the first
+            // seconds while the rest is still being split; the song is whole once meta.json is there
+            let work = self.cache_dir().join(key);
             let _ = fs::remove_dir_all(&work);
             fs::create_dir_all(&work).map_err(e)?;
             let mut writers: Vec<WavWriter> = Vec::new();
@@ -319,7 +335,6 @@ mod real {
 
             for s in 0..splits {
                 if self.cancel.load(Ordering::SeqCst) {
-                    let _ = fs::remove_dir_all(&work);
                     return Err("отменено".into());
                 }
                 let f0 = s * T;
@@ -361,19 +376,14 @@ mod real {
                     weight.add(at, &frame_out);
                     for c in 0..2 {
                         let base = (c * T + t) * F;
-                        // the masks of the four parts for every bin: Spleeter's ratio masks, made
-                        // sharper (squared and shared out again), so a part does not keep a trace
-                        // of another; they still add up to one, so the parts add up to the song
+                        // the masks of the four parts for every bin: Spleeter's own (the share of
+                        // each network's squared estimate). They add up to one, so the parts add
+                        // up to the song. Sharper masks were tried, and they leave holes in the
+                        // sound when a part is taken out (the bubbling "shakal"), so they are not
                         for f in 0..F {
                             let denom: f32 = (0..PARTS.len()).map(|p| est[p][base + f] * est[p][base + f]).sum::<f32>() + EPS;
-                            let mut sum = 0f32;
                             for p in 0..PARTS.len() {
-                                let m = (est[p][base + f] * est[p][base + f] + EPS / PARTS.len() as f32) / denom;
-                                masks[p][f] = m * m;
-                                sum += m * m;
-                            }
-                            for p in 0..PARTS.len() {
-                                masks[p][f] /= sum;
+                                masks[p][f] = (est[p][base + f] * est[p][base + f] + EPS / PARTS.len() as f32) / denom;
                             }
                         }
                         for p in 0..PARTS.len() {
@@ -401,6 +411,10 @@ mod real {
                     let upto = (f0 + t + 1) * HOP;
                     flush(&mut ola, &mut weight, upto, n, &mut written, &mut writers, &mut peaks)?;
                 }
+                // what is finished is on disk before it is said to be: the player reads it from there
+                for w in writers.iter_mut() {
+                    w.sync()?;
+                }
                 report((s + 1) as f32 / splits as f32);
             }
             flush(&mut ola, &mut weight, usize::MAX, n, &mut written, &mut writers, &mut peaks)?;
@@ -411,9 +425,6 @@ mod real {
             }
             let meta = StemsMeta { key: key.to_string(), seconds: n as f64 / SAMPLE_RATE as f64, peaks, bytes };
             fs::write(work.join("meta.json"), serde_json::to_string(&meta).map_err(e)?).map_err(e)?;
-            let target = self.cache_dir().join(key);
-            let _ = fs::remove_dir_all(&target);
-            fs::rename(&work, &target).map_err(e)?;
             Ok(meta)
         }
     }
@@ -559,6 +570,11 @@ mod real {
             self.file.write_all(bytes).map_err(e)?;
             self.frames += frames as u64;
             Ok(())
+        }
+
+        /// what has been written so far can be read by others
+        fn sync(&mut self) -> Result<(), String> {
+            self.file.flush().map_err(e)
         }
 
         /// closes the file; returns its size

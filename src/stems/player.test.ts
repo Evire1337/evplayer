@@ -19,7 +19,7 @@ class FakeDeck extends EventTarget {
 
 type Sent = { type: string; [k: string]: unknown };
 
-function setup(options: { status?: number } = {}) {
+function setup(options: { status?: number; size?: () => number } = {}) {
   const deck = new FakeDeck();
   const sent: Sent[] = [];
   const muted: boolean[] = [];
@@ -46,8 +46,9 @@ function setup(options: { status?: number } = {}) {
     "fetch",
     vi.fn(async (url: string, init: { headers: { Range: string } }) => {
       requests.push(`${url.split("/").pop()} ${init.headers.Range}`);
-      const status = options.status ?? 206;
-      const size = 44 + TOTAL * 4;
+      const size = options.size ? options.size() : 44 + TOTAL * 4;
+      const from = Number(/bytes=(\d+)-/.exec(init.headers.Range)?.[1] ?? 0);
+      const status = options.status ?? (from >= size ? 416 : 206);
       return {
         status,
         ok: status < 300,
@@ -69,7 +70,8 @@ function setup(options: { status?: number } = {}) {
     requests,
     report,
     sink,
-    engage: (failed: () => void = () => undefined) => player.engage(deck as unknown as HTMLAudioElement, "key", [1, 1, 1, 1], failed),
+    engage: (failed: () => void = () => undefined, complete: () => boolean = () => true) =>
+      player.engage(deck as unknown as HTMLAudioElement, "key", [1, 1, 1, 1], failed, complete),
     types: () => sent.map((m) => m.type),
   };
 }
@@ -195,6 +197,40 @@ describe("StemPlayer", () => {
     t.send({ type: "end" });
     expect(t.muted).toEqual([true, false, true]);
     warn.mockRestore();
+  });
+
+  it("starts on a song that is still being split, takes only what is fully written and asks again for the rest", async () => {
+    // the files hold 4.5 chunks now (the song is 10 chunks long and still being split)
+    let written = 44 + Math.floor(CHUNK_FRAMES * 4.5) * 4;
+    let done = false;
+    const t = setup({ size: () => written });
+    t.engage(() => undefined, () => done);
+    await vi.advanceTimersByTimeAsync(50);
+    const chunks = () => t.sent.filter((m) => m.type === "chunk").map((m) => m.index);
+    // chunk 0 to 3 are all there; chunk 4 is half written and is not taken, and nothing after it is asked for
+    expect(chunks().sort()).toEqual([0, 1, 2, 3]);
+    expect(t.sent.some((m) => m.type === "length")).toBe(false);
+    const asked = t.requests.length;
+    await vi.advanceTimersByTimeAsync(100);
+    t.report(0);
+    expect(t.requests.length).toBe(asked);
+    // more is written: it is taken after the wait, in order
+    written = 44 + CHUNK_FRAMES * 6 * 4;
+    await vi.advanceTimersByTimeAsync(400);
+    t.report(0);
+    await vi.advanceTimersByTimeAsync(50);
+    expect(chunks().sort()).toEqual([0, 1, 2, 3, 4, 5]);
+  });
+
+  it("learns the length of the song when it is split to the end, and does not take the end as a missing chunk", async () => {
+    const t = setup();
+    let done = false;
+    t.engage(() => undefined, () => done);
+    await vi.advanceTimersByTimeAsync(50);
+    done = true;
+    t.report(0);
+    await vi.advanceTimersByTimeAsync(50);
+    expect(t.sent.filter((m) => m.type === "length").length).toBeGreaterThanOrEqual(1);
   });
 
   it("follows the speed", async () => {

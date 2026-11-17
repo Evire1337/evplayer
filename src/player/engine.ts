@@ -182,7 +182,7 @@ class PlayerEngine {
   }
 
   /** the four split tracks of the song `key` play in place of the deck's sound; false if they cannot */
-  engageStems(key: string): boolean {
+  engageStems(key: string, complete: () => boolean = () => true): boolean {
     // the sound graph is built a moment after the first song starts: wait for it, do not give up
     if (!this.graph.active) {
       this.graph.resume();
@@ -194,7 +194,7 @@ class PlayerEngine {
     const ok = this.stemPlayer.engage(this.cur.audio, key, stemGains(s.stemFaders, s.stemMuted, s.stemSolo), () => {
       // the tracks did not start: the deck is heard, and this song is left as it is
       useStems.setState((st) => ({ engaged: null, broken: { ...st.broken, [key]: true } }));
-    });
+    }, complete);
     useStems.setState((st) => ({ engaged: ok ? key : null, broken: ok ? st.broken : { ...st.broken, [key]: true } }));
     if (!ok) console.warn("[stems] the tracks could not be played, the song plays as it is");
     return ok;

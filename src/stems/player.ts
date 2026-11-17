@@ -39,6 +39,9 @@ const SILENT_GIVE_UP_MS = 1500;
 const RESYNC_MIN_MS = 400;
 /** chunks that failed to come, one after another, before the tracks are given up on */
 const MAX_FAILURES = 4;
+/** a chunk that is not written yet (the song is still being split) is asked for again after this */
+const NOT_YET_MS = 300;
+const CONTENT_TOTAL = /\/(\d+)\s*$/;
 
 interface Report {
   frame: number;
@@ -53,6 +56,11 @@ export class StemPlayer {
   private key = "";
   private gains: number[] = [1, 1, 1, 1];
   private failed: () => void = () => undefined;
+  /** the song is split to the end (until then its files are shorter than the song and still growing) */
+  private isComplete: () => boolean = () => true;
+  /** chunks not written yet, and when they are asked for again */
+  private retryAt = new Map<number, number>();
+  private probing = false;
   /** bumped whenever the song changes or is let go: what is still on its way for an old one is dropped */
   private gen = 0;
   private abort: AbortController | null = null;
@@ -90,9 +98,11 @@ export class StemPlayer {
   /**
    * The tracks of the song `key` start following `deck`. `failed` is called if they cannot play
    * (a file that is gone, a server that does not answer): the deck is heard again by then.
+   * `complete` says whether the song is split to the end: the tracks can start while it is still
+   * being split (the first seconds are written first), and what is not written yet is waited for.
    * False if there is nothing to play them from.
    */
-  engage(deck: HTMLAudioElement, key: string, gains: number[], failed: () => void): boolean {
+  engage(deck: HTMLAudioElement, key: string, gains: number[], failed: () => void, complete: () => boolean = () => true): boolean {
     this.release();
     if (PARTS.some((p) => stemUrl(key, p) === null)) return false;
     const gen = ++this.gen;
@@ -100,6 +110,9 @@ export class StemPlayer {
     this.key = key;
     this.gains = gains;
     this.failed = failed;
+    this.isComplete = complete;
+    this.retryAt.clear();
+    this.probing = false;
     this.abort = new AbortController();
     this.started = this.silenced = false;
     this.healthy = this.starvedSince = this.lastResync = this.failures = 0;
@@ -177,6 +190,7 @@ export class StemPlayer {
     }
     this.have.clear();
     this.inflight.clear();
+    this.retryAt.clear();
     this.kept = { from: 0, to: -1 };
     this.total = null;
     this.last = null;
@@ -285,9 +299,34 @@ export class StemPlayer {
   /** the chunks of the window that are not in the node yet are asked for (nothing waits for them here) */
   private pump(frame: number): void {
     this.moveWindow(frame);
+    const now = performance.now();
+    if (this.total === null && !this.probing && this.isComplete()) void this.probeTotal();
     for (let i = this.kept.from; i <= this.kept.to; i++) {
+      // what is not written yet is not asked for, nor is anything after it
+      if ((this.retryAt.get(i) ?? 0) > now) break;
       if (this.have.has(i) || this.inflight.has(i)) continue;
       this.fetchChunk(i).catch(() => undefined);
+    }
+  }
+
+  /** once the song is split to the end, its length is the size of a file */
+  private async probeTotal(): Promise<void> {
+    this.probing = true;
+    const gen = this.gen;
+    try {
+      const res = await fetch(stemUrl(this.key, "vocals") as string, { headers: { Range: "bytes=0-0" }, signal: this.abort?.signal });
+      void res.body?.cancel();
+      const total = framesFromContentRange(res.headers.get("Content-Range"));
+      if (gen === this.gen && total !== null) {
+        this.total = total;
+        this.lengthSent = true;
+        this.send({ type: "length", frames: total });
+        this.moveWindow(this.last ? this.last.frame : 0);
+      }
+    } catch {
+      // asked again with the next report
+    } finally {
+      if (gen === this.gen) this.probing = false;
     }
   }
 
@@ -298,14 +337,21 @@ export class StemPlayer {
     const gen = this.gen;
     const key = this.key;
     const signal = this.abort?.signal;
+    // asked before the files are fetched: a song that is whole by then has files that are final
+    const finalFiles = this.isComplete();
     const job = (async () => {
       const { start, end } = chunkBytes(index);
       const responses = await Promise.all(
         PARTS.map((part) => fetch(stemUrl(key, part) as string, { headers: { Range: `bytes=${start}-${end}` }, signal })),
       );
-      // past the end of the song: there is nothing to read
-      if (responses.some((r) => r.status === 416)) {
+      const notYet = () => {
         for (const r of responses) void r.body?.cancel();
+        this.retryAt.set(index, performance.now() + NOT_YET_MS);
+      };
+      // past what is written: still being split (asked again soon), or past the end of the song
+      if (responses.some((r) => r.status === 416)) {
+        if (!finalFiles) notYet();
+        else for (const r of responses) void r.body?.cancel();
         return;
       }
       const bad = responses.find((r) => !r.ok);
@@ -315,7 +361,10 @@ export class StemPlayer {
         if (bad.status === 404 && gen === this.gen) queueMicrotask(() => gen === this.gen && this.giveUp("the tracks are not on disk"));
         throw new Error(`the server answered ${bad.status}`);
       }
-      if (this.total === null && gen === this.gen) this.total = framesFromContentRange(responses[0].headers.get("Content-Range"));
+      // a chunk that is only partly written is not taken: it would play as a hole
+      const size = Number(CONTENT_TOTAL.exec(responses[0].headers.get("Content-Range") ?? "")?.[1]);
+      if (!finalFiles && !(size >= end + 1)) return notYet();
+      if (this.total === null && finalFiles && gen === this.gen) this.total = framesFromContentRange(responses[0].headers.get("Content-Range"));
       const parts = await Promise.all(responses.map((r) => r.arrayBuffer()));
       // the song changed, or the place moved far away, while it came
       if (gen !== this.gen || index < this.kept.from || index > this.kept.to) return;

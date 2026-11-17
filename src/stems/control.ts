@@ -13,7 +13,7 @@ import { setJob, useStems } from "./store";
 // loaded and nothing runs (the split songs stay on disk, ready for next time).
 
 /** how many songs after the current one are split ahead of time */
-const AHEAD = 2;
+const AHEAD = 3;
 
 const keys = new Map<string, string>();
 let running = false;
@@ -58,6 +58,21 @@ async function decode(track: Track, signal: AbortSignal): Promise<Uint8Array> {
   return new Uint8Array(pcm.buffer);
 }
 
+/** the sound of the next song, fetched while the current one is split (the network and the processor are busy with different things) */
+const prefetched = new Map<string, Promise<Uint8Array>>();
+
+async function prefetch(track: Track, key: string): Promise<void> {
+  const stems = api();
+  if (!stems || !controller || prefetched.has(track.id)) return;
+  const signal = controller.signal;
+  // a song that is already split needs no sound
+  if (await stems.meta(key).catch(() => null)) return;
+  if (signal.aborted || prefetched.has(track.id)) return;
+  const sound = decode(track, signal);
+  sound.catch(() => prefetched.delete(track.id));
+  prefetched.set(track.id, sound);
+}
+
 async function work(track: Track, key: string): Promise<void> {
   const stems = api();
   if (!stems || !controller) return;
@@ -68,9 +83,16 @@ async function work(track: Track, key: string): Promise<void> {
     return;
   }
   setJob(key, { status: "decoding", share: 0.02 });
-  const pcm = await decode(track, signal);
+  // the sound may have been fetched already, while the song before was split
+  let pcm = await prefetched.get(track.id)?.catch(() => undefined);
+  prefetched.delete(track.id);
+  pcm ??= await decode(track, signal);
   if (signal.aborted) return;
   setJob(key, { status: "separating", share: 0.1 });
+  // the next one's sound comes in the meantime
+  const next = queue[0];
+  const nextKey = next && keys.get(next.id);
+  if (next && nextKey) void prefetch(next, nextKey);
   const meta = await stems.separate(key, pcm, useSettings.getState().stemsCacheMb * 1_000_000);
   setJob(key, { status: "ready", share: 1, meta });
   void refreshCache();
@@ -158,8 +180,12 @@ export function reconcile(): void {
   const cur = currentTrack();
   const status = usePlayer.getState().status;
   const key = cur ? keys.get(cur.id) : undefined;
-  const ready = key ? st.jobs[key]?.status === "ready" && !st.broken[key] : false;
-  if (key && ready && (status === "playing" || status === "paused") && st.engaged !== key) player.engageStems(key);
+  // the tracks start on the first seconds, while the rest of the song is still being split
+  const job = key ? st.jobs[key] : undefined;
+  const ready = !!key && !!job && !st.broken[key] && (job.status === "ready" || (job.status === "separating" && job.share > 0.1));
+  if (key && ready && (status === "playing" || status === "paused") && st.engaged !== key) {
+    player.engageStems(key, () => useStems.getState().jobs[key]?.status === "ready");
+  }
   else if (st.engaged && st.engaged !== key) player.releaseStems();
 }
 
@@ -231,6 +257,7 @@ export async function stopStems(): Promise<void> {
   offSettings?.();
   offProgress = offModel = offPlayer = offStems = offSettings = null;
   keys.clear();
+  prefetched.clear();
   player.releaseStems(true);
   useStems.setState({ phase: "off", modelShare: 0, error: undefined, jobs: {}, engaged: null, broken: {} });
   const stems = api();
