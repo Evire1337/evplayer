@@ -26,6 +26,9 @@ const queue: Track[] = [];
 
 const api = () => window.evplayer?.stems;
 
+/** the key a song's tracks are stored under, once it has been looked at */
+export const keyOf = (trackId: string): string | undefined => keys.get(trackId);
+
 /** the song's sound as 16-bit stereo at 44.1 kHz, the way the splitter takes it */
 async function decode(track: Track, signal: AbortSignal): Promise<Uint8Array> {
   let url: string | null = null;

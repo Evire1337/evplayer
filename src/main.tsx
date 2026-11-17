@@ -27,6 +27,8 @@ void import("./app/migrate")
         // English: the texts of the page are swapped for the dictionary's (src/i18n)
         startTranslator();
         // likes and playlists: the file copy wins when the storage lost the last changes
+        // "Дорожки": the neural splitter follows its switch (nothing is loaded while it is off)
+        void import("./stems/control").then((c) => c.followSwitch());
         void import("./library/copy").then((c) => c.restoreLibraryCopy().then(c.startLibraryCopy));
         session.restoreSession();
         bridge.startBridge();
