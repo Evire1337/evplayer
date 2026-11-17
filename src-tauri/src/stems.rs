@@ -737,6 +737,89 @@ mod real {
             assert!((sample(&pcm, 2, 0, PAD) - 1000.0 / 32768.0).abs() < 1e-9);
             assert!((sample(&pcm, 2, 1, PAD + 1) + 2000.0 / 32768.0).abs() < 1e-9);
         }
+
+        /// the real networks on a made-up song (skipped where they have not been downloaded): the
+        /// parts can be read while they are written, the song is whole when meta.json is there, and
+        /// the four parts add up to the song
+        #[test]
+        fn a_song_is_split_and_its_first_seconds_can_be_read_meanwhile() {
+            use std::cell::RefCell;
+            let models = std::env::var_os("EVPLAYER_STEMS_MODELS")
+                .map(PathBuf::from)
+                .or_else(|| std::env::var_os("APPDATA").map(|a| PathBuf::from(a).join("EvPlayer").join("stems").join("models")));
+            let Some(models) = models.filter(|m| m.join("vocals.fp16.onnx").is_file()) else {
+                eprintln!("no networks here: skipped");
+                return;
+            };
+            let root = std::env::temp_dir().join(format!("evplayer-stems-test-{}", std::process::id()));
+            let _ = fs::remove_dir_all(&root);
+            fs::create_dir_all(root.join("stems").join("models")).unwrap();
+            let stems = Stems::new(&root);
+            for part in PARTS {
+                fs::copy(models.join(format!("{part}.fp16.onnx")), stems.model_path(part)).unwrap();
+            }
+            stems.load().expect("the networks open");
+
+            // 30 s: a low note, a higher one that comes and goes, and a click twice a second
+            let n = 30 * SAMPLE_RATE as usize;
+            let mut song = vec![[0i16; 2]; n];
+            for (i, frame) in song.iter_mut().enumerate() {
+                let t = i as f32 / SAMPLE_RATE as f32;
+                let note = 0.25 * (std::f32::consts::TAU * 110.0 * t).sin();
+                let high = if t % 4.0 < 2.0 { 0.15 * (std::f32::consts::TAU * 440.0 * t).sin() } else { 0.0 };
+                let click = if i % 22_050 < 200 { 0.3 } else { 0.0 };
+                let q = |v: f32| (v * 32767.0).round() as i16;
+                *frame = [q(note + high + click), q(note * 0.8 + high * 1.2 - click)];
+            }
+            let pcm: Vec<u8> = song.iter().flat_map(|f| f.iter().flat_map(|q| q.to_le_bytes())).collect();
+
+            let seen = RefCell::new(Vec::<(f32, u64, bool)>::new());
+            let meta = stems
+                .separate("testsong", &pcm, &|share| {
+                    // what is said to be done is on disk, and the song is not "whole" yet
+                    let len = fs::metadata(stems.path_of("testsong", "vocals").expect("served while written")).unwrap().len();
+                    seen.borrow_mut().push((share, len, stems.meta("testsong").is_some()));
+                })
+                .expect("the song is split");
+
+            let seen = seen.into_inner();
+            assert!(seen.len() >= 2, "progress was reported {} times", seen.len());
+            assert!(seen.iter().all(|s| !s.2), "meta.json must come last");
+            assert!(seen.windows(2).all(|w| w[1].1 >= w[0].1), "the files only grow");
+            assert!(seen[0].1 > 44 + 4 * SAMPLE_RATE as u64 * 5, "after the first piece several seconds are readable: {}", seen[0].1);
+            assert!(stems.meta("testsong").is_some());
+            assert!((meta.seconds - 30.0).abs() < 0.01);
+            assert_eq!(meta.peaks.len(), PARTS.len());
+
+            // every part is a whole WAV of the song's length, and together they are the song
+            let mut sum = vec![[0f64; 2]; n];
+            for part in PARTS {
+                let bytes = fs::read(stems.path_of("testsong", part).unwrap()).unwrap();
+                assert_eq!(bytes.len(), 44 + n * 4, "{part}: length");
+                assert_eq!(u32::from_le_bytes(bytes[40..44].try_into().unwrap()) as usize, n * 4, "{part}: header");
+                for (i, s) in sum.iter_mut().enumerate() {
+                    for c in 0..2 {
+                        let at = 44 + (i * 2 + c) * 2;
+                        s[c] += i16::from_le_bytes([bytes[at], bytes[at + 1]]) as f64;
+                    }
+                }
+            }
+            let (mut err, mut power) = (0f64, 0f64);
+            for (s, f) in sum.iter().zip(&song) {
+                for c in 0..2 {
+                    err += (s[c] - f[c] as f64).powi(2);
+                    power += (f[c] as f64).powi(2);
+                }
+            }
+            let ratio = (err / power).sqrt();
+            assert!(ratio < 0.05, "the parts add up to the song within {ratio}");
+
+            // a cleared cache keeps the finished song's folder only until asked, and never the one being written
+            stems.clear_cache();
+            assert!(stems.meta("testsong").is_none());
+            stems.unload();
+            let _ = fs::remove_dir_all(&root);
+        }
     }
 }
 
