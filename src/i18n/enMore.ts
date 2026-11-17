@@ -279,4 +279,7 @@ export const MORE: Record<string, string> = {
   "Прокси убран. Это заработает после перезапуска EvPlayer": "Proxy removed. This will take effect after EvPlayer restarts",
   "Не удалось сохранить": "Could not save",
   "нужен адрес вида 127.0.0.1:7890": "an address like 127.0.0.1:7890 is needed",
+  "Без вокала": "Without vocals",
+  "Для всех песен сразу: убирает голос, который стоит по центру записи. Приём простой, на некоторых песнях остаётся след голоса": "For every song at once: takes out the voice that sits in the middle of the recording. The method is simple, and some songs keep a trace of the voice",
+  "Насколько убирать": "How much to take out",
 };

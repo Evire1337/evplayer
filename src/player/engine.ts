@@ -81,7 +81,7 @@ function needsSoundGraph(): boolean {
   if (!isPhone) return true;
   const eq = useEqualizerStore.getState();
   const fx = useEffects.getState();
-  return eq.enabled || eq.normalize || fx.reverb || (!fx.linked && fx.pitch !== 0) || useSettings.getState().crossfade > 0;
+  return eq.enabled || eq.normalize || fx.reverb || (!fx.linked && fx.pitch !== 0) || useSettings.getState().crossfade > 0 || useSettings.getState().vocalCut > 0;
 }
 
 /** the same songs (in any order: a shuffled queue is still the same list) */
@@ -194,6 +194,11 @@ class PlayerEngine {
     this.graph = createAudioGraph(this.decks.map((d) => d.audio));
     this.graph.setMaster(state.muted ? 0 : state.volume);
     useEffects.subscribe((fx) => this.applyEffects(fx));
+    // "without vocals" is a setting for every song, not an effect that resets with the track
+    this.graph.setVocalCut(useSettings.getState().vocalCut);
+    useSettings.subscribe((s, prev) => {
+      if (s.vocalCut !== prev.vocalCut) this.graph.setVocalCut(s.vocalCut);
+    });
     // something that needs the sound graph was switched on while music plays: wire it in now
     const wireIfNeeded = () => {
       if (!this.graph.active && needsSoundGraph() && this.decks.some((d) => !d.audio.paused)) this.graph.resume();

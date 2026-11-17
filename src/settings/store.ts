@@ -68,6 +68,8 @@ export interface SettingsState {
   resumeOnStart: boolean;
   /** pause when headphones are unplugged or the output device changes */
   pauseOnDeviceChange: boolean;
+  /** "without vocals" for every song: how much of the middle of the recording is taken out (0 = off, 1 = fully) */
+  vocalCut: number;
   /** double click on a track plays it, single click only selects */
   doubleClickToPlay: boolean;
   // appearance
@@ -159,6 +161,7 @@ const DEFAULTS = {
   crossfade: 0,
   resumeOnStart: true,
   pauseOnDeviceChange: true,
+  vocalCut: 0,
   doubleClickToPlay: false,
   animatedBackdrop: true,
   coverGlow: true,

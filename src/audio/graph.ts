@@ -1,3 +1,4 @@
+import { createVocalCut, type VocalCutStage } from "./vocalCut";
 import { makeImpulse } from "./impulse";
 import { semitonesToRatio } from "./pitch";
 import { createEqBus } from "@/equalizer/eqAudio";
@@ -41,6 +42,11 @@ class AudioGraph {
   private pending: EffectSettings = { pitchSemitones: 0, reverb: false, reverbAmount: 0.5 };
   private gains = new Map<HTMLAudioElement, GainNode>();
   private pendingGain = new Map<HTMLAudioElement, number>();
+  /** the decks meet here, before the vocal cut and everything else */
+  private deckBus: GainNode | null = null;
+  private vocal: VocalCutStage | null = null;
+  private vocalOn = false;
+  private pendingVocal = 0;
   /** the volume knob, last in the chain: some systems (WebKitGTK on Linux) ignore the element's own volume once its sound goes through the graph, so 0 still played */
   private master: GainNode | null = null;
   private pendingMaster = 1;
@@ -71,10 +77,12 @@ class AudioGraph {
 
       const mix = ctx.createGain();
       const post = ctx.createGain();
+      const deckBus = ctx.createGain();
+      deckBus.connect(mix);
       for (const audio of this.decks) {
         const gain = ctx.createGain();
         gain.gain.value = this.pendingGain.get(audio) ?? 1;
-        ctx.createMediaElementSource(audio).connect(gain).connect(mix);
+        ctx.createMediaElementSource(audio).connect(gain).connect(deckBus);
         this.gains.set(audio, gain);
         audio.addEventListener("play", this.onPlay);
         audio.addEventListener("pause", this.onPause);
@@ -90,6 +98,7 @@ class AudioGraph {
       for (const audio of this.decks) audio.volume = 1;
 
       this.ctx = ctx;
+      this.deckBus = deckBus;
       this.master = master;
       this.mix = mix;
       this.post = post;
@@ -98,6 +107,7 @@ class AudioGraph {
       this.dry = dry;
       this.wet = wet;
       this.write(this.pending);
+      this.setVocalCut(this.pendingVocal);
     })();
     return this.building;
   }
@@ -112,6 +122,28 @@ class AudioGraph {
     this.wireReverb(amount > 0);
     this.wet!.gain.setTargetAtTime(amount * 0.9, now, 0.05);
     this.dry!.gain.setTargetAtTime(1 - amount * 0.35, now, 0.05);
+  }
+
+  /** takes the voice out of the middle of the song (0 = off, 1 = fully); costs nothing while off */
+  setVocalCut(amount: number): void {
+    this.pendingVocal = amount;
+    if (!this.ctx || !this.deckBus || !this.mix) return;
+    const on = amount > 0;
+    if (on) {
+      this.vocal ??= createVocalCut(this.ctx);
+      this.vocal.setAmount(amount);
+    }
+    if (on === this.vocalOn) return;
+    this.vocalOn = on;
+    if (on && this.vocal) {
+      this.deckBus.disconnect(this.mix);
+      this.deckBus.connect(this.vocal.input);
+      this.vocal.output.connect(this.mix);
+    } else if (this.vocal) {
+      this.deckBus.disconnect(this.vocal.input);
+      this.vocal.output.disconnect(this.mix);
+      this.deckBus.connect(this.mix);
+    }
   }
 
   private wireShifter(on: boolean): void {
