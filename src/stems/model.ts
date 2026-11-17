@@ -1,6 +1,6 @@
 // "Дорожки" with the neural splitter: a song becomes four tracks (stems.rs on the desktop side),
 // and these are the names and the pure rules around them: what is heard from the faders, the
-// muted ones and the solo, and how far apart the tracks may drift before they are pulled back.
+// muted ones and the solo.
 
 export type Part = "vocals" | "drums" | "bass" | "other";
 /** the order of the files and of the networks in stems.rs */
@@ -47,29 +47,6 @@ export const STEM_PRESETS: readonly StemPreset[] = [
 
 export const samePreset = (p: StemPreset, faders: StemFaders, muted: readonly Part[], solo: Part | null): boolean =>
   solo === null && PARTS.every((k) => Math.abs(p.faders[k] - faders[k]) < 0.001) && p.muted.length === muted.length && p.muted.every((m) => muted.includes(m));
-
-// ---- keeping the tracks together ------------------------------------------------------
-
-/** a gap smaller than this is not heard between tracks of one song */
-export const DRIFT_OK_S = 0.03;
-/** a gap bigger than this is fixed by jumping, a smaller one by a slightly faster or slower play */
-export const DRIFT_JUMP_S = 0.35;
-/** how much faster or slower a track plays to catch up */
-export const NUDGE = 0.04;
-
-export type DriftAction = { kind: "jump"; to: number } | { kind: "rate"; rate: number };
-
-/**
- * What a following track has to do to be with the leading one. `lead` and `own` are the two
- * play positions in seconds, `base` the speed both should have.
- */
-export function driftAction(lead: number, own: number, base: number): DriftAction {
-  const gap = lead - own;
-  const size = Math.abs(gap);
-  if (size <= DRIFT_OK_S) return { kind: "rate", rate: base };
-  if (size >= DRIFT_JUMP_S) return { kind: "jump", to: lead };
-  return { kind: "rate", rate: base * (gap > 0 ? 1 + NUDGE : 1 - NUDGE) };
-}
 
 // ---- the key of a song ----------------------------------------------------------------
 

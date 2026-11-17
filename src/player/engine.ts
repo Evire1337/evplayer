@@ -1,6 +1,6 @@
 import { FLAT, effectiveLevels, isFlat, type MixerLevels, type MixKey } from "@/audio/soundMixer";
 import type { BandMeters } from "@/audio/meters";
-import { StemFollowers } from "@/stems/followers";
+import { StemPlayer } from "@/stems/player";
 import { stemGains } from "@/stems/model";
 import { useStems } from "@/stems/store";
 import Hls from "hls.js";
@@ -110,7 +110,7 @@ class PlayerEngine {
   private loadAbort: AbortController | null = null;
   private loadToken = 0;
   private graph: AudioGraph;
-  private followers: StemFollowers | null = null;
+  private stemPlayer: StemPlayer | null = null;
   private firstTrack = true;
   // the next song, waiting on the other deck
   private prepared: Prepared | null = null;
@@ -189,9 +189,9 @@ class PlayerEngine {
       void this.graph.ensure().then(() => useStems.setState((st) => ({ tick: st.tick + 1 })));
       return false;
     }
-    this.followers ??= new StemFollowers(this.graph);
+    this.stemPlayer ??= new StemPlayer(this.graph);
     const s = useSettings.getState();
-    const ok = this.followers.engage(this.cur.audio, key, stemGains(s.stemFaders, s.stemMuted, s.stemSolo), () => {
+    const ok = this.stemPlayer.engage(this.cur.audio, key, stemGains(s.stemFaders, s.stemMuted, s.stemSolo), () => {
       // the tracks did not start: the deck is heard, and this song is left as it is
       useStems.setState((st) => ({ engaged: null, broken: { ...st.broken, [key]: true } }));
     });
@@ -202,13 +202,13 @@ class PlayerEngine {
 
   /** the deck's own sound again; `drop` also lets the four elements and their graph nodes go */
   releaseStems(drop = false): void {
-    this.followers?.release(drop);
-    if (drop) this.followers = null;
+    this.stemPlayer?.release(drop);
+    if (drop) this.stemPlayer = null;
     if (useStems.getState().engaged) useStems.setState({ engaged: null });
   }
 
   setStemGains(gains: number[]): void {
-    this.followers?.setGains(gains);
+    this.stemPlayer?.setGains(gains);
   }
 
   /** taps on the song's parts for the "Дорожки" page; null while the sound graph is not running */
@@ -319,6 +319,8 @@ class PlayerEngine {
       audio.preservesPitch = !fx.linked;
     }
     this.graph.apply({ pitchSemitones: fx.linked ? 0 : fx.pitch, reverb: fx.reverb, reverbAmount: fx.reverbAmount });
+    // the split tracks follow the speed, and the shifter keeps their pitch where the deck does
+    this.stemPlayer?.updateSpeed();
   }
 
   // ---- listening ---------------------------------------------------------------------

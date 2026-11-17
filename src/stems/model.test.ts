@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DRIFT_JUMP_S, DRIFT_OK_S, FLAT_STEMS, NUDGE, STEM_PRESETS, driftAction, samePreset, stemGains, stemKey } from "./model";
+import { FLAT_STEMS, STEM_PRESETS, samePreset, stemGains, stemKey } from "./model";
 
 describe("stem levels", () => {
   it("plays every track at its fader", () => {
@@ -24,22 +24,6 @@ describe("stem levels", () => {
     expect(samePreset(noVocals, FLAT_STEMS, ["vocals"], null)).toBe(true);
     expect(samePreset(noVocals, FLAT_STEMS, ["vocals", "bass"], null)).toBe(false);
     expect(samePreset(noVocals, FLAT_STEMS, ["vocals"], "drums")).toBe(false);
-  });
-});
-
-describe("keeping the tracks together", () => {
-  it("leaves tracks that are close at their speed", () => {
-    expect(driftAction(10, 10 + DRIFT_OK_S / 2, 1.25)).toEqual({ kind: "rate", rate: 1.25 });
-  });
-
-  it("nudges a track that is a little late or early", () => {
-    expect(driftAction(10.1, 10, 1)).toEqual({ kind: "rate", rate: 1 + NUDGE });
-    expect(driftAction(10, 10.1, 1)).toEqual({ kind: "rate", rate: 1 - NUDGE });
-  });
-
-  it("jumps a track that is far off", () => {
-    expect(driftAction(20, 10, 1)).toEqual({ kind: "jump", to: 20 });
-    expect(driftAction(10, 10 + DRIFT_JUMP_S + 0.1, 1)).toEqual({ kind: "jump", to: 10 });
   });
 });
 

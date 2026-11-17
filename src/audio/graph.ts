@@ -2,6 +2,7 @@ import { createMeters, type BandMeters } from "./meters";
 import { createSoundMixer, FLAT, isFlat, type MixerLevels, type SoundMixerStage } from "./soundMixer";
 import { makeImpulse } from "./impulse";
 import { semitonesToRatio } from "./pitch";
+import { pitchCompensation } from "@/stems/pcm";
 import { createEqBus } from "@/equalizer/eqAudio";
 import { isPhone } from "@/platform/device";
 
@@ -25,6 +26,17 @@ export interface EffectSettings {
   reverbAmount: number;
 }
 
+/** what the page holds of the split tracks' player (see stems/player.ts) */
+export interface StemSink {
+  port: MessagePort;
+  /** the levels of the four tracks (vocals, drums, bass, other) */
+  setGains: (values: number[]) => void;
+  /** the sound graph's clock, in seconds */
+  now: () => number;
+  /** takes the player out of the graph and lets its memory go */
+  dispose: () => void;
+}
+
 class AudioGraph {
   private ctx: AudioContext | null = null;
   private shifter: AudioWorkletNode | null = null;
@@ -44,8 +56,13 @@ class AudioGraph {
   private gains = new Map<HTMLAudioElement, GainNode>();
   /** a deck's switch: shut while the four split tracks play in its place */
   private gates = new Map<HTMLAudioElement, GainNode>();
-  /** the four split tracks that follow the playing deck, each with its own level */
-  private followers: GainNode[] = [];
+  /** the player of the four split tracks (one node, four pairs of channels), made once and kept until let go */
+  private stem: StemSink | null = null;
+  private stemBuilding: Promise<StemSink | null> | null = null;
+  /** the levels of the four tracks, kept for a player that is not made yet */
+  private stemLevels: number[] = [1, 1, 1, 1];
+  /** semitones the shifter adds so a slower or faster song keeps its pitch (the tracks play like a record) */
+  private stemPitch = 0;
   private pendingGain = new Map<HTMLAudioElement, number>();
   /** the decks meet here, before the vocal cut and everything else */
   private deckBus: GainNode | null = null;
@@ -123,7 +140,7 @@ class AudioGraph {
   private write(fx: EffectSettings): void {
     if (!this.ctx) return;
     const now = this.ctx.currentTime;
-    const ratio = semitonesToRatio(fx.pitchSemitones);
+    const ratio = semitonesToRatio(fx.pitchSemitones + this.stemPitch);
     this.shifter!.parameters.get("ratio")!.setTargetAtTime(ratio, now, 0.02);
     this.wireShifter(Math.abs(ratio - 1) > 1e-4);
     const amount = fx.reverb ? Math.min(1, Math.max(0, fx.reverbAmount)) : 0;
@@ -245,24 +262,71 @@ class AudioGraph {
     if (gate && this.ctx) gate.gain.setTargetAtTime(muted ? 0 : 1, this.ctx.currentTime, 0.01);
   }
 
-  /** brings an element in as one of the split tracks; null while the graph is not running */
-  addFollower(audio: HTMLAudioElement): GainNode | null {
-    if (!this.ctx || !this.deckBus) return null;
-    const gain = this.ctx.createGain();
-    this.ctx.createMediaElementSource(audio).connect(gain).connect(this.deckBus);
-    this.followers.push(gain);
-    return gain;
+  /**
+   * The player of the split tracks, made on first ask. Its four tracks join the decks at the
+   * deck bus, each with its own level. null while the graph is not running or if the browser
+   * would not take the worklet.
+   */
+  openStemSink(): Promise<StemSink | null> {
+    if (this.stem) return Promise.resolve(this.stem);
+    this.stemBuilding ??= (async () => {
+      const ctx = this.ctx;
+      const bus = this.deckBus;
+      if (!ctx || !bus) return null;
+      try {
+        await ctx.audioWorklet.addModule("./worklets/stem-player.js");
+      } catch {
+        return null;
+      }
+      const node = new AudioWorkletNode(ctx, "evplayer-stem-player", { numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [8] });
+      const splitter = ctx.createChannelSplitter(8);
+      node.connect(splitter);
+      const gains: GainNode[] = [];
+      const mergers: ChannelMergerNode[] = [];
+      for (let i = 0; i < 4; i++) {
+        const merger = ctx.createChannelMerger(2);
+        splitter.connect(merger, i * 2, 0);
+        splitter.connect(merger, i * 2 + 1, 1);
+        const gain = ctx.createGain();
+        gain.gain.value = this.stemLevels[i] ?? 0;
+        merger.connect(gain).connect(bus);
+        gains.push(gain);
+        mergers.push(merger);
+      }
+      const sink: StemSink = {
+        port: node.port,
+        setGains: (values) => {
+          this.stemLevels = values.slice(0, 4);
+          gains.forEach((g, i) => g.gain.setTargetAtTime(values[i] ?? 0, ctx.currentTime, 0.02));
+        },
+        now: () => ctx.currentTime,
+        dispose: () => {
+          node.port.onmessage = null;
+          node.port.postMessage({ type: "reset" });
+          node.disconnect();
+          splitter.disconnect();
+          for (const m of mergers) m.disconnect();
+          for (const g of gains) g.disconnect();
+          if (this.stem === sink) this.stem = null;
+          this.stemBuilding = null;
+          this.setStemSpeed(1, false);
+        },
+      };
+      this.stem = sink;
+      return sink;
+    })();
+    return this.stemBuilding;
   }
 
-  setFollowerGains(values: number[]): void {
-    if (!this.ctx) return;
-    this.followers.forEach((g, i) => g.gain.setTargetAtTime(values[i] ?? 0, this.ctx!.currentTime, 0.02));
-  }
-
-  /** lets the split tracks go (the page drops their elements): nothing of them stays in the graph */
-  dropFollowers(): void {
-    for (const g of this.followers) g.disconnect();
-    this.followers = [];
+  /**
+   * The tracks play at the deck's speed like a record, so the pitch moves with it; where the
+   * deck keeps the pitch (the speed is not linked to it), the shifter takes that back.
+   */
+  setStemSpeed(rate: number, preservesPitch: boolean): void {
+    const semitones = pitchCompensation(rate, preservesPitch);
+    if (Math.abs(semitones - this.stemPitch) < 1e-9) return;
+    this.stemPitch = semitones;
+    this.write(this.pending);
   }
 
   /** the volume (0 to 1; 0 when muted) */
