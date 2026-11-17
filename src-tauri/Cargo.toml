@@ -52,6 +52,9 @@ reqwest = { version = "0.12", default-features = false, features = ["native-tls"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
 
 [target.'cfg(windows)'.dependencies]
+# the song splitter (stems.rs): ONNX Runtime with its prebuilt library, and the Fourier transform
+ort = { version = "=2.0.0-rc.10", default-features = false, features = ["std", "download-binaries", "copy-dylibs"] }
+realfft = "3"
 windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_UI_Shell", "Win32_System_Pipes", "Win32_System_Diagnostics_ToolHelp", "Win32_System_ProcessStatus", "Win32_System_Threading"] }
 # must match the versions tauri uses (memory.rs talks to WebView2 directly)
 webview2-com = "0.39"

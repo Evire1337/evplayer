@@ -13,6 +13,7 @@ mod migrate;
 mod offline;
 mod proxy;
 mod services;
+mod stems;
 mod userproxy;
 // desktop: tray, mini player window, installer updates; phones get stand-ins
 #[cfg(desktop)]
@@ -49,6 +50,7 @@ pub struct AppState {
     pub data_dir: PathBuf,
     pub library: Arc<Library>,
     pub offline: Arc<Offline>,
+    pub stems: Arc<stems::Stems>,
     pub watcher: Mutex<Option<Arc<Watcher>>>,
     pub discord: discord::Discord,
     /// was the main window minimized at the last resize (to notice minimize and restore)
@@ -234,6 +236,87 @@ fn library_copy_save(state: tauri::State<'_, AppState>, data: String) -> Result<
 #[tauri::command]
 fn library_copy_load(state: tauri::State<'_, AppState>) -> Option<String> {
     std::fs::read_to_string(state.data_dir.join("library-copy.json")).ok()
+}
+
+// ---- the song splitter ("Дорожки", stems.rs) --------------------------------------------
+
+#[tauri::command]
+fn stems_state(state: tauri::State<'_, AppState>) -> stems::StemsState {
+    state.stems.state()
+}
+
+/// the one-time download of the model; progress goes to the page as `stems:model`
+#[tauri::command]
+async fn stems_download_model(app: AppHandle) -> Result<(), String> {
+    let stems = app.state::<AppState>().stems.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let last = Mutex::new(std::time::Instant::now() - std::time::Duration::from_secs(1));
+        let report = |done: u64, total: u64| {
+            let mut at = last.lock().unwrap();
+            if at.elapsed() >= std::time::Duration::from_millis(250) || done >= total {
+                *at = std::time::Instant::now();
+                let _ = app.emit_to(MAIN, "stems:model", serde_json::json!({ "done": done, "total": total }));
+            }
+        };
+        stems.download_models(&report)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// switch on: the networks are opened and stay in memory
+#[tauri::command]
+async fn stems_load(app: AppHandle) -> Result<(), String> {
+    let stems = app.state::<AppState>().stems.clone();
+    tauri::async_runtime::spawn_blocking(move || stems.load()).await.map_err(|e| e.to_string())?
+}
+
+/// switch off: the networks are dropped and what runs is stopped
+#[tauri::command]
+fn stems_unload(state: tauri::State<'_, AppState>) {
+    state.stems.unload();
+}
+
+#[tauri::command]
+fn stems_cancel(state: tauri::State<'_, AppState>) {
+    state.stems.cancel();
+}
+
+#[tauri::command]
+fn stems_meta(state: tauri::State<'_, AppState>, key: String) -> Option<stems::StemsMeta> {
+    state.stems.meta(&key)
+}
+
+#[tauri::command]
+fn stems_cache_clear(state: tauri::State<'_, AppState>) {
+    state.stems.clear_cache();
+}
+
+/// splits a song: the body is its sound (16-bit stereo, 44.1 kHz), the headers carry the song's
+/// key and the size the finished songs may take; progress goes to the page as `stems:progress`
+#[tauri::command]
+async fn stems_separate(app: AppHandle, request: tauri::ipc::Request<'_>) -> Result<stems::StemsMeta, String> {
+    let header = |name: &str| request.headers().get(name).and_then(|v| v.to_str().ok()).map(|v| v.to_string());
+    let key = header("x-stems-key").ok_or("нет ключа песни")?;
+    let limit = header("x-stems-limit").and_then(|v| v.parse::<u64>().ok()).unwrap_or(2_000_000_000);
+    let tauri::ipc::InvokeBody::Raw(pcm) = request.body() else { return Err("нужен звук песни".into()) };
+    let pcm = pcm.clone();
+    let stems = app.state::<AppState>().stems.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let last = Mutex::new(std::time::Instant::now() - std::time::Duration::from_secs(1));
+        let report = |share: f32| {
+            let mut at = last.lock().unwrap();
+            if at.elapsed() >= std::time::Duration::from_millis(250) || share >= 1.0 {
+                *at = std::time::Instant::now();
+                let _ = app.emit_to(MAIN, "stems:progress", serde_json::json!({ "key": key, "share": share }));
+            }
+        };
+        let meta = stems.separate(&key, &pcm, &report)?;
+        stems.trim_cache(limit, &key);
+        Ok::<_, String>(meta)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 /// a web page in the system browser (the phone downloads a new APK this way)
@@ -721,6 +804,14 @@ pub fn run() {
             set_no_cache,
             open_data_folder,
             library_copy_save,
+            stems_state,
+            stems_download_model,
+            stems_load,
+            stems_unload,
+            stems_cancel,
+            stems_meta,
+            stems_cache_clear,
+            stems_separate,
             proxy_get,
             proxy_set,
             library_copy_load,
@@ -776,10 +867,12 @@ pub fn run() {
             identity::register(&dir);
             let library = Library::new(dir.clone());
             let offline = Offline::new(&dir);
+            let stems = stems::Stems::new(&dir);
             app.manage(AppState {
                 data_dir: dir,
                 library: library.clone(),
                 offline: offline.clone(),
+                stems: stems.clone(),
                 watcher: Mutex::new(None),
                 discord: discord::Discord::new(),
                 minimized: Mutex::new(false),
@@ -789,7 +882,7 @@ pub fn run() {
             if no_cache_flag(&handle).exists() {
                 clear_cache_dirs(&handle);
             }
-            let media = media_server::MediaServer::start(library.clone(), offline.clone()).map(|m| m.base).unwrap_or_default();
+            let media = media_server::MediaServer::start(library.clone(), offline.clone(), stems.clone()).map(|m| m.base).unwrap_or_default();
             create_main(&handle, &media)?;
             tray::create(&handle)?;
             let notify = handle.clone();

@@ -18,6 +18,7 @@ use tiny_http::{Header, Method, Request, Response, Server, StatusCode};
 use crate::library::Library;
 use crate::offline::Offline;
 use crate::proxy::is_open_host;
+use crate::stems::Stems;
 
 pub struct MediaServer {
     /// http://127.0.0.1:PORT/SECRET
@@ -372,7 +373,7 @@ fn serve_joined(req: Request, encoded: &str, allowed: fn(&url::Url) -> bool) {
 }
 
 impl MediaServer {
-    pub fn start(library: Arc<Library>, offline: Arc<Offline>) -> Option<Self> {
+    pub fn start(library: Arc<Library>, offline: Arc<Offline>, stems: Arc<Stems>) -> Option<Self> {
         let server = Arc::new(Server::http("127.0.0.1:0").ok()?);
         let port = server.server_addr().to_ip()?.port();
         let secret: String = {
@@ -386,6 +387,7 @@ impl MediaServer {
             let server = server.clone();
             let library = library.clone();
             let offline = offline.clone();
+            let stems = stems.clone();
             let prefix = prefix.clone();
             std::thread::spawn(move || {
                 for req in server.incoming_requests() {
@@ -417,6 +419,11 @@ impl MediaServer {
                                 None => reply_text(req, 404, "not kept offline"),
                             }
                         }
+                        // the parts of a song split by stems.rs: "stem/KEY/vocals.wav"
+                        Some(("stem", rest)) => match rest.split_once('/').and_then(|(key, file)| stems.path_of(key, file.strip_suffix(".wav")?)) {
+                            Some(path) => serve_file(req, &path),
+                            None => reply_text(req, 404, "no such part"),
+                        },
                         Some(("remote", encoded)) => serve_remote(req, encoded),
                         Some(("joined", encoded)) => serve_joined(req, encoded, is_open_host),
                         _ => reply_text(req, 404, "not found"),
@@ -506,7 +513,7 @@ x.m4s
         });
         let data = std::env::temp_dir().join("evplayer-joined-test");
         let library = Library::new(data.clone());
-        let server = MediaServer::start(library, Offline::new(&data)).unwrap();
+        let server = MediaServer::start(library, Offline::new(&data), Stems::new(&data)).unwrap();
         // the real route only allows the music services; this test calls the handler's parts
         let playlist = url::Url::parse(&format!("http://127.0.0.1:{port}/list.m3u8")).unwrap();
         let joined = load_joined(&playlist, |_| true).unwrap();
@@ -540,7 +547,7 @@ x.m4s
         let library = Library::new(dir.join("data"));
         let (added, _) = library.add(&[song.clone()]);
         let id = added.added[0].id.clone();
-        let server = MediaServer::start(library, Offline::new(&dir.join("data"))).unwrap();
+        let server = MediaServer::start(library, Offline::new(&dir.join("data")), Stems::new(&dir.join("data"))).unwrap();
         let client = reqwest::blocking::Client::new();
         let url = format!("{}/track/{}", server.base, percent_encoding::utf8_percent_encode(&id, percent_encoding::NON_ALPHANUMERIC));
         let res = client.get(&url).header("Range", "bytes=100-199").send().unwrap();
