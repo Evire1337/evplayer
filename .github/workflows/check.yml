@@ -4,6 +4,10 @@ name: Check
 # `gh workflow run check.yml --ref <branch>`): pushes and pull requests build nothing.
 on:
   workflow_dispatch:
+    inputs:
+      android:
+        description: "Build the phone version too (yes / no)"
+        default: "yes"
 
 jobs:
   web:
@@ -127,6 +131,7 @@ jobs:
 
   # the phone version still builds (unsigned debug APK; releases build the signed one)
   android:
+    if: ${{ inputs.android != 'no' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
