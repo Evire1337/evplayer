@@ -25,9 +25,11 @@ interface StemsStore {
   engaged: string | null;
   /** songs whose split tracks would not start: they play as they are, and are not tried again */
   broken: Record<string, true>;
+  /** bumped when something that was not ready (the sound graph) is, so the player looks again */
+  tick: number;
 }
 
-export const useStems = create<StemsStore>(() => ({ phase: "off", modelShare: 0, cacheBytes: 0, jobs: {}, engaged: null, broken: {} }));
+export const useStems = create<StemsStore>(() => ({ phase: "off", modelShare: 0, cacheBytes: 0, jobs: {}, engaged: null, broken: {}, tick: 0 }));
 
 export function setJob(key: string, patch: Partial<StemJob> & Pick<StemJob, "status">): void {
   useStems.setState((s) => ({ jobs: { ...s.jobs, [key]: { ...(s.jobs[key] ?? { share: 0 }), ...patch } } }));

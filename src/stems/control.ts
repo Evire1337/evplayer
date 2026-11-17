@@ -205,7 +205,7 @@ export async function startStems(): Promise<void> {
       if (s.index !== prev.index || s.queue !== prev.queue || s.status !== prev.status) reconcile();
     });
     offStems = useStems.subscribe((s, prev) => {
-      if (s.jobs !== prev.jobs) reconcile();
+      if (s.jobs !== prev.jobs || s.tick !== prev.tick) reconcile();
     });
     offSettings = useSettings.subscribe((s, prev) => {
       if (s.stemFaders !== prev.stemFaders || s.stemMuted !== prev.stemMuted || s.stemSolo !== prev.stemSolo) applyGains();

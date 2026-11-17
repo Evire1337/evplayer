@@ -31,6 +31,12 @@ export class StemFollowers {
   private deck: HTMLAudioElement | null = null;
   private cleanup: Array<() => void> = [];
   private waiting: ReturnType<typeof setTimeout> | undefined;
+  /** the deck is silent now (the four tracks are heard instead) */
+  private silenced = false;
+  /** all four tracks have played at least once */
+  private started = false;
+  /** since when (ms) a track has not been playing while the deck is silent; 0 = all well */
+  private unwell = 0;
 
   constructor(private readonly host: FollowerHost) {}
 
@@ -91,16 +97,35 @@ export class StemFollowers {
     for (const el of this.elements) listen(el, "error", fail);
 
     // the deck goes silent once all four play; not before, and not at all if they never do
+    this.started = false;
+    this.silenced = false;
+    this.unwell = 0;
     let playing = 0;
     for (const el of this.elements) {
       listen(el, "playing", () => {
-        if (++playing === this.elements.length) this.silenceDeck();
+        if (++playing === this.elements.length) {
+          this.started = true;
+          this.silenceDeck();
+        }
       }, true);
     }
-    this.waiting = setTimeout(() => {
-      if (playing < this.elements.length) fail();
-    }, START_WAIT_MS);
-    if (!deck.paused) this.playAll();
+    // the clock for the tracks to start runs only while the song plays: a paused song waits
+    const arm = () => {
+      clearTimeout(this.waiting);
+      this.waiting = setTimeout(() => {
+        if (!this.started) {
+          console.warn("[stems] the tracks did not start in time, the song plays as it is");
+          fail();
+        }
+      }, START_WAIT_MS);
+    };
+    listen(deck, "play", () => {
+      if (!this.started) arm();
+    });
+    if (!deck.paused) {
+      arm();
+      this.playAll();
+    }
     return true;
   }
 
@@ -125,6 +150,12 @@ export class StemFollowers {
   private silenceDeck(): void {
     clearTimeout(this.waiting);
     if (this.deck) this.host.setDeckMuted(this.deck, true);
+    this.silenced = true;
+  }
+
+  private unsilenceDeck(): void {
+    if (this.deck) this.host.setDeckMuted(this.deck, false);
+    this.silenced = false;
   }
 
   /** stops a track and lets its connection to the media server go */
@@ -164,10 +195,29 @@ export class StemFollowers {
     }
   }
 
-  /** about four times a second: a track that has fallen behind or run ahead is pulled back */
+  /**
+   * about four times a second: the tracks are looked after. One that stopped or ran dry for more
+   * than a moment gives the sound back to the deck (a song is never left silent) and is started
+   * again; once all play, the deck is silent again. One that has fallen behind or run ahead is
+   * pulled back.
+   */
   private follow(): void {
     const deck = this.deck;
     if (!deck || deck.paused) return;
+    const well = this.elements.every((el) => !el.paused && el.readyState >= 3);
+    if (this.started) {
+      if (well) {
+        this.unwell = 0;
+        if (!this.silenced) this.silenceDeck();
+      } else {
+        this.unwell ||= performance.now();
+        if (this.silenced && performance.now() - this.unwell > 1200) {
+          console.warn("[stems] a track stopped: the deck is heard until they play again");
+          this.unsilenceDeck();
+          this.playAll();
+        }
+      }
+    }
     for (const el of this.elements) {
       if (el.readyState < 2) continue;
       const action = driftAction(deck.currentTime, el.currentTime, deck.playbackRate);
