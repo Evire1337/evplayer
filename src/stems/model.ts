@@ -52,7 +52,7 @@ export const samePreset = (p: StemPreset, faders: StemFaders, muted: readonly Pa
 
 /** a short key for a song: the same song always gets the same one, so its tracks are found again */
 export async function stemKey(trackId: string, durationMs: number): Promise<string> {
-  const bytes = new TextEncoder().encode(`evp1|${trackId}|${Math.round(durationMs / 1000)}`);
+  const bytes = new TextEncoder().encode(`evp2|${trackId}|${Math.round(durationMs / 1000)}`);
   const digest = await crypto.subtle.digest("SHA-256", bytes);
   return [...new Uint8Array(digest)].slice(0, 16).map((b) => b.toString(16).padStart(2, "0")).join("");
 }

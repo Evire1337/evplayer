@@ -344,6 +344,15 @@ export class StemPlayer {
   private onMessage(data: unknown, gen: number): void {
     if (gen !== this.gen || !this.deck || typeof data !== "object" || data === null) return;
     const message = data as { type?: string } & Partial<Report>;
+    if (message.type === "end") {
+      // the tracks are over but the song is not (they were made from a part of it): the deck is heard, never silence
+      const deck = this.deck;
+      if (!(deck.duration - deck.currentTime <= 1.5)) {
+        console.warn("[stems] the tracks ended before the song: the deck is heard");
+        this.unsilenceDeck();
+      }
+      return;
+    }
     if (message.type !== "pos" || typeof message.frame !== "number") return;
     this.last = { frame: message.frame, at: message.at ?? 0, playing: !!message.playing, starved: !!message.starved };
     this.lastReportAt = performance.now();

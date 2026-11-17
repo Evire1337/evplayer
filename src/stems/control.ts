@@ -4,6 +4,7 @@ import { streamCandidates } from "@/player/streams";
 import { currentTrack, usePlayer } from "@/player/store";
 import { useSettings } from "@/settings/store";
 import type { Track } from "@/types";
+import { fetchWhole, isWhole } from "./download";
 import { MAX_STEM_SECONDS, stemGains, stemKey } from "./model";
 import { setJob, useStems } from "./store";
 
@@ -42,11 +43,11 @@ async function decode(track: Track, signal: AbortSignal): Promise<Uint8Array> {
     }
   }
   if (!url) throw new Error("у этой песни нет целого файла, который можно разделить");
-  const res = await fetch(url, { signal });
-  if (!res.ok) throw new Error(`звук не скачался (${res.status})`);
-  const data = await res.arrayBuffer();
+  const data = await fetchWhole(url, signal);
   // the context's rate is the one the sound comes out at
   const audio = await new OfflineAudioContext(2, 1, 44100).decodeAudioData(data);
+  // a part of the song would be split as if it were the song, and its tracks would end early
+  if (!isWhole(audio.duration, track.durationMs / 1000)) throw new Error("звук скачался не целиком, песню не разделить");
   const left = audio.getChannelData(0);
   const right = audio.numberOfChannels > 1 ? audio.getChannelData(1) : left;
   const pcm = new Int16Array(audio.length * 2);

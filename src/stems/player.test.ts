@@ -63,6 +63,7 @@ function setup(options: { status?: number } = {}) {
   return {
     deck,
     player,
+    send: (data: unknown) => reply?.(data),
     sent,
     muted,
     requests,
@@ -173,6 +174,27 @@ describe("StemPlayer", () => {
     await vi.advanceTimersByTimeAsync(50);
     expect(t.sent.filter((m) => m.type === "seek").at(-1)?.frame).toBe(25 * SOURCE_RATE);
     expect(t.sent.filter((m) => m.type === "play").at(-1)).toEqual({ type: "play", on: true });
+  });
+
+  it("gives the sound back to the deck when the tracks end before the song does", async () => {
+    const t = setup();
+    t.engage();
+    await vi.advanceTimersByTimeAsync(50);
+    t.report(0);
+    t.report(2048);
+    expect(t.muted).toEqual([true]);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    Object.assign(t.deck, { duration: 140, currentTime: 59 });
+    t.send({ type: "end" });
+    expect(t.muted).toEqual([true, false]);
+    // at the very end of the song nothing is said: the deck ends by itself
+    t.report(59 * SOURCE_RATE);
+    t.report(59 * SOURCE_RATE + 2048);
+    expect(t.muted).toEqual([true, false, true]);
+    Object.assign(t.deck, { currentTime: 139.5 });
+    t.send({ type: "end" });
+    expect(t.muted).toEqual([true, false, true]);
+    warn.mockRestore();
   });
 
   it("follows the speed", async () => {
