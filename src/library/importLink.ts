@@ -1,7 +1,7 @@
 import type { Track } from "@/types";
 import { resolveSoundCloudUrl } from "@/services/soundcloud/api";
 import { youTubeCollection } from "@/services/youtube/music";
-import { decodePlaylistCode, looksLikePlaylistCode } from "./playlistCode";
+import { decodePlaylistCode, extractPlaylistCodes, looksLikePlaylistCode } from "./playlistCode";
 import { matchTracks, type NamedTrack } from "./matchTracks";
 import { useLibrary } from "./store";
 import { useImportProgress } from "./importProgress";
@@ -214,7 +214,47 @@ function songsWord(n: number): string {
  * (or add it to «Понравившиеся») and open it. A code copied from someone's likes goes to
  * the likes unless asked otherwise.
  */
+/** several codes pasted at once (a text file with all the playlists): each becomes its own playlist */
+async function importManyCodes(codes: string[], target?: ImportTarget): Promise<void> {
+  running?.abort();
+  const controller = new AbortController();
+  running = controller;
+  const progress = useImportProgress.getState();
+  progress.start(`Читаю коды: 0 из ${codes.length}`, () => controller.abort());
+  let lists = 0;
+  let songs = 0;
+  let broken = 0;
+  let last: string | undefined;
+  for (const [n, code] of codes.entries()) {
+    if (controller.signal.aborted) return;
+    progress.update(`Читаю коды: ${n + 1} из ${codes.length}`);
+    try {
+      const shared = await decodePlaylistCode(code);
+      if (!shared.tracks.length) continue;
+      const lib = useLibrary.getState();
+      if ((target ?? (shared.likes ? "likes" : "playlist")) === "likes") {
+        songs += lib.addLikes(shared.tracks);
+      } else {
+        const playlist = lib.createPlaylist(shared.title, shared.description);
+        if (shared.icon) lib.updatePlaylist(playlist.id, { icon: shared.icon });
+        lib.addToPlaylist(playlist.id, shared.tracks);
+        songs += shared.tracks.length;
+        lists++;
+        last = playlist.id;
+      }
+    } catch {
+      broken++;
+    }
+  }
+  const summary = `Плейлистов: ${lists}, песен: ${songs}${broken ? `, не прочиталось кодов: ${broken}` : ""}`;
+  if (last) useNavigation.getState().go("library");
+  toast(summary);
+  progress.finish({ ok: lists + songs > 0, text: lists + songs > 0 ? `Готово · ${summary}` : "Ни один код не прочитался. Скопируйте их целиком, начиная с EVP." });
+}
+
 export async function importFromLink(text: string, target?: ImportTarget): Promise<void> {
+  const codes = extractPlaylistCodes(text);
+  if (codes.length > 1) return importManyCodes(codes, target);
   running?.abort();
   const controller = new AbortController();
   running = controller;

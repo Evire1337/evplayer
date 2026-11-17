@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import type { Track } from "@/types";
 import { moveItem, useLibrary } from "./store";
-import { decodePlaylistCode, encodePlaylistCode, looksLikePlaylistCode } from "./playlistCode";
+import { decodePlaylistCode, encodePlaylistCode, extractPlaylistCodes, looksLikePlaylistCode } from "./playlistCode";
 
 const t = (id: string, source: Track["source"] = "soundcloud"): Track => ({ id, source, title: `Трек ${id}`, artists: [{ id: "a", name: "Артист" }], durationMs: 1000 });
 
@@ -40,5 +40,35 @@ describe("library", () => {
     const back = await decodePlaylistCode(code);
     expect(back.title).toBe("Ночь");
     expect(back.tracks.map((x) => [x.id, x.source])).toEqual([["sc:1", "soundcloud"], ["yt:2", "youtube"]]);
+  });
+});
+
+
+describe("playlist codes pasted from a text file", () => {
+  const list = (title: string) => ({ title, tracks: [{ id: "sc:1", source: "soundcloud" as const, title: "Song", durationMs: 1000, artists: [{ id: "a", name: "A" }] }] });
+
+  it("finds every code in a file, one per line, with names and empty lines between", async () => {
+    const one = await encodePlaylistCode(list("One"));
+    const two = await encodePlaylistCode(list("Two"));
+    const file = `﻿Мои плейлисты\r\n\r\nПервый:\r\n${one}\r\n\r\nВторой\r\n${two}\r\n`;
+    expect(extractPlaylistCodes(file)).toEqual([one, two]);
+    expect((await decodePlaylistCode(extractPlaylistCodes(file)[1])).title).toBe("Two");
+  });
+
+  it("joins one code that was wrapped over several lines", async () => {
+    const code = await encodePlaylistCode(list("Wrapped"));
+    const wrapped = code.replace(/(.{40})/g, "$1\n");
+    expect(extractPlaylistCodes(wrapped)).toEqual([code]);
+    expect((await decodePlaylistCode(wrapped)).title).toBe("Wrapped");
+  });
+
+  it("ignores invisible characters and padding", async () => {
+    const code = await encodePlaylistCode(list("Quiet"));
+    expect((await decodePlaylistCode(`​${code}==​`)).title).toBe("Quiet");
+  });
+
+  it("does not take plain text for a code", () => {
+    expect(looksLikePlaylistCode("Исполнитель — Название")).toBe(false);
+    expect(extractPlaylistCodes("hello")).toEqual([]);
   });
 });

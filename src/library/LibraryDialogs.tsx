@@ -3,7 +3,7 @@ import Dialog from "@/ui/components/Dialog";
 import { toast } from "@/ui/toasts";
 import { useLibrary } from "./store";
 import { useLibraryDialogs } from "./dialogs";
-import { decodePlaylistCode } from "./playlistCode";
+import { decodePlaylistCode, extractPlaylistCodes } from "./playlistCode";
 import { goToPlaylist } from "./trackMenu";
 import { importFromLink, linkKind } from "./importLink";
 import { looksLikeTrackList, parseTrackList } from "./trackList";
@@ -80,7 +80,9 @@ function ImportDialog() {
             // a broken code is told here, before the dialog closes
             setBusy(true);
             try {
-              await decodePlaylistCode(value);
+              // one code or a file full of them: at least one has to read
+              const results = await Promise.allSettled(extractPlaylistCodes(value).map((c) => decodePlaylistCode(c)));
+              if (!results.some((r) => r.status === "fulfilled")) throw new Error("broken");
             } catch {
               setError("Код повреждён или неполный. Скопируйте его целиком, начиная с EVP.");
               return;

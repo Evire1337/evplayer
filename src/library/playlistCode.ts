@@ -26,7 +26,36 @@ const MAX_ICON = 60_000;
 const SOURCES = { s: "soundcloud", y: "youtube", l: "local" } as const;
 const SHORT = { soundcloud: "s", youtube: "y", local: "l" } as const;
 
-export const looksLikePlaylistCode = (text: string) => /^\s*EVP[12]\./.test(text);
+/** characters that are not part of the code but get into a text file or a chat: byte-order mark, zero-width spaces */
+const INVISIBLE = /[\u200B-\u200D\u2060\uFEFF]/g;
+const CODE_START = /EVP[12]\./g;
+const CODE_BODY = /^[A-Za-z0-9_\-+/=]+$/;
+
+/**
+ * Every playlist code in a pasted text, each as one clean string. A text file with several codes
+ * (one per line, maybe with names or empty lines between) gives all of them; a single code that
+ * was wrapped over several lines gets joined again.
+ */
+export function extractPlaylistCodes(text: string): string[] {
+  const clean = text.replace(INVISIBLE, "");
+  const starts = [...clean.matchAll(CODE_START)].map((m) => m.index ?? 0);
+  return starts.map((at, i) => {
+    const chunk = clean.slice(at, starts[i + 1] ?? clean.length);
+    const head = chunk.slice(0, 5);
+    const tokens = chunk.slice(5).split(/\s+/).filter(Boolean);
+    // one code in the text: all that follows it that looks like code belongs to it (a wrapped line);
+    // several: each line is its own code, and what stands between them is a name or a note
+    const parts: string[] = [];
+    for (const token of tokens) {
+      if (!CODE_BODY.test(token)) break;
+      parts.push(token);
+      if (starts.length > 1) break;
+    }
+    return head + parts.join("");
+  });
+}
+
+export const looksLikePlaylistCode = (text: string) => extractPlaylistCodes(text).length > 0;
 
 function toB64(bytes: Uint8Array): string {
   let bin = "";
@@ -35,7 +64,7 @@ function toB64(bytes: Uint8Array): string {
 }
 
 function fromB64(text: string): Uint8Array {
-  const n = text.replace(/\s+/g, "").replace(/-/g, "+").replace(/_/g, "/");
+  const n = text.replace(/\s+/g, "").replace(/=+$/, "").replace(/-/g, "+").replace(/_/g, "/");
   const bin = atob(n + "=".repeat((4 - (n.length % 4)) % 4));
   return Uint8Array.from(bin, (c) => c.charCodeAt(0));
 }
@@ -68,7 +97,8 @@ export async function encodePlaylistCode(p: SharedPlaylist): Promise<string> {
 }
 
 export async function decodePlaylistCode(code: string): Promise<SharedPlaylist> {
-  const m = /^\s*(EVP[12])\.([A-Za-z0-9_\-\s]+)\s*$/.exec(code);
+  const first = extractPlaylistCodes(code)[0];
+  const m = first ? /^(EVP[12])\.([A-Za-z0-9_\-+/=]+)$/.exec(first) : null;
   if (!m) throw new Error("Это не код плейлиста");
   let bytes = fromB64(m[2]);
   if (m[1] === "EVP2") bytes = await pipe(bytes, new DecompressionStream("deflate-raw"));
