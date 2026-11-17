@@ -5,6 +5,12 @@ import { keeps } from "@/settings/store";
 // estimate is remembered per track, so a song you have heard before starts at its level.
 
 export const TARGET_DB = -18;
+/**
+ * On a phone the same level sounds quiet: its speaker and headphone output are weaker than a
+ * computer's, and the system volume is already the only knob. Songs are brought to a higher
+ * level there (the limiter after the levelling keeps loud ones from clipping).
+ */
+export const PHONE_TARGET_DB = -14;
 export const MAX_BOOST_DB = 8;
 export const MAX_CUT_DB = -12;
 const SILENCE_DB = -55;
@@ -37,10 +43,10 @@ export class LoudnessLeveler {
     return this.avgPower === null ? null : 10 * Math.log10(this.avgPower);
   }
 
-  gainDb(): number {
+  gainDb(targetDb = TARGET_DB): number {
     const loudness = this.loudnessDb();
     if (loudness === null) return 0;
-    return Math.min(MAX_BOOST_DB, Math.max(MAX_CUT_DB, TARGET_DB - loudness));
+    return Math.min(MAX_BOOST_DB, Math.max(MAX_CUT_DB, targetDb - loudness));
   }
 
   isSettled(): boolean {

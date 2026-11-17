@@ -1,6 +1,7 @@
 import { MAX_BANDS, peakBoostDb, type EqBand } from "./eqModel";
 import { useEqualizerStore } from "./eqStore";
-import { LoudnessLeveler, rememberedLoudness, rememberLoudness } from "./loudness";
+import { LoudnessLeveler, PHONE_TARGET_DB, TARGET_DB, rememberedLoudness, rememberLoudness } from "./loudness";
+import { isPhone } from "@/platform/device";
 import { usePlayer } from "@/player/store";
 
 // The equalizer sits at the very end of the playback graph:
@@ -115,6 +116,7 @@ useEqualizerStore.subscribe((s, prev) => {
 const TICK_MS = 150;
 /** once a song's loudness is known, a look now and then is enough */
 const SETTLED_TICK_MS = 1000;
+const levelTargetDb = () => (isPhone ? PHONE_TARGET_DB : TARGET_DB);
 let leveler = new LoudnessLeveler();
 let levelTrackId: string | null = null;
 let levelTimer: ReturnType<typeof setTimeout> | null = null;
@@ -130,7 +132,7 @@ export function setLevelingTrack(trackId: string | null): void {
   levelTrackId = trackId;
   leveler = new LoudnessLeveler(trackId ? rememberedLoudness(trackId) : undefined);
   if (bus && useEqualizerStore.getState().normalize) {
-    bus.level.gain.setTargetAtTime(Math.pow(10, leveler.gainDb() / 20), bus.context.currentTime, 0.05);
+    bus.level.gain.setTargetAtTime(Math.pow(10, leveler.gainDb(levelTargetDb()) / 20), bus.context.currentTime, 0.05);
   }
 }
 
@@ -149,7 +151,7 @@ function tick(): void {
   for (let i = 0; i < samples.length; i++) sum += samples[i] * samples[i];
   leveler.update(sum / samples.length, elapsed);
   // glide slowly so the change is never heard as a jump
-  bus.level.gain.setTargetAtTime(Math.pow(10, leveler.gainDb() / 20), bus.context.currentTime, 1.2);
+  bus.level.gain.setTargetAtTime(Math.pow(10, leveler.gainDb(levelTargetDb()) / 20), bus.context.currentTime, 1.2);
   levelTimer = setTimeout(tick, leveler.isSettled() ? SETTLED_TICK_MS : TICK_MS);
 }
 

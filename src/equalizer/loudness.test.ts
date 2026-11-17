@@ -27,3 +27,14 @@ describe("loudness leveller", () => {
     expect(new LoudnessLeveler(-12).gainDb()).toBeCloseTo(-6, 5);
   });
 });
+
+import { PHONE_TARGET_DB } from "./loudness";
+
+describe("a phone's higher level", () => {
+  it("brings the same song higher than on a computer, within the same limits", () => {
+    const song = new LoudnessLeveler(-12);
+    expect(song.gainDb(PHONE_TARGET_DB)).toBeCloseTo(-2, 5);
+    expect(song.gainDb(PHONE_TARGET_DB)).toBeGreaterThan(song.gainDb());
+    expect(new LoudnessLeveler(-60).gainDb(PHONE_TARGET_DB)).toBe(MAX_BOOST_DB);
+  });
+});

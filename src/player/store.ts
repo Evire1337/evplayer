@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type { Track } from "@/types";
+import { isPhone } from "@/platform/device";
 
 export type PlayerStatus = "idle" | "loading" | "playing" | "paused" | "error";
 export type RepeatMode = "off" | "all" | "one";
@@ -22,13 +23,15 @@ export interface PlayerState {
 }
 
 const VOLUME_KEY = "evplayer.volume";
+/** a phone has the system volume as its real knob: the app's own starts at full */
+const DEFAULT_VOLUME = isPhone ? 1 : 0.8;
 
 function savedVolume(): number {
   try {
     const v = Number(localStorage.getItem(VOLUME_KEY));
-    return Number.isFinite(v) && v > 0 && v <= 1 ? v : 0.8;
+    return Number.isFinite(v) && v > 0 && v <= 1 ? v : DEFAULT_VOLUME;
   } catch {
-    return 0.8;
+    return DEFAULT_VOLUME;
   }
 }
 
