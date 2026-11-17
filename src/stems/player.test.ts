@@ -222,6 +222,28 @@ describe("StemPlayer", () => {
     expect(chunks().sort()).toEqual([0, 1, 2, 3, 4, 5]);
   });
 
+  it("lets the deck be heard when a seek goes past what is split so far, and takes the sound again when it is there", async () => {
+    let written = 44 + CHUNK_FRAMES * 3 * 4;
+    const t = setup({ size: () => written });
+    t.engage(() => undefined, () => false);
+    await vi.advanceTimersByTimeAsync(50);
+    t.report(0);
+    t.report(2048);
+    expect(t.muted).toEqual([true]);
+    // the deck jumps to 10 s (chunk 3): not written yet
+    t.deck.currentTime = 10;
+    t.deck.dispatchEvent(new Event("seeking"));
+    t.deck.dispatchEvent(new Event("seeked"));
+    await vi.advanceTimersByTimeAsync(50);
+    expect(t.muted).toEqual([true, false]);
+    // it is written: the tracks follow and the deck goes silent again
+    written = 44 + CHUNK_FRAMES * 8 * 4;
+    await vi.advanceTimersByTimeAsync(400);
+    t.report(10 * SOURCE_RATE);
+    t.report(10 * SOURCE_RATE + 2048);
+    expect(t.muted).toEqual([true, false, true]);
+  });
+
   it("learns the length of the song when it is split to the end, and does not take the end as a missing chunk", async () => {
     const t = setup();
     let done = false;

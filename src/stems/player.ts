@@ -264,6 +264,8 @@ export class StemPlayer {
     // the time the chunks took is time the song went on
     let frame = Math.round(deck.currentTime * SOURCE_RATE);
     if (this.total !== null) frame = Math.min(frame, this.total);
+    // the place is not there yet (a seek past what is split so far): the deck is heard until it is
+    if (!this.have.has(chunkOf(frame))) this.unsilenceDeck();
     this.send({ type: "seek", frame });
     this.send({ type: "play", on: !deck.paused && !deck.seeking && deck.readyState >= 3 });
     this.healthy = 0;
@@ -374,6 +376,7 @@ export class StemPlayer {
       }
       this.sink?.port.postMessage({ type: "chunk", index, parts }, parts);
       this.have.add(index);
+      this.retryAt.delete(index);
       this.failures = 0;
     })()
       .catch((error: unknown) => {
@@ -433,7 +436,10 @@ export class StemPlayer {
       if (now - this.lastResync > RESYNC_MIN_MS) void this.align();
       return;
     }
-    if (++this.healthy >= HEALTHY_REPORTS && !this.silenced) this.silenceDeck();
+    if (++this.healthy >= HEALTHY_REPORTS && !this.silenced) {
+      console.info(`[stems] playing from the tracks (they are ${Math.round(gap * 1000)} ms from the deck)`);
+      this.silenceDeck();
+    }
   }
 
   private silenceDeck(): void {
