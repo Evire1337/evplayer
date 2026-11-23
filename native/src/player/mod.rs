@@ -126,7 +126,46 @@ struct Core {
     session_track: Option<Track>,
 }
 
+/// what a person asks the player to do (src/player/engine.ts PlayerAction): during a listening
+/// session these go to the session first (jam/engine.rs), which may take them over
+#[derive(Clone, Debug)]
+pub enum PlayerAction {
+    PlayQueue { tracks: Vec<Track>, start: usize },
+    PlayIndex(usize),
+    Toggle,
+    Next,
+    Prev,
+    Seek(f64),
+    Add { track: Track, next: bool },
+    Remove(usize),
+    Move(usize, usize),
+    ClearUpcoming,
+    Shuffle,
+    Repeat,
+}
+
+/// returns true when it took the action over (the player then does nothing itself)
+pub type Steer = Arc<dyn Fn(&PlayerAction) -> bool + Send + Sync>;
+
+thread_local! {
+    /// the session's own calls on this thread are not steered back to it
+    static UNSTEERED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// do `f` without the session taking the actions over (the session itself plays this way)
+pub fn unsteered<R>(f: impl FnOnce() -> R) -> R {
+    let was = UNSTEERED.with(|u| u.replace(true));
+    let r = f();
+    UNSTEERED.with(|u| u.set(was));
+    r
+}
+
 pub struct Player {
+    /// a listening session steering what is pressed
+    steer: Mutex<Option<Steer>>,
+    /// a guest of a session: the host's player moves on, this one only follows it (no song
+    /// is prepared or started here by itself)
+    follower: AtomicBool,
     core: Mutex<Core>,
     wake: Condvar,
     resolver: Arc<dyn Resolve>,
@@ -174,7 +213,7 @@ impl Player {
             session: String::new(),
             session_track: None,
         };
-        let me = Arc::new(Self { core: Mutex::new(core), wake: Condvar::new(), resolver, notify: Box::new(notify) });
+        let me = Arc::new(Self { steer: Mutex::new(None), follower: AtomicBool::new(false), core: Mutex::new(core), wake: Condvar::new(), resolver, notify: Box::new(notify) });
         me.apply_sound();
         let watcher = Arc::downgrade(&me);
         let _ = std::thread::Builder::new().name("player".into()).spawn(move || watch(watcher));
@@ -223,11 +262,56 @@ impl Player {
         (self.notify)();
     }
 
+    // ---- a listening session -----------------------------------------------------------------
+
+    /// a session steers the player (None: back to normal); `follower`: this copy follows a host
+    pub fn steer_with(&self, steer: Option<Steer>, follower: bool) {
+        *self.steer.lock().unwrap() = steer;
+        self.follower.store(follower, Ordering::Relaxed);
+        if follower {
+            self.core.lock().unwrap().drop_prepared();
+        }
+    }
+
+    /// the session took the action over
+    fn steered(&self, a: PlayerAction) -> bool {
+        if UNSTEERED.with(|u| u.get()) {
+            return false;
+        }
+        let steer = self.steer.lock().unwrap().clone();
+        steer.is_some_and(|s| s(&a))
+    }
+
+    fn following(&self) -> bool {
+        self.follower.load(Ordering::Relaxed)
+    }
+
+    /// the queue as a host shows it, without starting anything (a guest's view)
+    pub fn show_queue(&self, queue: Vec<Track>, index: usize) {
+        let mut c = self.core.lock().unwrap();
+        c.view.queue = queue;
+        c.view.index = index;
+        drop(c);
+        self.changed();
+    }
+
+    /// the song playing reached its end (a guest waits for the host's next song)
+    pub fn at_end(&self) -> bool {
+        self.core.lock().unwrap().deck.as_ref().is_some_and(|d| d.ended.load(Ordering::Relaxed))
+    }
+
+    /// the whole queue and where it is, without copying the view twice
+    pub fn queue_state(&self) -> (Vec<Track>, usize, Status, f64) {
+        let mut c = self.core.lock().unwrap();
+        c.refresh_position();
+        (c.view.queue.clone(), c.view.index, c.view.status, c.view.position_ms)
+    }
+
     // ---- what the person does --------------------------------------------------------------
 
     /// play `tracks` from `start`; `source` is the playlist or album they come from
     pub fn play_queue(self: &Arc<Self>, tracks: Vec<Track>, start: usize, source: Option<PlaySource>) {
-        if tracks.is_empty() {
+        if tracks.is_empty() || self.steered(PlayerAction::PlayQueue { tracks: tracks.clone(), start }) {
             return;
         }
         let mut c = self.core.lock().unwrap();
@@ -247,6 +331,9 @@ impl Player {
     /// list becomes the queue (so "next" plays the next song of that list).
     pub fn play_from(self: &Arc<Self>, tracks: Vec<Track>, index: usize, source: Option<PlaySource>) {
         let Some(track) = tracks.get(index).cloned() else { return };
+        if self.steered(PlayerAction::PlayQueue { tracks: tracks.clone(), start: index }) {
+            return;
+        }
         let same = self.core.lock().unwrap().view.current().map(|t| t.id == track.id).unwrap_or(false);
         if !same {
             return self.play_queue(tracks, index, source);
@@ -281,6 +368,9 @@ impl Player {
     }
 
     pub fn play_index(self: &Arc<Self>, index: usize) {
+        if self.steered(PlayerAction::PlayIndex(index)) {
+            return;
+        }
         let mut c = self.core.lock().unwrap();
         let Some(track) = c.view.queue.get(index).cloned() else { return };
         c.resume_at = 0.0;
@@ -296,6 +386,9 @@ impl Player {
     }
 
     pub fn toggle(self: &Arc<Self>) {
+        if self.steered(PlayerAction::Toggle) {
+            return;
+        }
         let mut c = self.core.lock().unwrap();
         match c.view.status {
             Status::Playing => {
@@ -323,6 +416,9 @@ impl Player {
     }
 
     pub fn next(self: &Arc<Self>) {
+        if self.steered(PlayerAction::Next) {
+            return;
+        }
         let mut c = self.core.lock().unwrap();
         self.advance(&mut c, true);
         drop(c);
@@ -330,6 +426,9 @@ impl Player {
     }
 
     pub fn prev(self: &Arc<Self>) {
+        if self.steered(PlayerAction::Prev) {
+            return;
+        }
         let mut c = self.core.lock().unwrap();
         c.refresh_position();
         if c.view.position_ms > RESTART_AFTER_MS {
@@ -343,6 +442,9 @@ impl Player {
     }
 
     pub fn seek(&self, ms: f64) {
+        if self.steered(PlayerAction::Seek(ms)) {
+            return;
+        }
         let mut c = self.core.lock().unwrap();
         c.seek_to(ms);
         drop(c);
@@ -353,6 +455,10 @@ impl Player {
         let mut c = self.core.lock().unwrap();
         c.refresh_position();
         let to = (c.view.position_ms + delta_ms).clamp(0.0, c.view.duration_ms.max(0.0));
+        if !UNSTEERED.with(|u| u.get()) && self.steer.lock().unwrap().is_some() {
+            drop(c);
+            return self.seek(to);
+        }
         c.seek_to(to);
         drop(c);
         self.changed();
@@ -379,6 +485,9 @@ impl Player {
     }
 
     pub fn toggle_shuffle(&self) {
+        if self.steered(PlayerAction::Shuffle) {
+            return;
+        }
         let mut c = self.core.lock().unwrap();
         if !c.view.shuffle {
             let first = c.view.current().map(|t| t.id.clone());
@@ -394,6 +503,9 @@ impl Player {
     }
 
     pub fn cycle_repeat(&self) {
+        if self.steered(PlayerAction::Repeat) {
+            return;
+        }
         let mut c = self.core.lock().unwrap();
         c.view.repeat = c.view.repeat.next();
         // the next song was armed to follow; with "repeat one" the same one comes again
@@ -404,6 +516,9 @@ impl Player {
 
     /// put a song right after the current one, or at the end
     pub fn add(self: &Arc<Self>, track: Track, next: bool) {
+        if self.steered(PlayerAction::Add { track: track.clone(), next }) {
+            return;
+        }
         let mut c = self.core.lock().unwrap();
         if c.view.queue.is_empty() {
             drop(c);
@@ -421,6 +536,9 @@ impl Player {
     }
 
     pub fn remove(&self, index: usize) {
+        if self.steered(PlayerAction::Remove(index)) {
+            return;
+        }
         let mut c = self.core.lock().unwrap();
         if index == c.view.index || index >= c.view.queue.len() {
             return;
@@ -435,6 +553,9 @@ impl Player {
     }
 
     pub fn move_song(&self, from: usize, to: usize) {
+        if self.steered(PlayerAction::Move(from, to)) {
+            return;
+        }
         let mut c = self.core.lock().unwrap();
         let index = c.view.index;
         c.view.index = queue::move_in_queue(&mut c.view.queue, index, from, to);
@@ -444,6 +565,9 @@ impl Player {
     }
 
     pub fn clear_upcoming(&self) {
+        if self.steered(PlayerAction::ClearUpcoming) {
+            return;
+        }
         let mut c = self.core.lock().unwrap();
         let keep = (c.view.index + 1).min(c.view.queue.len());
         c.view.queue.truncate(keep);
@@ -454,6 +578,9 @@ impl Player {
 
     /// a station from one song: the song, then similar ones
     pub fn start_radio(self: &Arc<Self>, seed: Track) {
+        if self.steered(PlayerAction::PlayQueue { tracks: vec![seed.clone()], start: 0 }) {
+            return;
+        }
         self.play_queue(vec![seed.clone()], 0, None);
         let me = self.clone();
         std::thread::spawn(move || {
@@ -838,7 +965,7 @@ impl Player {
         if let Some((at, token)) = c.skip_at {
             if Instant::now() >= at {
                 c.skip_at = None;
-                if token == c.token && c.view.status == Status::Error {
+                if token == c.token && c.view.status == Status::Error && !self.following() {
                     self.advance(&mut c, true);
                     changed = true;
                 }
@@ -862,6 +989,8 @@ impl Player {
                         changed = true;
                     } else if c.prepared.as_ref().is_some_and(|p| p.armed) {
                         // the sound card's thread switches by itself; nothing to do here
+                    } else if self.following() {
+                        // a guest: the host's player moves on, and this one follows it
                     } else {
                         self.advance(&mut c, false);
                         changed = true;
@@ -870,7 +999,7 @@ impl Player {
                     let duration = deck.duration_ms().unwrap_or(c.view.duration_ms);
                     let left = duration - pos;
                     let fade = state::get().settings.read().unwrap().crossfade.max(0.0);
-                    if duration > 0.0 && left < PREPARE_BEFORE_MS + fade * 1000.0 && c.prepared.is_none() && c.fading_until.is_none() {
+                    if duration > 0.0 && left < PREPARE_BEFORE_MS + fade * 1000.0 && c.prepared.is_none() && c.fading_until.is_none() && !self.following() {
                         self.prepare_next(&mut c);
                     }
                     let ready = c.prepared.as_ref().is_some_and(|p| p.deck.ready.load(Ordering::Relaxed));

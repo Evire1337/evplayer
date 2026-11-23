@@ -254,6 +254,35 @@ fn net_spotify_reads_a_whole_playlist_without_signing_in() {
     println!("import: «{}» {} names, truncated {}", f.title, f.named.len(), f.truncated);
 }
 
+/// two copies in one session on the real relays: what one says the other reads, signed by the
+/// first one's key; a sealed note opens only for its addressee
+#[test]
+#[ignore]
+fn net_jam_two_copies_hear_each_other_through_the_relays() {
+    use std::sync::mpsc::channel;
+    let (tx, rx) = channel::<(serde_json::Value, String)>();
+    let tx = std::sync::Mutex::new(tx);
+    let started = Instant::now();
+    let b = crate::jam::link::Link::open(Box::new(move |m, from| {
+        let _ = tx.lock().unwrap().send((m, from));
+    }))
+    .expect("relays");
+    let a = crate::jam::link::Link::open(Box::new(|_, _| {})).expect("relays");
+    println!("connected in {:?}", started.elapsed());
+    let code = crate::jam::protocol::new_code();
+    a.join(&code);
+    b.join(&code);
+    std::thread::sleep(Duration::from_secs(2));
+    let sent = Instant::now();
+    a.send(&serde_json::json!({ "t": "chat", "id": "x1", "text": "привет из нативной версии" }));
+    let (msg, from) = rx.recv_timeout(Duration::from_secs(10)).expect("the message came through");
+    println!("came in {:?}: {msg} from {}", sent.elapsed(), &from[..8]);
+    assert_eq!(msg["text"], "привет из нативной версии");
+    assert_eq!(from, a.id());
+    let sealed = a.seal("JAM-AAAA-BBBB", &b.id()).unwrap();
+    assert_eq!(b.unseal(&sealed, &a.id()).as_deref(), Some("JAM-AAAA-BBBB"));
+}
+
 /// what the updater makes of the real latest.json (nothing is installed)
 #[test]
 #[ignore]
