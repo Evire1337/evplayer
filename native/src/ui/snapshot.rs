@@ -65,6 +65,10 @@ pub fn glyph_sheet(out: &str, codes: &[String]) -> Result<(), String> {
 }
 
 pub fn run(mut app: App, ctx: egui::Context, mut o: Options) -> Result<(), String> {
+    // `--english`: the picture in English, whatever the settings say
+    if std::env::args().any(|a| a == "--english") {
+        crate::i18n::set_english(true);
+    }
     // the mini player's bar alone, at its own size
     let mini = o.page.as_deref() == Some("mini");
     let mut cover = None;

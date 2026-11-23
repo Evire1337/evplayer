@@ -249,6 +249,17 @@ impl App {
 }
 
 pub fn fmt_count(n: f64) -> String {
+    if crate::i18n::is_english() {
+        return if n >= 1e9 {
+            format!("{:.1}B", n / 1e9)
+        } else if n >= 1e6 {
+            format!("{:.1}M", n / 1e6)
+        } else if n >= 1e3 {
+            format!("{:.0}K", n / 1e3)
+        } else {
+            format!("{n:.0}")
+        };
+    }
     if n >= 1e9 {
         format!("{:.1} млрд", n / 1e9)
     } else if n >= 1e6 {

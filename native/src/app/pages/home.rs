@@ -94,7 +94,8 @@ impl App {
                         }
                         "collection" => {
                             let id = s.source.id.clone().unwrap_or_default();
-                            (s.source.title.clone().unwrap_or_default(), s.source.kind.clone().unwrap_or_default(), s.source.cover.clone(), Page::Collection(id))
+                            // the kind is kept in the history as the page wrote it ("Плейлист · SoundCloud")
+                            (s.source.title.clone().unwrap_or_default(), crate::i18n::t(&s.source.kind.clone().unwrap_or_default()), s.source.cover.clone(), Page::Collection(id))
                         }
                         "files" => (crate::i18n::t("Мои файлы"), String::new(), None, Page::Files),
                         _ => continue,

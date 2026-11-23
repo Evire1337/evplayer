@@ -54,6 +54,7 @@ pub mod spotify_export;
 pub mod updates;
 pub mod keep;
 pub mod jam;
+pub mod i18n_native;
 pub mod stats;
 pub mod store;
 pub mod system;

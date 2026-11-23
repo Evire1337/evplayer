@@ -76,6 +76,10 @@ fn dictionary() -> &'static HashMap<String, String> {
         let mut d = HashMap::new();
         parse_dictionary(include_str!("../../src/i18n/en.ts"), &mut d);
         parse_dictionary(include_str!("../../src/i18n/enMore.ts"), &mut d);
+        // what only the native build says
+        for (ru, en) in crate::i18n_native::NATIVE {
+            d.entry(ru.to_string()).or_insert_with(|| en.to_string());
+        }
         parse_dictionary(EXTRA, &mut d);
         d
     })
@@ -155,9 +159,59 @@ pub fn tracks(n: usize) -> String {
     t(&format!("{n} {word}"))
 }
 
+/// every Russian text written in the native build's source that has no English yet (the
+/// dictionaries and the patterns); `cargo test untranslated -- --ignored --nocapture`
+#[cfg(test)]
+pub fn untranslated() -> Vec<String> {
+    let re = regex::Regex::new(r#""((?:[^"\\]|\\.)*[А-Яа-яЁё](?:[^"\\]|\\.)*)""#).unwrap();
+    let mut missing = std::collections::BTreeSet::new();
+    let mut stack = vec![std::path::PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/src"))];
+    while let Some(dir) = stack.pop() {
+        for e in std::fs::read_dir(&dir).into_iter().flatten().flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                stack.push(p);
+                continue;
+            }
+            if p.extension().and_then(|x| x.to_str()) != Some("rs") || p.ends_with("i18n.rs") {
+                continue;
+            }
+            let src = std::fs::read_to_string(&p).unwrap_or_default();
+            for line in src.lines() {
+                let l = line.trim_start();
+                // comments, tests and the patterns' own matches are not shown to anyone
+                if l.starts_with("//") || l.starts_with("assert") || l.contains("Regex::new") || l.contains("eprintln!") || l.contains("println!") {
+                    continue;
+                }
+                for m in re.captures_iter(line) {
+                    let text = m[1].replace("\\n", "\n").replace("\\\"", "\"");
+                    // texts built from parts are looked up whole elsewhere
+                    if text.contains('{') {
+                        continue;
+                    }
+                    if dictionary().get(&text).is_none() && pattern(&text).is_none() {
+                        missing.insert(text);
+                    }
+                }
+            }
+        }
+    }
+    missing.into_iter().collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    #[ignore]
+    fn untranslated_texts() {
+        let m = untranslated();
+        for t in &m {
+            println!("{t}");
+        }
+        println!("{} without English", m.len());
+    }
 
     #[test]
     fn reads_the_dictionary_and_the_patterns() {
