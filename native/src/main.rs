@@ -37,14 +37,18 @@ pub mod userproxy;
 
 pub mod app;
 pub mod audio;
+pub mod diagnostics;
+pub mod dialogs;
 pub mod events;
 pub mod i18n;
 pub mod model;
 mod nettest;
 pub mod player;
+pub mod presence;
 pub mod services;
 pub mod state;
 pub mod store;
+pub mod system;
 pub mod ui;
 
 use std::path::PathBuf;
@@ -57,6 +61,13 @@ pub fn data_dir() -> PathBuf {
 
 fn main() {
     let started = std::time::Instant::now();
+    let args: Vec<String> = std::env::args().collect();
+    if let Some(i) = args.iter().position(|a| a == "--glyphs") {
+        if let Some(out) = args.get(i + 1) {
+            let _ = ui::snapshot::glyph_sheet(out, &args[i + 2..]);
+        }
+        return;
+    }
     let dir = data_dir();
     let _ = std::fs::create_dir_all(&dir);
     userproxy::load(&dir);
@@ -68,7 +79,15 @@ fn main() {
             return;
         }
     };
+    state::init(dir.clone());
     let ctx = egui::Context::default();
     let app = app::App::new(&ctx, dir, started);
+    let args: Vec<String> = std::env::args().collect();
+    if let Some(opts) = ui::snapshot::parse(&args) {
+        if let Err(e) = ui::snapshot::run(app, ctx, opts) {
+            eprintln!("[snapshot] {e}");
+        }
+        return;
+    }
     ui::window::run(app, ctx, event_loop);
 }

@@ -851,6 +851,7 @@ dependencies = [
  "image",
  "lofty",
  "log",
+ "memmap2",
  "notify",
  "opusic-sys",
  "percent-encoding",

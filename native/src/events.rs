@@ -21,6 +21,8 @@ pub enum Event {
     OpenLink(String),
     /// close for real (the tray's "Выход")
     Quit,
+    /// the window's own close button (to the tray or quit, by the settings)
+    Close,
 }
 
 static PROXY: OnceLock<EventLoopProxy<Event>> = OnceLock::new();

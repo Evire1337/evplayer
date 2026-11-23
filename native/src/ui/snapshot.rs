@@ -37,6 +37,33 @@ pub fn parse(args: &[String]) -> Option<Options> {
     Some(o)
 }
 
+/// `--glyphs out.png E8B7 E838 …`: the icon font's glyphs with their codes, to pick icons by sight
+pub fn glyph_sheet(out: &str, codes: &[String]) -> Result<(), String> {
+    let ctx = egui::Context::default();
+    super::theme::apply(&ctx);
+    let (w, h) = (900u32, 60 + 70 * (codes.len() as u32).div_ceil(8));
+    let mut renderer = SoftRenderer::new(0x0b2a27);
+    let mut px = vec![0u32; (w * h) as usize];
+    for _ in 0..3 {
+        let input = egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(w as f32, h as f32))), ..Default::default() };
+        let outp = ctx.run_ui(input, |ui| {
+            for (i, c) in codes.iter().enumerate() {
+                let ch = u32::from_str_radix(c, 16).ok().and_then(char::from_u32).unwrap_or('?');
+                let pos = egui::pos2(20.0 + (i % 8) as f32 * 110.0, 20.0 + (i / 8) as f32 * 70.0);
+                ui.painter().text(pos, egui::Align2::LEFT_TOP, ch.to_string(), super::theme::icon(28.0), egui::Color32::WHITE);
+                ui.painter().text(pos + egui::vec2(0.0, 36.0), egui::Align2::LEFT_TOP, c, super::theme::body(12.0), egui::Color32::LIGHT_GRAY);
+            }
+        });
+        let prims = ctx.tessellate(outp.shapes, 1.0);
+        renderer.set_textures(&outp.textures_delta);
+        renderer.render(&prims, 1.0, &mut px, w as usize, h as usize, true);
+        let mut d = outp.textures_delta;
+        d.clear();
+    }
+    let rgb: Vec<u8> = px.iter().flat_map(|p| [(p >> 16) as u8, (p >> 8) as u8, *p as u8]).collect();
+    image::save_buffer(Path::new(out), &rgb, w, h, image::ColorType::Rgb8).map_err(|e| e.to_string())
+}
+
 pub fn run(mut app: App, ctx: egui::Context, o: Options) -> Result<(), String> {
     if let Some(page) = &o.page {
         app.open_page_by_name(page);

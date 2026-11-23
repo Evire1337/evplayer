@@ -39,6 +39,24 @@ pub fn get(url: &str, headers: &[(&str, &str)]) -> Result<reqwest::blocking::Res
     req.send().map_err(|e| e.to_string())
 }
 
+/// a picture: from any https address, as the Tauri build's page could show any
+/// (its CSP has `img-src https:`); nothing but the picture is read
+pub fn get_image(url: &str) -> Result<Vec<u8>, String> {
+    let u = url::Url::parse(url).map_err(|e| e.to_string())?;
+    if u.scheme() != "https" {
+        return Err("only https pictures".into());
+    }
+    let res = client().get(u).send().map_err(|e| e.to_string())?;
+    if !res.status().is_success() {
+        return Err(format!("{}", res.status().as_u16()));
+    }
+    // a cover is small; anything huge is not one
+    if res.content_length().is_some_and(|l| l > 20 * 1024 * 1024) {
+        return Err("too big".into());
+    }
+    res.bytes().map(|b| b.to_vec()).map_err(|e| e.to_string())
+}
+
 pub fn get_text(url: &str) -> Result<String, String> {
     let res = get(url, &[])?;
     if !res.status().is_success() {

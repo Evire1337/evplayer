@@ -4,6 +4,11 @@
 //! Nothing runs while nothing happens. The loop sleeps until an input, a wake from another
 //! thread (events.rs) or the moment egui asked to be drawn again; a frame whose picture did
 //! not change is not drawn; a hidden or minimized window is not laid out or drawn at all.
+//!
+//! The video card is used only while the window is seen: the Direct3D device is made when the
+//! window is shown and let go a few seconds after it is hidden (with the pictures and pages),
+//! so a player living in the tray holds no video driver memory at all. Started hidden
+//! (`--hidden`), it never touches the video card until it is opened.
 
 use std::rc::Rc;
 use std::time::{Duration, Instant};
@@ -41,6 +46,19 @@ struct Shell {
     last_print: u64,
     /// the window's pixels must be drawn whole (it was resized, shown again)
     dirty: bool,
+    /// out of sight since then (hidden in the tray or minimized)
+    hidden_since: Option<Instant>,
+    /// the window let go of its painter and pages; they come back when it is shown
+    asleep: bool,
+}
+
+/// after this long out of sight the window lets go of the video card and its pages
+fn sleep_after() -> Duration {
+    if crate::state::get().settings.read().unwrap().memory_saver {
+        Duration::from_secs(2)
+    } else {
+        Duration::from_secs(5)
+    }
 }
 
 fn window_icon() -> Option<Icon> {
@@ -54,9 +72,64 @@ impl Shell {
         self.window.as_ref().map(|w| w.is_visible().unwrap_or(true) && !w.is_minimized().unwrap_or(false)).unwrap_or(false)
     }
 
+    /// the painter for the window: the video card when there is one, else the processor
+    fn make_painter(&mut self, window: &Rc<Window>) {
+        let size = window.inner_size();
+        let hwnd = match window.window_handle().map(|h| h.as_raw()) {
+            Ok(RawWindowHandle::Win32(h)) => Some(h.hwnd.get()),
+            _ => None,
+        };
+        let force_soft = std::env::var_os("EVPLAYER_SOFTWARE").is_some();
+        let gpu = if force_soft { None } else { hwnd.and_then(|h| GpuRenderer::new(h, size.width, size.height)) };
+        let [r, g, b] = GROUND;
+        self.painter = match gpu {
+            Some(mut gpu) => {
+                gpu.clear = [r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0, 1.0];
+                Some(Painter::Gpu(gpu))
+            }
+            None => {
+                let ctx = softbuffer::Context::new(window.clone());
+                let surface = ctx.ok().and_then(|c| softbuffer::Surface::new(&c, window.clone()).ok());
+                surface.map(|surface| Painter::Soft { surface, renderer: SoftRenderer::new(((r as u32) << 16) | ((g as u32) << 8) | b as u32), force: true })
+            }
+        };
+        crate::app::set_renderer_name(match &self.painter {
+            Some(Painter::Gpu(_)) => "Direct3D 11",
+            Some(Painter::Soft { .. }) => "процессор",
+            None => "нет",
+        });
+        self.dirty = true;
+    }
+
+    /// out of sight a while: the video card, the pictures and the pages go. The interface
+    /// context is made anew on waking (the textures egui knew of were on the device that went).
+    fn sleep(&mut self) {
+        if self.asleep {
+            return;
+        }
+        self.asleep = true;
+        self.painter = None;
+        self.app.sleep();
+        let ctx = egui::Context::default();
+        crate::ui::theme::apply(&ctx);
+        ctx.set_request_repaint_callback(|info| events::send(Event::Repaint(info.delay)));
+        self.ctx = ctx;
+        if let Some(window) = &self.window {
+            self.state = Some(egui_winit::State::new(self.ctx.clone(), ViewportId::ROOT, window, Some(window.scale_factor() as f32), window.theme(), Some(8192)));
+        }
+        self.last_print = 0;
+    }
+
     fn paint(&mut self, el: &ActiveEventLoop) {
         if !self.visible() {
             return;
+        }
+        self.hidden_since = None;
+        self.asleep = false;
+        if self.painter.is_none() {
+            if let Some(w) = self.window.clone() {
+                self.make_painter(&w);
+            }
         }
         let (Some(window), Some(state)) = (self.window.clone(), self.state.as_mut()) else { return };
         let input = state.take_egui_input(&window);
@@ -72,7 +145,7 @@ impl Shell {
             self.next_frame = if root.repaint_delay == Duration::MAX { None } else { Some(Instant::now() + root.repaint_delay) };
         }
         if std::env::var_os("EVPLAYER_TRACE").is_some() {
-            eprintln!("[frame] delay={:?} next={:?}", root.as_ref().map(|r| r.repaint_delay), self.next_frame.map(|t| t.saturating_duration_since(Instant::now())));
+            eprintln!("[frame] delay={:?} causes={:?}", root.as_ref().map(|r| r.repaint_delay), self.ctx.repaint_causes());
         }
         let ppp = out.pixels_per_point;
         let prims = self.ctx.tessellate(out.shapes, ppp);
@@ -121,8 +194,14 @@ impl Shell {
     }
 
     fn schedule(&mut self, el: &ActiveEventLoop) {
-        match self.next_frame {
-            Some(t) if self.visible() => el.set_control_flow(ControlFlow::WaitUntil(t)),
+        let visible = self.visible();
+        if !visible && self.hidden_since.is_none() {
+            self.hidden_since = Some(Instant::now());
+        }
+        match (self.next_frame, visible) {
+            (Some(t), true) => el.set_control_flow(ControlFlow::WaitUntil(t)),
+            // out of sight: wake once more to let go of the video card, then sleep
+            (_, false) if !self.asleep => el.set_control_flow(ControlFlow::WaitUntil(self.hidden_since.unwrap_or_else(Instant::now) + sleep_after())),
             _ => el.set_control_flow(ControlFlow::Wait),
         }
     }
@@ -142,6 +221,7 @@ impl Shell {
         if let Some(w) = &self.window {
             w.set_visible(false);
         }
+        self.hidden_since = Some(Instant::now());
         self.app.window_shown(false);
     }
 }
@@ -166,30 +246,6 @@ impl ApplicationHandler<Event> for Shell {
                 return;
             }
         });
-        let size = window.inner_size();
-        let hwnd = match window.window_handle().map(|h| h.as_raw()) {
-            Ok(RawWindowHandle::Win32(h)) => Some(h.hwnd.get()),
-            _ => None,
-        };
-        let force_soft = std::env::var_os("EVPLAYER_SOFTWARE").is_some();
-        let gpu = if force_soft { None } else { hwnd.and_then(|h| GpuRenderer::new(h, size.width, size.height)) };
-        let [r, g, b] = GROUND;
-        self.painter = match gpu {
-            Some(mut gpu) => {
-                gpu.clear = [r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0, 1.0];
-                Some(Painter::Gpu(gpu))
-            }
-            None => {
-                let ctx = softbuffer::Context::new(window.clone());
-                let surface = ctx.ok().and_then(|c| softbuffer::Surface::new(&c, window.clone()).ok());
-                surface.map(|surface| Painter::Soft { surface, renderer: SoftRenderer::new(((r as u32) << 16) | ((g as u32) << 8) | b as u32), force: true })
-            }
-        };
-        crate::app::set_renderer_name(match &self.painter {
-            Some(Painter::Gpu(_)) => "Direct3D 11",
-            Some(Painter::Soft { .. }) => "процессор",
-            None => "нет",
-        });
         let state = egui_winit::State::new(self.ctx.clone(), ViewportId::ROOT, &window, Some(window.scale_factor() as f32), window.theme(), Some(8192));
         self.state = Some(state);
         egui_winit::update_viewport_info(&mut self.info, &self.ctx, &window, true);
@@ -198,8 +254,13 @@ impl ApplicationHandler<Event> for Shell {
         self.window = Some(window.clone());
         self.dirty = true;
         if !start_hidden {
+            // drawn first, then shown: no white or empty frame flashes up
+            self.make_painter(&window);
             window.set_visible(true);
             self.app.window_shown(true);
+        } else {
+            self.hidden_since = Some(Instant::now());
+            self.asleep = true;
         }
         window.request_redraw();
     }
@@ -272,6 +333,15 @@ impl ApplicationHandler<Event> for Shell {
                 el.exit();
                 return;
             }
+            Event::Close => {
+                if self.app.close_to_tray() {
+                    self.hide();
+                } else {
+                    self.app.quit();
+                    el.exit();
+                    return;
+                }
+            }
         }
         if self.app.wants_hide() {
             self.hide();
@@ -284,9 +354,15 @@ impl ApplicationHandler<Event> for Shell {
 
     fn new_events(&mut self, el: &ActiveEventLoop, cause: winit::event::StartCause) {
         if let winit::event::StartCause::ResumeTimeReached { .. } = cause {
-            self.next_frame = None;
-            if let Some(w) = &self.window {
-                w.request_redraw();
+            if !self.visible() {
+                if self.hidden_since.is_some_and(|t| t.elapsed() >= sleep_after()) {
+                    self.sleep();
+                }
+            } else {
+                self.next_frame = None;
+                if let Some(w) = &self.window {
+                    w.request_redraw();
+                }
             }
         }
         let _ = el;
@@ -301,7 +377,7 @@ pub fn run(app: App, ctx: egui::Context, event_loop: EventLoop<Event>) {
     events::install(event_loop.create_proxy());
     // egui asks for frames from any thread (an animation, a picture that arrived)
     ctx.set_request_repaint_callback(|info| events::send(Event::Repaint(info.delay)));
-    let mut shell = Shell { app, ctx, window: None, state: None, painter: None, info: Default::default(), next_frame: None, last_print: 0, dirty: true };
+    let mut shell = Shell { app, ctx, window: None, state: None, painter: None, info: Default::default(), next_frame: None, last_print: 0, dirty: true, hidden_since: None, asleep: false };
     if let Err(e) = event_loop.run_app(&mut shell) {
         eprintln!("[window] {e}");
     }
