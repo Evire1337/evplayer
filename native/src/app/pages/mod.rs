@@ -7,6 +7,7 @@ mod home;
 mod library;
 pub mod now;
 mod search;
+pub mod services;
 mod settings;
 mod sound;
 
@@ -42,6 +43,8 @@ pub struct Pages {
     pub version_clicks: Vec<std::time::Instant>,
     /// the diagnostics' measurements while their tab is open
     pub probe: Option<crate::diagnostics::Probe>,
+    /// Настройки → Сервисы и импорт
+    pub services: services::ServicesState,
 }
 
 impl App {
@@ -368,6 +371,65 @@ impl App {
                         if widgets::pill_button(ui, None, "Восстановить", true).clicked() {
                             crate::backup::restore(&state::get().kv, b);
                             crate::system::restart();
+                            done = true;
+                        }
+                        if widgets::pill_button(ui, None, "Отмена", false).clicked() {
+                            done = true;
+                        }
+                    });
+                }
+                Dialog::FullSync => {
+                    ui.label(egui::RichText::new(crate::i18n::t("Включить полную синхронизацию?")).font(theme::heavy(22.0)));
+                    ui.add_space(6.0);
+                    ui.label(egui::RichText::new(crate::i18n::t("Все песни SoundCloud из «Понравившихся» будут отмечены лайком в вашем аккаунте, а плейлисты, созданные в EvPlayer, появятся там как приватные. Если убрать лайк или удалить такой плейлист в плеере, он исчезнет и на SoundCloud. Плейлисты, которые вы забрали с SoundCloud, и всё, что создано не в EvPlayer, не трогаются.")).color(theme::ink2()));
+                    ui.add_space(14.0);
+                    ui.horizontal(|ui| {
+                        if widgets::pill_button(ui, None, "Включить", true).clicked() {
+                            state::get().set_extra("soundcloudFullSync", serde_json::Value::Bool(true));
+                            crate::services::scaccount::schedule(500);
+                            done = true;
+                        }
+                        if widgets::pill_button(ui, None, "Отмена", false).clicked() {
+                            done = true;
+                        }
+                    });
+                }
+                Dialog::SpotifyExport { lists, chosen, error } => {
+                    ui.label(egui::RichText::new(crate::i18n::t("Импорт из Spotify")).font(theme::heavy(22.0)));
+                    ui.add_space(6.0);
+                    ui.label(egui::RichText::new(crate::i18n::t("На spotify.com → «Конфиденциальность» → «Скачать свои данные» запросите архив (приходит на почту за несколько дней). Выберите здесь весь zip или JSON-файлы из него: YourLibrary.json, Playlist*.json, StreamingHistory*.json. EvPlayer найдёт эти песни на YouTube Music и SoundCloud.")).font(theme::body(12.5)).color(theme::ink2()));
+                    ui.add_space(8.0);
+                    if widgets::pill_button(ui, Some(ic::OPEN), "Выбрать zip или JSON", false).clicked() {
+                        let files = crate::dialogs::pick_files_of("Архив данных Spotify", "*.zip;*.json");
+                        if !files.is_empty() {
+                            let found = crate::spotify_export::parse(&crate::spotify_export::read_files(&files));
+                            if found.is_empty() {
+                                *error = crate::i18n::t("В файлах не нашлось плейлистов или понравившихся. Нужен архив «Данные аккаунта» от Spotify.");
+                                lists.clear();
+                            } else {
+                                error.clear();
+                                *chosen = vec![true; found.len()];
+                                *lists = found;
+                            }
+                        }
+                    }
+                    if !error.is_empty() {
+                        ui.label(egui::RichText::new(error.as_str()).color(egui::Color32::from_rgb(0xff, 0x6b, 0x6b)));
+                    }
+                    egui::ScrollArea::vertical().max_height(260.0).show(ui, |ui| {
+                        for (i, l) in lists.iter().enumerate() {
+                            ui.horizontal(|ui| {
+                                ui.checkbox(&mut chosen[i], egui::RichText::new(&l.title).font(theme::medium(13.5)));
+                                ui.label(egui::RichText::new(crate::i18n::tracks(l.tracks.len())).font(theme::body(12.0)).color(theme::ink3()));
+                            });
+                        }
+                    });
+                    ui.add_space(10.0);
+                    ui.horizontal(|ui| {
+                        let any = chosen.iter().any(|c| *c);
+                        if widgets::pill_button(ui, Some(ic::DOWNLOAD), "Импортировать", true).clicked() && any {
+                            let picked: Vec<crate::spotify_export::List> = lists.iter().zip(chosen.iter()).filter(|(_, c)| **c).map(|(l, _)| l.clone()).collect();
+                            apply = Some(Box::new(move |app: &mut App| services::import_spotify_export(app, picked)));
                             done = true;
                         }
                         if widgets::pill_button(ui, None, "Отмена", false).clicked() {

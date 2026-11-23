@@ -100,6 +100,8 @@ impl State {
         crate::events::repaint();
         // songs added to a list kept offline are fetched too
         crate::keep::changed();
+        // and with full sync on, SoundCloud follows a few seconds later
+        crate::services::scaccount::schedule(4000);
         r
     }
 

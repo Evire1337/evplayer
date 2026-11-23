@@ -133,6 +133,10 @@ pub enum Dialog {
     Restore(crate::backup::BackupFile),
     /// "Сбросить статистику?"
     ResetStats,
+    /// "Включить полную синхронизацию?" with SoundCloud
+    FullSync,
+    /// Spotify's data archive: the lists found in it and which are ticked
+    SpotifyExport { lists: Vec<crate::spotify_export::List>, chosen: Vec<bool>, error: String },
 }
 
 /// an import running (or just finished): its panel at the bottom
@@ -240,6 +244,7 @@ impl App {
                 if !std::env::args().any(|a| a == "--snapshot") {
                     crate::keep::start(d.clone());
                     crate::updates::start();
+                    crate::services::scaccount::start();
                 }
                 d
             },

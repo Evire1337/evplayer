@@ -346,7 +346,7 @@ fn deezer(url: &url::Url) -> Result<Fetched, String> {
     })
 }
 
-fn yandex_get(path: &str) -> Result<Value, String> {
+pub fn yandex_get(path: &str) -> Result<Value, String> {
     let url = format!("https://api.music.yandex.net{path}");
     let res = crate::services::http::get(&url, &[])?;
     let status = res.status().as_u16();
@@ -364,7 +364,7 @@ fn yandex_get(path: &str) -> Result<Value, String> {
     body.get("result").cloned().filter(|_| (200..300).contains(&status)).ok_or_else(|| format!("Яндекс Музыка ответила {status}"))
 }
 
-fn yandex_named(t: &Value) -> Option<Named> {
+pub fn yandex_named(t: &Value) -> Option<Named> {
     let title = t.get("title")?.as_str()?;
     let title = match t.get("version").and_then(Value::as_str) {
         Some(v) if !v.is_empty() => format!("{title} ({v})"),

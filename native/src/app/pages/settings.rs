@@ -148,42 +148,6 @@ impl App {
         ui.add_space(10.0);
     }
 
-    fn settings_services(&mut self, ui: &mut Ui) {
-        card(ui, "SoundCloud", |ui| {
-            let mut id = state::get().settings.read().unwrap().soundcloud_client_id.clone();
-            row(ui, "Client ID своего приложения", "Пусто — берётся автоматически с сайта SoundCloud", |ui| {
-                if ui.add(egui::TextEdit::singleline(&mut id).desired_width(220.0)).changed() {
-                    state::get().set_settings(|s| s.soundcloud_client_id = id.trim().to_string());
-                }
-            });
-        });
-        card(ui, "Защита региона", |ui| {
-            switch(ui, "Не обращаться к SoundCloud из выбранных стран", "Песни тогда играют из копии на YouTube Music", |s| s.region_guard, |s, v| s.region_guard = v);
-            let countries = state::get().settings.read().unwrap().region_countries.join(", ");
-            let mut text = countries.clone();
-            row(ui, "Страны", "Двухбуквенные коды через запятую", |ui| {
-                if ui.add(egui::TextEdit::singleline(&mut text).desired_width(160.0)).lost_focus() && text != countries {
-                    let list: Vec<String> = text.split(',').filter_map(crate::services::region::normalize_country).collect();
-                    state::get().set_settings(|s| s.region_countries = list);
-                }
-            });
-            let known = crate::services::region::known_country();
-            App::muted(ui, &format!("{}: {}", crate::i18n::t("Страна подключения"), known.unwrap_or_else(|| "—".into())));
-        });
-        card(ui, "Прокси", |ui| {
-            let saved = crate::userproxy::saved(&self.data_dir);
-            let mut text = saved.clone();
-            row(ui, "Свой HTTP-прокси", "host:port — для всех запросов программы, с перезапуска", |ui| {
-                let r = ui.add(egui::TextEdit::singleline(&mut text).desired_width(200.0).hint_text("127.0.0.1:2080"));
-                if r.lost_focus() && text != saved {
-                    if let Err(e) = crate::userproxy::save(&self.data_dir, &text) {
-                        self.toasts.push(crate::app::Toast { text: e, until: std::time::Instant::now() + std::time::Duration::from_secs(3) });
-                    }
-                }
-            });
-        });
-    }
-
     fn settings_look(&mut self, ui: &mut Ui) {
         card(ui, "Язык", |ui| {
             let lang = state::get().settings.read().unwrap().language;

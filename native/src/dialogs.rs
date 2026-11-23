@@ -36,6 +36,33 @@ pub fn pick_files() -> Vec<PathBuf> {
     }
 }
 
+/// several files of the kind `what` (`pattern` like "*.zip;*.json")
+#[cfg(windows)]
+pub fn pick_files_of(what: &str, pattern: &str) -> Vec<PathBuf> {
+    use windows_sys::Win32::UI::Controls::Dialogs::*;
+    let mut buf = vec![0u16; 64 * 1024];
+    let filter: Vec<u16> = format!("{}\0{pattern}\0\0", crate::i18n::t(what)).encode_utf16().collect();
+    // SAFETY: the structure points at buffers that live through the call
+    let ok = unsafe {
+        let mut ofn: OPENFILENAMEW = std::mem::zeroed();
+        ofn.lStructSize = std::mem::size_of::<OPENFILENAMEW>() as u32;
+        ofn.lpstrFilter = filter.as_ptr();
+        ofn.lpstrFile = buf.as_mut_ptr();
+        ofn.nMaxFile = buf.len() as u32;
+        ofn.Flags = OFN_ALLOWMULTISELECT | OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_NOCHANGEDIR;
+        GetOpenFileNameW(&mut ofn) != 0
+    };
+    if !ok {
+        return vec![];
+    }
+    let parts: Vec<String> = buf.split(|c| *c == 0).take_while(|p| !p.is_empty()).map(String::from_utf16_lossy).collect();
+    match parts.as_slice() {
+        [] => vec![],
+        [one] => vec![PathBuf::from(one)],
+        [dir, files @ ..] => files.iter().map(|f| Path::new(dir).join(f)).collect(),
+    }
+}
+
 /// "Save as" for a file named `name` of the kind `what` (`ext` without the dot)
 #[cfg(windows)]
 pub fn save_file(name: &str, what: &str, ext: &str) -> Option<PathBuf> {
@@ -142,4 +169,8 @@ pub fn open_file(_what: &str, _ext: &str) -> Option<PathBuf> {
 #[cfg(not(windows))]
 pub fn pick_folder_for(_title: &str) -> Option<PathBuf> {
     None
+}
+#[cfg(not(windows))]
+pub fn pick_files_of(_what: &str, _pattern: &str) -> Vec<PathBuf> {
+    vec![]
 }
