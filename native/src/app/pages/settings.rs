@@ -527,7 +527,23 @@ impl App {
     }
 
     /// "Обновления" (filled in by the updater)
-    fn updates_row(&mut self, _ui: &mut Ui) {}
+    fn updates_row(&mut self, ui: &mut Ui) {
+        let st = crate::updates::status();
+        row(ui, "Обновления", &crate::updates::line(&st), |ui| {
+            if let crate::updates::Status::Ready { .. } = st {
+                if widgets::pill_button(ui, None, "Перезапустить", true).clicked() {
+                    if let Err(e) = crate::updates::install() {
+                        self.toast(&e);
+                    }
+                }
+            } else {
+                let busy = matches!(st, crate::updates::Status::Checking | crate::updates::Status::Downloading { .. });
+                if ui.add_enabled_ui(!busy, |ui| widgets::pill_button(ui, None, "Проверить", false)).inner.clicked() {
+                    crate::updates::check_now();
+                }
+            }
+        });
+    }
 
     /// Диагностика (src/pages/settings/DiagnosticsTab.tsx): what the program takes right now
     /// and what to do about it. Measures only while this tab is open.

@@ -50,6 +50,7 @@ pub mod presence;
 pub mod services;
 pub mod state;
 pub mod backup;
+pub mod updates;
 pub mod keep;
 pub mod stats;
 pub mod store;

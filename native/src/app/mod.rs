@@ -89,6 +89,33 @@ pub struct Menu {
 /// toasts from other threads (a copy-out that finished), shown on the next frame
 static LATER: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
 
+impl App {
+    /// "Вышла версия X" with a restart button (UpdateToast.tsx); nothing until there is one
+    fn update_toast(&mut self, ui: &mut Ui, screen: Rect) {
+        let crate::updates::Status::Ready { version } = crate::updates::status() else { return };
+        if self.update_dismissed {
+            return;
+        }
+        let w = 520.0_f32.min(screen.width() - 32.0);
+        let rect = Rect::from_min_size(egui::pos2(screen.center().x - w / 2.0, screen.bottom() - 190.0), egui::vec2(w, 52.0));
+        let mut cui = ui.new_child(egui::UiBuilder::new().max_rect(rect).layout(egui::Layout::left_to_right(egui::Align::Center)));
+        egui::Frame::new().fill(egui::Color32::from_rgba_unmultiplied(8, 22, 24, 245)).corner_radius(16).inner_margin(egui::Margin::symmetric(14, 8)).show(&mut cui, |ui| {
+            ui.set_width(w - 28.0);
+            ui.label(egui::RichText::new(format!("{} {version}. {}", crate::i18n::t("Вышла версия"), crate::i18n::t("Она установится при перезапуске."))).color(INK));
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if widgets::pill_button(ui, None, "Позже", false).clicked() {
+                    self.update_dismissed = true;
+                }
+                if widgets::pill_button(ui, None, "Перезапустить", true).clicked() {
+                    if let Err(e) = crate::updates::install() {
+                        self.toast(&e);
+                    }
+                }
+            });
+        });
+    }
+}
+
 pub fn toast_later(text: impl Into<String>) {
     LATER.lock().unwrap().push(text.into());
     crate::events::repaint();
@@ -139,6 +166,8 @@ pub struct App {
     /// the last view of the player, taken once per frame
     pub view: View,
     pub tray: bool,
+    /// "Позже" on the new version's toast
+    pub update_dismissed: bool,
     logo: Option<egui::TextureHandle>,
     pub resolver: Arc<crate::player::resolve::Resolver>,
     pub downloads: Arc<crate::downloads::Downloads>,
@@ -203,12 +232,14 @@ impl App {
             first_frame: None,
             view: View::default(),
             tray: false,
+            update_dismissed: false,
             logo: None,
             downloads: {
                 let d = crate::downloads::Downloads::new(offline.clone(), resolver.clone());
                 // a picture of a page (--snapshot) fetches nothing
                 if !std::env::args().any(|a| a == "--snapshot") {
                     crate::keep::start(d.clone());
+                    crate::updates::start();
                 }
                 d
             },
@@ -828,6 +859,7 @@ impl App {
         for text in std::mem::take(&mut *LATER.lock().unwrap()) {
             self.toast(&text);
         }
+        self.update_toast(ui, screen);
         let now = Instant::now();
         self.toasts.retain(|t| t.until > now);
         let mut y = screen.bottom() - 120.0;

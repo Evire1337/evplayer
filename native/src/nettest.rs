@@ -236,6 +236,31 @@ fn net_imports_read_deezer_and_spotify_and_find_the_songs() {
     }
 }
 
+/// what the updater makes of the real latest.json (nothing is installed)
+#[test]
+#[ignore]
+fn net_the_updater_reads_the_latest_release() {
+    init();
+    crate::updates::check();
+    println!("updates: {:?}", crate::updates::status());
+    assert!(!matches!(crate::updates::status(), crate::updates::Status::Idle | crate::updates::Status::Checking));
+}
+
+/// the author's real signature of the Tauri installer passes the check (into memory only),
+/// and the same bytes changed by one do not
+#[test]
+#[ignore]
+fn net_the_release_signature_checks_out() {
+    let latest: serde_json::Value = reqwest::blocking::get("https://github.com/Evire1337/evplayer/releases/latest/download/latest.json").unwrap().json().unwrap();
+    let entry = &latest["platforms"]["windows-x86_64"];
+    let bytes = reqwest::blocking::get(entry["url"].as_str().unwrap()).unwrap().bytes().unwrap().to_vec();
+    println!("{} bytes of {}", bytes.len(), entry["url"]);
+    crate::updates::verify(&bytes, entry["signature"].as_str().unwrap()).expect("the real signature");
+    let mut bad = bytes.clone();
+    bad[100] ^= 1;
+    assert!(crate::updates::verify(&bad, entry["signature"].as_str().unwrap()).is_err());
+}
+
 #[test]
 #[ignore]
 fn net_the_resolver_finds_a_copy_and_similar_songs() {
