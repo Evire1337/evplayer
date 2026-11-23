@@ -131,6 +131,65 @@ fn net_soundcloud_plays_every_format() {
     assert!(tried > 0, "no SoundCloud format decoded");
 }
 
+/// The whole player through the real sound card at volume zero (silence is what reaches the
+/// speakers): a YouTube song starts, its position moves with the sound card's clock, a seek
+/// lands, "next" goes to the next song, a pause stops the clock.
+#[test]
+#[ignore]
+fn net_player_plays_silently_through_the_sound_card() {
+    use crate::player::{Player, Status};
+    init();
+    let st = crate::state::get();
+    let library = crate::library::Library::new(st.data_dir.clone());
+    let offline = crate::offline::Offline::new(&st.data_dir);
+    let resolver = crate::player::resolve::Resolver::new(library, offline);
+    let player = Player::new(resolver, || {});
+    // silence first, before anything is loaded
+    player.set_volume(0.0);
+    let a = youtube::search("daft punk around the world").expect("search");
+    let b = youtube::search("daft punk harder better faster").expect("search");
+    let c = youtube::search("daft punk digital love").expect("search");
+    let queue = vec![a[0].clone(), b[0].clone(), c[0].clone()];
+    let wait = |what: &str, f: &dyn Fn() -> bool| {
+        let t = Instant::now();
+        while !f() {
+            assert!(t.elapsed() < Duration::from_secs(40), "waited too long for {what}");
+            std::thread::sleep(Duration::from_millis(50));
+        }
+    };
+    player.play_queue(queue.clone(), 0, None);
+    wait("playing", &|| player.status() == Status::Playing);
+    println!("device: {}", player.device());
+    let p0 = player.position_ms();
+    std::thread::sleep(Duration::from_millis(1500));
+    let p1 = player.position_ms();
+    println!("position moved {:.0} ms in 1500 ms", p1 - p0);
+    assert!((p1 - p0 - 1500.0).abs() < 250.0, "the clock: {p0} → {p1}");
+    player.seek(60_000.0);
+    std::thread::sleep(Duration::from_millis(800));
+    let p2 = player.position_ms();
+    println!("after the seek: {p2:.0}");
+    assert!((60_000.0..62_500.0).contains(&p2), "seek: {p2}");
+    player.toggle();
+    std::thread::sleep(Duration::from_millis(300));
+    let paused_at = player.position_ms();
+    std::thread::sleep(Duration::from_millis(600));
+    assert_eq!(player.status(), Status::Paused);
+    assert!((player.position_ms() - paused_at).abs() < 30.0, "a pause stops the clock");
+    player.toggle();
+    player.next();
+    wait("the next song", &|| player.current().map(|t| t.id == queue[1].id).unwrap_or(false) && player.status() == Status::Playing);
+    println!("next: {} at {:.0} ms", player.current().unwrap().title, player.position_ms());
+    // near the end: the third song is prepared on the other deck and takes over by itself
+    let dur = player.view().duration_ms;
+    player.seek(dur - 6000.0);
+    wait("the song after, gapless", &|| player.current().map(|t| t.id == queue[2].id).unwrap_or(false) && player.status() == Status::Playing);
+    println!("took over: {} at {:.0} ms", player.current().unwrap().title, player.position_ms());
+    assert!(player.position_ms() < 3000.0);
+    assert!(player.view().volume == 0.0);
+    player.shutdown();
+}
+
 #[test]
 #[ignore]
 fn net_the_resolver_finds_a_copy_and_similar_songs() {

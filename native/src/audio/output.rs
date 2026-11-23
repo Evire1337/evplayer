@@ -176,7 +176,7 @@ impl Mixer {
             chain,
             scratch: vec![0.0; 8192],
             mix: vec![0.0; 8192],
-            volume: Shared::f(&shared.volume),
+            volume: -1.0,
             run: 0.0,
             shared,
             rate,
@@ -303,6 +303,10 @@ impl Mixer {
         // the effects, then the volume and the pause ramp
         self.chain.process(mix, self.rate);
         let vol_target = Shared::f(&self.shared.volume).clamp(0.0, 1.0);
+        // the first sound takes the volume as it is: no glide from a value never heard
+        if self.volume < 0.0 {
+            self.volume = vol_target;
+        }
         let run_target = if paused { 0.0 } else { 1.0 };
         // about 5 ms for a pause, 20 ms for the volume knob
         let run_step = 1.0 / (0.005 * self.rate as f32);
