@@ -219,6 +219,7 @@ impl Shell {
             }
             None => {}
         }
+        self.recover_if_lost();
         self.plan_animation();
         // applied above: egui wants the delta emptied before it goes
         let mut delta = out.textures_delta;
@@ -240,7 +241,23 @@ impl Shell {
             g.animate();
             FRAMES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         }
+        self.recover_if_lost();
         self.plan_animation();
+    }
+
+    /// The video card was lost (an AMD, Intel or NVIDIA driver reset or update, a laptop
+    /// switching cards, a remote session): the old renderer is dropped and the next frame makes
+    /// a new one, on whatever card there is now, or on the processor when there is none.
+    fn recover_if_lost(&mut self) {
+        if !matches!(&self.painter, Some(Painter::Gpu(g)) if g.lost()) {
+            return;
+        }
+        self.painter = None;
+        self.app.gpu_lost(&self.ctx);
+        self.dirty = true;
+        if let Some(w) = &self.window {
+            w.request_redraw();
+        }
     }
 
     fn schedule(&mut self, el: &ActiveEventLoop) {

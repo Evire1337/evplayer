@@ -66,6 +66,11 @@ pub fn paint(painter: &egui::Painter, name: &str, rect: Rect, color: Color32) {
     painter.image(tex, rect, Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)), color);
 }
 
+/// the video card's copies are gone (a lost device): the icons are drawn again when next shown
+pub fn forget(ctx: &egui::Context) {
+    ctx.data_mut(|d| d.remove::<Cache>(egui::Id::unique("evplayer-icons")));
+}
+
 /// does an icon of that name exist
 pub fn exists(name: &str) -> bool {
     name == "logo" || WINDOW.iter().any(|(n, _)| *n == name) || ICONS.iter().any(|(n, _)| *n == name)

@@ -77,6 +77,9 @@ pub struct GpuRenderer {
     /// the last frame's draws (see Call) and its scale
     calls: Vec<Call>,
     last_ppp: f32,
+    /// the card was lost (its driver reset or was updated, the card was switched): this
+    /// renderer is dropped and a new one made, the pictures sent to it again
+    lost: bool,
 }
 
 fn rgba(c: egui::Color32) -> [u8; 4] {
@@ -91,32 +94,57 @@ impl GpuRenderer {
     }
 
     unsafe fn create(hwnd: HWND, width: u32, height: u32) -> windows::core::Result<Self> {
-        let mut device = None;
-        let mut ctx = None;
-        // one thread talks to the card, and the driver is asked not to start its own helper
-        // threads for that: fewer threads, less memory, and nothing to gain for a player
-        let flags = D3D11_CREATE_DEVICE_BGRA_SUPPORT | D3D11_CREATE_DEVICE_SINGLETHREADED | D3D11_CREATE_DEVICE_PREVENT_INTERNAL_THREADING_OPTIMIZATIONS;
-        D3D11CreateDevice(None, D3D_DRIVER_TYPE_HARDWARE, Default::default(), flags, Some(&[D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_10_1, D3D_FEATURE_LEVEL_10_0]), D3D11_SDK_VERSION, Some(&mut device), None, Some(&mut ctx))?;
-        let device: ID3D11Device = device.ok_or_else(windows::core::Error::empty)?;
-        let ctx: ID3D11DeviceContext = ctx.ok_or_else(windows::core::Error::empty)?;
+        // Any Direct3D 10 or 11 card of any maker (AMD, Intel, NVIDIA): the shaders are shader
+        // model 4. One thread talks to the card, and the driver is asked not to start its own
+        // helper threads for that: fewer threads, less memory, nothing to gain for a player.
+        // A driver that refuses the BGRA flag (old cards) gets a second try without it.
+        let levels = [D3D_FEATURE_LEVEL_11_1, D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_10_1, D3D_FEATURE_LEVEL_10_0];
+        let base = D3D11_CREATE_DEVICE_SINGLETHREADED | D3D11_CREATE_DEVICE_PREVENT_INTERNAL_THREADING_OPTIMIZATIONS;
+        let make = |flags: D3D11_CREATE_DEVICE_FLAG, levels: &[D3D_FEATURE_LEVEL]| -> windows::core::Result<(ID3D11Device, ID3D11DeviceContext)> {
+            let (mut device, mut ctx) = (None, None);
+            D3D11CreateDevice(None, D3D_DRIVER_TYPE_HARDWARE, Default::default(), flags, Some(levels), D3D11_SDK_VERSION, Some(&mut device), None, Some(&mut ctx))?;
+            Ok((device.ok_or_else(windows::core::Error::empty)?, ctx.ok_or_else(windows::core::Error::empty)?))
+        };
+        // Windows without the 11.1 runtime answers E_INVALIDARG to a list with 11.1 in it
+        let (device, ctx) = make(base | D3D11_CREATE_DEVICE_BGRA_SUPPORT, &levels)
+            .or_else(|_| make(base | D3D11_CREATE_DEVICE_BGRA_SUPPORT, &levels[1..]))
+            .or_else(|_| make(base, &levels[1..]))?;
         let dxgi: IDXGIDevice = device.cast()?;
         // one frame queued at most: what is drawn shows at the next refresh, not three later
         if let Ok(d1) = dxgi.cast::<IDXGIDevice1>() {
             let _ = d1.SetMaximumFrameLatency(1);
         }
         let factory: IDXGIFactory2 = dxgi.GetAdapter()?.GetParent()?;
-        let desc = DXGI_SWAP_CHAIN_DESC1 {
-            Width: width,
-            Height: height,
-            Format: DXGI_FORMAT_B8G8R8A8_UNORM,
-            SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
-            BufferUsage: DXGI_USAGE_RENDER_TARGET_OUTPUT,
-            BufferCount: 2,
-            SwapEffect: DXGI_SWAP_EFFECT_FLIP_DISCARD,
-            AlphaMode: DXGI_ALPHA_MODE_IGNORE,
-            ..Default::default()
-        };
-        let swap = factory.CreateSwapChainForHwnd(&device, hwnd, &desc, None, None)?;
+        // the flip model first (Windows 10: no copy of the frame); the older blit model and the
+        // RGBA order for drivers that refuse it
+        let mut swap = None;
+        let mut last_err = windows::core::Error::empty();
+        for (format, effect, buffers) in [
+            (DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_SWAP_EFFECT_FLIP_DISCARD, 2),
+            (DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_SWAP_EFFECT_FLIP_DISCARD, 2),
+            (DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_SWAP_EFFECT_DISCARD, 1),
+            (DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_SWAP_EFFECT_DISCARD, 1),
+        ] {
+            let desc = DXGI_SWAP_CHAIN_DESC1 {
+                Width: width,
+                Height: height,
+                Format: format,
+                SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
+                BufferUsage: DXGI_USAGE_RENDER_TARGET_OUTPUT,
+                BufferCount: buffers,
+                SwapEffect: effect,
+                AlphaMode: DXGI_ALPHA_MODE_IGNORE,
+                ..Default::default()
+            };
+            match factory.CreateSwapChainForHwnd(&device, hwnd, &desc, None, None) {
+                Ok(s) => {
+                    swap = Some(s);
+                    break;
+                }
+                Err(e) => last_err = e,
+            }
+        }
+        let swap = swap.ok_or(last_err)?;
         // Alt+Enter would make the player full screen: not wanted
         let _ = factory.MakeWindowAssociation(hwnd, DXGI_MWA_NO_ALT_ENTER);
 
@@ -206,6 +234,7 @@ impl GpuRenderer {
             backdrop,
             calls: Vec::new(),
             last_ppp: 1.0,
+            lost: false,
         };
         me.make_target()?;
         Ok(me)
@@ -313,7 +342,22 @@ impl GpuRenderer {
         unsafe {
             if let Err(e) = self.draw(prims, ppp) {
                 eprintln!("[gpu] frame: {e}");
+                self.check_lost();
             }
+        }
+    }
+
+    /// the card is gone and this renderer cannot draw any more (see `lost`)
+    pub fn lost(&self) -> bool {
+        self.lost
+    }
+
+    unsafe fn check_lost(&mut self) {
+        if let Err(e) = self.device.GetDeviceRemovedReason() {
+            if !self.lost {
+                eprintln!("[gpu] the video card was lost ({e}): starting again");
+            }
+            self.lost = true;
         }
     }
 
@@ -409,6 +453,7 @@ impl GpuRenderer {
         unsafe {
             if let Err(e) = self.replay() {
                 eprintln!("[gpu] frame: {e}");
+                self.check_lost();
             }
         }
     }
@@ -529,7 +574,11 @@ impl GpuRenderer {
         }
         // shown at the next refresh of the screen; the frame waits for it, so a busy window
         // never draws faster than the screen can show
-        let _ = self.swap.Present(1, DXGI_PRESENT(0));
+        let hr = self.swap.Present(1, DXGI_PRESENT(0));
+        if hr == DXGI_ERROR_DEVICE_REMOVED || hr == DXGI_ERROR_DEVICE_RESET {
+            self.check_lost();
+            self.lost = true;
+        }
         Ok(())
     }
 }

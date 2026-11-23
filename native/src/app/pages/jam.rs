@@ -26,7 +26,7 @@ pub struct JamUi {
     pub code: String,
     pub chat: String,
     pub show_qr: bool,
-    qr: Option<(String, egui::TextureHandle)>,
+    pub qr: Option<(String, egui::TextureHandle)>,
 }
 
 fn color_of(hex: &str) -> Color32 {

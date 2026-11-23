@@ -270,6 +270,17 @@ impl App {
         crate::presence::changed();
     }
 
+    /// The video card was lost and a new one is being set up: every picture it held is gone,
+    /// so the covers, icons and the logo are made again as they are next shown, and the fonts
+    /// are set again, which sends their atlas whole to the new card.
+    pub fn gpu_lost(&mut self, ctx: &egui::Context) {
+        self.images.release_all();
+        self.logo = None;
+        self.pages.jam.qr = None;
+        crate::ui::icons::forget(ctx);
+        theme::apply(ctx);
+    }
+
     /// out of sight a while: the pictures and the pages go (the window drops its painter too)
     pub fn sleep(&mut self) {
         self.asleep = true;
