@@ -48,9 +48,14 @@ pub fn hsl(h: f32, s: f32, l: f32, a: f32) -> Color32 {
 /// A rounded rectangle filled with a linear gradient (`linear-gradient(145deg, from, to)`):
 /// egui's own antialiased shape, its vertices recoloured along the gradient's direction.
 pub fn gradient_rect(ui: &Ui, rect: Rect, radius: f32, from: Color32, to: Color32, deg: f32) {
+    ui.painter().add(gradient_shape(ui.ctx(), rect, radius, from, to, deg));
+}
+
+/// the same as a shape, to put in a place kept for it under what was drawn after
+pub fn gradient_shape(ctx: &egui::Context, rect: Rect, radius: f32, from: Color32, to: Color32, deg: f32) -> egui::Shape {
     let shape = egui::Shape::Rect(egui::epaint::RectShape::filled(rect, CornerRadius::same(radius as u8), Color32::WHITE));
-    let ppp = ui.ctx().pixels_per_point();
-    let mut tess = egui::epaint::Tessellator::new(ppp, ui.ctx().tessellation_options(|o| *o), [1, 1], vec![]);
+    let ppp = ctx.pixels_per_point();
+    let mut tess = egui::epaint::Tessellator::new(ppp, ctx.tessellation_options(|o| *o), [1, 1], vec![]);
     let mut mesh = egui::Mesh::default();
     tess.tessellate_shape(shape, &mut mesh);
     // CSS angles: 0deg points up, 90deg right
@@ -65,7 +70,7 @@ pub fn gradient_rect(ui: &Ui, rect: Rect, radius: f32, from: Color32, to: Color3
         let cov = v.color.a() as f32 / 255.0;
         v.color = Color32::from(col * cov);
     }
-    ui.painter().add(egui::Shape::mesh(mesh));
+    egui::Shape::mesh(mesh)
 }
 
 /// .set-head: a 52 px gradient square with the tab's icon, the title and what the tab is for
@@ -336,19 +341,6 @@ pub fn text_button(ui: &mut Ui, label: &str) -> Response {
     r
 }
 
-/// .svc-more / .link-btn.strong: a bold faint link
-pub fn link(ui: &mut Ui, label: &str, strong: bool) -> Response {
-    let font = if strong { theme::medium(12.5) } else { theme::body(12.5) };
-    let g = ui.painter().layout_no_wrap(t(label), font, Color32::PLACEHOLDER);
-    let (rect, r) = ui.allocate_exact_size(g.size() + vec2(0.0, 4.0), Sense::click());
-    let color = if r.hovered() { INK } else if strong { INK } else { theme::ink3() };
-    ui.painter().galley(pos2(rect.left(), rect.center().y - g.size().y / 2.0), g, color);
-    if r.hovered() {
-        ui.painter().hline(rect.x_range(), rect.bottom() - 1.0, Stroke::new(1.0, color));
-    }
-    r
-}
-
 /// .dial: ticks every 9 px, the part up to the value brighter, an accent notch with a glow
 pub fn dial(ui: &mut Ui, width: f32, value: f64, min: f64, max: f64, step: f64) -> Option<f64> {
     let (rect, r) = ui.allocate_exact_size(vec2(width, 26.0), Sense::click_and_drag());
@@ -426,12 +418,6 @@ pub fn error(ui: &mut Ui, text: &str) {
     ui.painter().galley(r.min, g, theme::DANGER);
 }
 
-/// The page's text box (.field input, .svc-connect input): faint fill, a faint edge that
-/// brightens while typing, rounded 12 or 13, 40 high.
-pub fn input(ui: &mut Ui, text: &mut String, hint: &str, width: f32, password: bool) -> Response {
-    input_styled(ui, text, hint, width, 40.0, 13, theme::medium500(), password)
-}
-
 pub fn input_styled(ui: &mut Ui, text: &mut String, hint: &str, width: f32, height: f32, radius: u8, family: egui::FontFamily, password: bool) -> Response {
     let (rect, _) = ui.allocate_exact_size(vec2(width, height), Sense::hover());
     let id = ui.next_auto_id().with("kit-input");
@@ -490,14 +476,6 @@ pub fn check_row(ui: &mut Ui, title: &str, hint: &str, on: bool, right: &str) ->
     p.galley(pos2(rect.right() - 6.0 - size_g.size().x, rect.top() + 9.0), size_g, theme::ink2());
     set_last_row(ui, false);
     r.clicked().then_some(!on)
-}
-
-/// kbd: a key of a combination
-pub fn kbd(ui: &mut Ui, key: &str) {
-    let g = ui.painter().layout_no_wrap(key.to_string(), theme::medium(12.0), Color32::PLACEHOLDER);
-    let (rect, _) = ui.allocate_exact_size(g.size() + vec2(16.0, 6.0), Sense::hover());
-    ui.painter().rect(rect, CornerRadius::same(7), Color32::from_rgba_unmultiplied(238, 247, 244, 26), Stroke::new(1.0, theme::edge()), egui::StrokeKind::Inside);
-    ui.painter().galley(rect.center() - g.size() / 2.0, g, INK);
 }
 
 /// .btn.danger

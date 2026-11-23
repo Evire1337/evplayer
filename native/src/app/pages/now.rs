@@ -49,24 +49,27 @@ impl App {
                 self.go(crate::app::Page::Artist(a.id.clone()));
             }
         }
-        // what the sound is and where it comes from (.now-source)
-        let mut info = Vec::new();
-        if let Some(q) = &v.quality {
-            info.push(q.clone());
-        }
-        if let Some(r) = v.route {
-            info.push(match r {
-                crate::model::Source::Youtube => crate::i18n::t("копия с YouTube Music"),
-                crate::model::Source::Soundcloud => crate::i18n::t("копия с SoundCloud"),
-                crate::model::Source::Local => String::new(),
-            });
-        }
+        // where the song is from, the copy playing instead, and what the sound is (.now-source:
+        // "SoundCloud · играет копия с YouTube · opus 160 кбит/с")
         if v.status == Status::Error {
             if let Some(e) = &v.error {
                 lui.label(egui::RichText::new(e).font(theme::body(12.5)).color(theme::DANGER));
             }
-        } else if !info.is_empty() {
-            lui.label(egui::RichText::new(crate::i18n::t(&info.join(" · "))).font(theme::body(12.5)).color(theme::ink3()));
+        } else if let Some(t) = &cur {
+            let mut line = crate::i18n::t(match t.source {
+                crate::model::Source::Soundcloud => "SoundCloud",
+                crate::model::Source::Youtube => "YouTube Music",
+                crate::model::Source::Local => "Мои файлы",
+            });
+            match v.route {
+                Some(crate::model::Source::Soundcloud) => line.push_str(&format!(" · {}", crate::i18n::t("играет копия с SoundCloud"))),
+                Some(crate::model::Source::Youtube) => line.push_str(&format!(" · {}", crate::i18n::t("играет копия с YouTube"))),
+                _ => {}
+            }
+            if let Some(q) = &v.quality {
+                line.push_str(&format!(" · {}", crate::i18n::t(q)));
+            }
+            lui.label(egui::RichText::new(line).font(theme::body(12.5)).color(theme::ink3()));
         }
         // a session on: who listens along
         lui.scope(|ui| {
@@ -94,28 +97,27 @@ impl App {
         tui.spacing_mut().item_spacing.x = gap;
         self.transport(&mut tui, 46.0, 58.0, 78.0);
         lui.add_space(12.0);
-        // the tools: like, radio, sound, volume, the queue
+        // .now-tools: the like, "Слушать вместе", the sound panel, the volume, "Далее"; 40 px
+        // buttons 4 apart, centred under the transport
         let (row, _) = lui.allocate_exact_size(vec2(art, 40.0), Sense::hover());
-        let n = if cur.is_some() { 5.0 } else { 3.0 };
-        let tools_w = n * 40.0 + (n - 1.0) * 6.0;
+        let n = if cur.is_some() { 5.0 } else { 4.0 };
+        let tools_w = n * 40.0 + (n - 1.0) * 4.0;
         let tools = Rect::from_center_size(row.center(), vec2(tools_w, 40.0));
         let mut oui = lui.new_child(egui::UiBuilder::new().max_rect(tools).layout(egui::Layout::left_to_right(egui::Align::Center)));
-        oui.spacing_mut().item_spacing.x = 6.0;
+        oui.spacing_mut().item_spacing.x = 4.0;
         if let Some(t) = &cur {
             let liked = self.is_liked(&t.id);
-            if widgets::tool_button(&mut oui, if liked { ic::HEART_FILL } else { ic::HEART }, liked, if liked { "Убрать из «Любимого»" } else { "Нравится" }).clicked() {
+            if widgets::tool_button(&mut oui, if liked { ic::HEART_FILL } else { ic::HEART }, liked, if liked { "Убрать из понравившихся" } else { "Нравится" }).clicked() {
                 let t = t.clone();
                 self.toggle_like(&t);
             }
-            if widgets::tool_button(&mut oui, ic::RADIO, false, "Радио по треку").clicked() {
-                self.player.start_radio(t.clone());
-            }
         }
-        // the volume and the sound panel, opening above their buttons (laid out right to left)
-        let mut pui = oui.new_child(egui::UiBuilder::new().max_rect(Rect::from_min_size(oui.cursor().min, vec2(86.0, 40.0))).layout(egui::Layout::left_to_right(egui::Align::Center)));
-        pui.spacing_mut().item_spacing.x = 6.0;
+        // the three of the player bar, in its order (it lays them out right to left)
+        let three = 3.0 * 40.0 + 2.0 * 4.0;
+        let (slot, _) = oui.allocate_exact_size(vec2(three, 40.0), Sense::hover());
+        let mut pui = oui.new_child(egui::UiBuilder::new().max_rect(slot).layout(egui::Layout::right_to_left(egui::Align::Center)));
+        pui.spacing_mut().item_spacing.x = 4.0;
         self.player_tools(&mut pui);
-        oui.add_space(92.0);
         if widgets::tool_button(&mut oui, ic::QUEUE, show_queue, if show_queue { "Скрыть «Далее»" } else { "Показать «Далее»" }).clicked() {
             self.pages.show_queue = Some(!show_queue);
             state::get().set_settings(|s| s.show_queue = !show_queue);
