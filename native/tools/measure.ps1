@@ -19,8 +19,30 @@ param(
 
 Add-Type @"
 using System;
+using System.Text;
 using System.Runtime.InteropServices;
-public static class Win { [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int c); }
+public static class Win {
+  public delegate bool EnumProc(IntPtr h, IntPtr l);
+  [DllImport("user32.dll")] public static extern bool EnumWindows(EnumProc f, IntPtr l);
+  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
+  [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetWindowText(IntPtr h, StringBuilder s, int n);
+  [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h);
+  [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int c);
+  /// the program's own visible window titled "EvPlayer" (both builds have one; the native build
+  /// also has an untitled 16x16 helper window of its window library that draws nothing, which
+  /// .NET's MainWindowHandle takes for the main one)
+  public static IntPtr Find(uint pid) {
+    IntPtr found = IntPtr.Zero;
+    EnumWindows((h, l) => {
+      uint p; GetWindowThreadProcessId(h, out p);
+      if (p != pid || !IsWindowVisible(h)) return true;
+      var sb = new StringBuilder(64); GetWindowText(h, sb, 64);
+      if (sb.ToString() == "EvPlayer") { found = h; return false; }
+      return true;
+    }, IntPtr.Zero);
+    return found;
+  }
+}
 "@
 
 function Tree([int]$root) {
@@ -47,12 +69,15 @@ function Sample([int[]]$ids) {
 
 $start = Get-Date
 if ($Arguments) { $proc = Start-Process -FilePath $Exe -ArgumentList $Arguments -PassThru } else { $proc = Start-Process -FilePath $Exe -PassThru }
-# time until the main window exists (a rough "started" for both builds)
+# time until the program's window titled "EvPlayer" is visible (a rough "started" for both)
 $shown = $null
-for ($i = 0; $i -lt 300; $i++) {
-  $proc.Refresh()
-  if ($proc.MainWindowHandle -ne 0) { $shown = ((Get-Date) - $start).TotalMilliseconds; break }
-  Start-Sleep -Milliseconds 20
+$main = [IntPtr]::Zero
+if (-not $Arguments) {
+  for ($i = 0; $i -lt 500; $i++) {
+    $main = [Win]::Find([uint32]$proc.Id)
+    if ($main -ne [IntPtr]::Zero) { $shown = ((Get-Date) - $start).TotalMilliseconds; break }
+    Start-Sleep -Milliseconds 10
+  }
 }
 Start-Sleep -Seconds $Settle
 $ids = Tree $proc.Id
@@ -62,8 +87,8 @@ $ids = Tree $proc.Id
 $b = Sample $ids
 $name = if ($Label) { $Label } else { [IO.Path]::GetFileName($Exe) }
 $line = "{0}: processes={1} threads={2} WS={3:N1} MB private={4:N1} MB start-cpu={8:N2} s idle-cpu={5:N3} s per {6} s window={7}" -f $name, $b.n, $b.threads, ($b.ws / 1MB), ($b.priv / 1MB), ($b.cpu - $a.cpu), $Idle, $(if ($shown) { "{0:N0} ms" -f $shown } else { "hidden" }), $a.cpu
-if ($Minimize -gt 0 -and $proc.MainWindowHandle -ne 0) {
-  [void][Win]::ShowWindow($proc.MainWindowHandle, 6)
+if ($Minimize -gt 0 -and $main -ne [IntPtr]::Zero) {
+  [void][Win]::ShowWindow($main, 6)
   Start-Sleep -Seconds $Minimize
   $ids = Tree $proc.Id
   $c = Sample $ids
