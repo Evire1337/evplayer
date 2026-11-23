@@ -38,6 +38,7 @@ pub mod userproxy;
 pub mod app;
 pub mod audio;
 pub mod diagnostics;
+pub mod downloads;
 pub mod dialogs;
 pub mod events;
 pub mod i18n;

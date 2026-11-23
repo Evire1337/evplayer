@@ -126,6 +126,7 @@ pub struct App {
     pub tray: bool,
     logo: Option<egui::TextureHandle>,
     pub resolver: Arc<crate::player::resolve::Resolver>,
+    pub downloads: Arc<crate::downloads::Downloads>,
     pub keys: keys::Keys,
 }
 
@@ -168,7 +169,7 @@ impl App {
             data_dir,
             player,
             library,
-            offline,
+            offline: offline.clone(),
             images,
             page: Page::Home,
             back: Vec::new(),
@@ -188,6 +189,7 @@ impl App {
             view: View::default(),
             tray: false,
             logo: None,
+            downloads: crate::downloads::Downloads::new(offline.clone(), resolver.clone()),
             resolver,
             keys,
         }
@@ -409,6 +411,52 @@ impl App {
         }
     }
 
+    /// "Скачиваю: N" while songs are saved for offline, with a stop
+    fn download_pill(&mut self, ui: &mut Ui, screen: Rect) {
+        let st = self.downloads.status();
+        let busy = st.running.len() + st.waiting;
+        if busy == 0 {
+            return;
+        }
+        ui.ctx().request_repaint_after(Duration::from_millis(500));
+        let (done, total) = st.running.values().fold((0u64, 0u64), |a, b| (a.0 + b.0, a.1 + b.1));
+        let pct = if total > 0 { format!(" · {}%", done * 100 / total) } else { String::new() };
+        let text = format!("{}: {busy}{pct}", crate::i18n::t("Скачиваю для офлайн"));
+        let w = 300.0;
+        let top = if self.importing.is_some() { screen.top() + 100.0 } else { screen.top() + 48.0 };
+        let r = Rect::from_min_size(pos2(screen.right() - w - 24.0, top), vec2(w, 42.0));
+        ui.painter().rect_filled(r, CornerRadius::same(20), Color32::from_rgba_unmultiplied(6, 18, 20, 240));
+        ui.painter().text(pos2(r.left() + 16.0, r.center().y), Align2::LEFT_CENTER, ic::DOWNLOAD, theme::icon(13.0), theme::ACCENT);
+        ui.painter().text(pos2(r.left() + 38.0, r.center().y), Align2::LEFT_CENTER, text, theme::medium(13.0), INK);
+        let x = Rect::from_center_size(pos2(r.right() - 22.0, r.center().y), vec2(28.0, 28.0));
+        let xr = ui.interact(x, ui.scope_id().with("dl-x"), Sense::click());
+        widgets::paint_icon_button(ui, x, &xr, ic::CANCEL, false);
+        if xr.on_hover_text(crate::i18n::t("Остановить")).clicked() {
+            self.downloads.cancel_all();
+        }
+    }
+
+    /// queue songs for offline and say how many
+    pub fn download(&mut self, tracks: &[Track]) {
+        let n = self.downloads.add(tracks);
+        self.toast(&if n == 0 { "Уже скачано".to_string() } else { format!("Скачать для офлайн: {}", crate::i18n::tracks(n)) });
+    }
+
+    /// the songs saved for offline that the app knows the names of (likes, playlists, history)
+    pub fn saved_tracks(&self) -> Vec<Track> {
+        let saved: std::collections::HashSet<String> = self.downloads.saved().into_iter().map(|e| e.id).collect();
+        let lib = state::get().library.read().unwrap();
+        let hist = state::get().history.lock().unwrap();
+        let mut seen = std::collections::HashSet::new();
+        lib.likes.iter().map(|l| &l.track)
+            .chain(lib.playlists.iter().flat_map(|p| p.items.iter().map(|i| &i.track)))
+            .chain(hist.entries.iter().map(|e| &e.track))
+            .chain(self.view.queue.iter())
+            .filter(|t| saved.contains(&t.id) && seen.insert(t.id.clone()))
+            .cloned()
+            .collect()
+    }
+
     pub fn toast(&mut self, text: &str) {
         self.toasts.push(Toast { text: crate::i18n::t(text), until: Instant::now() + Duration::from_millis(3200) });
         crate::events::send(crate::events::Event::Repaint(Duration::from_millis(3300)));
@@ -456,6 +504,7 @@ impl App {
         self.track_menu(&ctx);
         self.dialogs(&ctx);
         self.import_pill(ui, screen);
+        self.download_pill(ui, screen);
         self.toasts_ui(ui, screen);
         self.resize_edges(ui, screen);
     }

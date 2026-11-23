@@ -192,6 +192,34 @@ fn net_player_plays_silently_through_the_sound_card() {
 
 #[test]
 #[ignore]
+fn net_a_song_is_saved_for_offline_and_then_played_from_disk() {
+    init();
+    let st = crate::state::get();
+    let library = crate::library::Library::new(st.data_dir.clone());
+    let offline = crate::offline::Offline::new(&st.data_dir);
+    let resolver = crate::player::resolve::Resolver::new(library, offline.clone());
+    let d = crate::downloads::Downloads::new(offline.clone(), resolver.clone());
+    let t = youtube::search("daft punk one more time").expect("search")[0].clone();
+    d.remove(std::slice::from_ref(&t.id));
+    assert_eq!(d.add(std::slice::from_ref(&t)), 1);
+    let started = Instant::now();
+    while !d.is_saved(&t.id) {
+        let s = d.status();
+        assert!(s.failed.is_empty(), "{:?}", s.failed);
+        assert!(started.elapsed() < Duration::from_secs(90), "too slow");
+        std::thread::sleep(Duration::from_millis(200));
+    }
+    let entry = d.saved().into_iter().find(|e| e.id == t.id).unwrap();
+    println!("saved {} ({} KB, .{}) in {:?}", t.title, entry.size / 1024, entry.ext, started.elapsed());
+    use crate::player::resolve::Resolve;
+    let first = resolver.candidates(&t, Arc::new(AtomicBool::new(false))).next().unwrap().unwrap();
+    assert!(matches!(first.spec, Spec::File(_)), "the saved copy comes first");
+    let (peak, codec, _) = decode_some(first.spec, 3.0).expect("decode the saved file");
+    println!("  plays from disk: {codec}, peak {peak:.2}");
+}
+
+#[test]
+#[ignore]
 fn net_imports_read_deezer_and_spotify_and_find_the_songs() {
     init();
     for link in ["https://www.deezer.com/album/302127", "https://open.spotify.com/album/2noRn2Aes5aoNVsU6iWThc"] {

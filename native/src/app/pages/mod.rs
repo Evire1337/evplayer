@@ -179,6 +179,15 @@ impl App {
                         close = true;
                     }
                 }
+                if self.downloads.is_saved(&track.id) {
+                    if entry(ui, ic::DELETE, "Удалить скачанное") {
+                        self.downloads.remove(std::slice::from_ref(&track.id));
+                        close = true;
+                    }
+                } else if track.source != crate::model::Source::Local && entry(ui, ic::DOWNLOAD, "Скачать для офлайн") {
+                    self.download(std::slice::from_ref(&track));
+                    close = true;
+                }
                 if let Some(link) = &track.permalink {
                     if entry(ui, ic::LINK, "Копировать ссылку") {
                         ui.ctx().copy_text(link.clone());

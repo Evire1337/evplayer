@@ -64,6 +64,10 @@ impl App {
                 (None, crate::i18n::t("Любимое"), crate::i18n::tracks(lib.likes.len()), Page::Playlist("likes".into()), ic::HEART_FILL),
                 (None, crate::i18n::t("Мои файлы"), crate::i18n::t("MP3, FLAC и другие с этого компьютера"), Page::Files, ic::FOLDER),
             ];
+            let saved = self.downloads.saved().len();
+            if saved > 0 {
+                cards.push((None, crate::i18n::t("Скачанное"), crate::i18n::tracks(saved), Page::Playlist("offline".into()), ic::DOWNLOAD));
+            }
             let _ = files.len();
             for p in &lib.playlists {
                 let cover = p.icon.clone().or_else(|| p.items.first().and_then(|i| artwork_of(&i.track)));
@@ -100,7 +104,11 @@ impl App {
 
     pub fn playlist(&mut self, ui: &mut Ui, id: &str) {
         let lib = state::get().library.read().unwrap().clone();
-        let (title, sub, cover, tracks, items, created): (String, String, Option<String>, Vec<Track>, Vec<String>, String) = if id == "likes" {
+        let (title, sub, cover, tracks, items, created): (String, String, Option<String>, Vec<Track>, Vec<String>, String) = if id == "offline" {
+            let tracks = self.saved_tracks();
+            let items = tracks.iter().map(|t| t.id.clone()).collect();
+            (crate::i18n::t("Скачанное"), crate::i18n::tracks(tracks.len()), None, tracks, items, String::new())
+        } else if id == "likes" {
             let tracks: Vec<Track> = lib.likes.iter().map(|l| l.track.clone()).collect();
             let items = tracks.iter().map(|t| t.id.clone()).collect();
             (crate::i18n::t("Любимое"), crate::i18n::tracks(tracks.len()), None, tracks, items, String::new())
@@ -135,11 +143,14 @@ impl App {
                     if widgets::pill_button(ui, Some(ic::PLAY), "Играть", true).clicked() && !tracks.is_empty() {
                         self.player.play_queue(tracks.clone(), 0, Some(source.clone()));
                     }
+                    if id != "offline" && widgets::icon_button(ui, ic::DOWNLOAD, 34.0, false, "Скачать всё для офлайн").clicked() && !tracks.is_empty() {
+                        self.download(&tracks);
+                    }
                     if widgets::pill_button(ui, Some(ic::SHUFFLE), "Вперемешку", false).clicked() && !tracks.is_empty() {
                         let shuffled = crate::player::queue::shuffled(&tracks, None);
                         self.player.play_queue(shuffled, 0, Some(source));
                     }
-                    if id != "likes" {
+                    if id != "likes" && id != "offline" {
                         if widgets::icon_button(ui, ic::EDIT, 34.0, false, "Изменить").clicked() {
                             let d = lib.playlists.iter().find(|p| p.id == id).and_then(|p| p.description.clone()).unwrap_or_default();
                             self.dialog = Some(Dialog::Rename { id: id.to_string(), title: title.clone(), description: d });
