@@ -7,7 +7,7 @@
 # "window" is when the program has a visible top-level window. With -Minimize N the window is
 # then minimized and the memory measured again N seconds later: a player mostly lives
 # minimized or in the tray. Nothing is played: the program is started, left alone, and closed
-# (only the processes it started are closed).
+# (only the processes it started are closed, and the tray icons they leave behind are cleared).
 param(
   [Parameter(Mandatory = $true)][string]$Exe,
   [string]$Arguments = "",
@@ -28,6 +28,27 @@ public static class Win {
   [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetWindowText(IntPtr h, StringBuilder s, int n);
   [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h);
   [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int c);
+  [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern IntPtr FindWindowEx(IntPtr p, IntPtr a, string c, string t);
+  [DllImport("user32.dll")] public static extern bool GetClientRect(IntPtr h, out RECT r);
+  [DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr h, uint m, IntPtr w, IntPtr l);
+  [StructLayout(LayoutKind.Sequential)] public struct RECT { public int L, T, R, B; }
+  /// A program that is killed cannot take its tray icon away, and the taskbar only notices the
+  /// dead icon when the mouse passes over it: pass a mouse over the tray and its overflow.
+  public static void SweepTray() {
+    var tray = FindWindowEx(IntPtr.Zero, IntPtr.Zero, "Shell_TrayWnd", null);
+    var notify = FindWindowEx(tray, IntPtr.Zero, "TrayNotifyWnd", null);
+    var pager = FindWindowEx(notify, IntPtr.Zero, "SysPager", null);
+    Sweep(FindWindowEx(pager, IntPtr.Zero, "ToolbarWindow32", null));
+    var overflow = FindWindowEx(IntPtr.Zero, IntPtr.Zero, "NotifyIconOverflowWindow", null);
+    Sweep(FindWindowEx(overflow, IntPtr.Zero, "ToolbarWindow32", null));
+  }
+  static void Sweep(IntPtr bar) {
+    if (bar == IntPtr.Zero) return;
+    RECT r; GetClientRect(bar, out r);
+    for (int y = 0; y < r.B; y += 4)
+      for (int x = 0; x < r.R; x += 4)
+        SendMessage(bar, 0x0200, IntPtr.Zero, (IntPtr)((y << 16) | (x & 0xFFFF)));
+  }
   /// the program's own visible window titled "EvPlayer" (both builds have one; the native build
   /// also has an untitled 16x16 helper window of its window library that draws nothing, which
   /// .NET's MainWindowHandle takes for the main one)
@@ -96,3 +117,5 @@ if ($Minimize -gt 0 -and $main -ne [IntPtr]::Zero) {
 }
 $line
 foreach ($id in $ids) { Stop-Process -Id $id -Force -ErrorAction SilentlyContinue }
+Start-Sleep -Milliseconds 500
+[Win]::SweepTray()
