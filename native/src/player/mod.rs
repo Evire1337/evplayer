@@ -121,6 +121,9 @@ struct Core {
     leveler_at: Instant,
     /// the last look at the output device
     device_check: Instant,
+    /// the listening session of the song playing (statistics count a session once)
+    session: String,
+    session_track: Option<Track>,
 }
 
 pub struct Player {
@@ -168,6 +171,8 @@ impl Player {
             leveler_track: None,
             leveler_at: Instant::now(),
             device_check: Instant::now(),
+            session: String::new(),
+            session_track: None,
         };
         let me = Arc::new(Self { core: Mutex::new(core), wake: Condvar::new(), resolver, notify: Box::new(notify) });
         me.apply_sound();
@@ -617,6 +622,8 @@ impl Player {
     /// what happens when a song starts, however it started
     fn begin(self: &Arc<Self>, c: &mut Core, track: &Track) {
         c.finish_listen();
+        c.session = format!("{:x}{:04x}", crate::store::state::now_ms() as u64, rand::random::<u16>());
+        c.session_track = Some(track.clone());
         c.level_for(&track.id);
         c.heard_ms = 0.0;
         c.last_pos = -1.0;
@@ -1024,10 +1031,18 @@ impl Core {
                 let from = self.source.clone().filter(|_| self.source_ids.contains(&track.id));
                 st.update_history(|h| h.push(&track, from.as_ref()));
             }
+            crate::stats::record(&track, &self.session, self.heard_ms);
         }
     }
 
-    fn finish_listen(&mut self) {}
+    /// the song is left: its listened time goes into the statistics (once counted)
+    fn finish_listen(&mut self) {
+        if self.counted {
+            if let Some(t) = &self.session_track {
+                crate::stats::record(t, &self.session, self.heard_ms);
+            }
+        }
+    }
 
     fn finish_fade(&mut self) {
         if self.fading_until.take().is_some() {

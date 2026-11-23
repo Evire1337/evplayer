@@ -104,7 +104,13 @@ impl App {
 
     pub fn playlist(&mut self, ui: &mut Ui, id: &str) {
         let lib = state::get().library.read().unwrap().clone();
-        let (title, sub, cover, tracks, items, created): (String, String, Option<String>, Vec<Track>, Vec<String>, String) = if id == "offline" {
+        let (title, sub, cover, tracks, items, created): (String, String, Option<String>, Vec<Track>, Vec<String>, String) = if let Some(kind) = id.strip_prefix("smart:") {
+            let liked: Vec<Track> = lib.likes.iter().map(|l| l.track.clone()).collect();
+            let tracks = crate::stats::smart(kind, &liked, 100);
+            let items = tracks.iter().map(|t| t.id.clone()).collect();
+            let (title, desc) = crate::stats::SMART.iter().find(|s| s.0 == kind).map(|s| (s.1, s.2)).unwrap_or(("", ""));
+            (crate::i18n::t(title), crate::i18n::t(desc), tracks.first().and_then(artwork_of), tracks, items, String::new())
+        } else if id == "offline" {
             let tracks = self.saved_tracks();
             let items = tracks.iter().map(|t| t.id.clone()).collect();
             (crate::i18n::t("Скачанное"), crate::i18n::tracks(tracks.len()), None, tracks, items, String::new())
@@ -143,14 +149,14 @@ impl App {
                     if widgets::pill_button(ui, Some(ic::PLAY), "Играть", true).clicked() && !tracks.is_empty() {
                         self.player.play_queue(tracks.clone(), 0, Some(source.clone()));
                     }
-                    if id != "offline" && widgets::icon_button(ui, ic::DOWNLOAD, 34.0, false, "Скачать всё для офлайн").clicked() && !tracks.is_empty() {
+                    if id != "offline" && !id.starts_with("smart:") && widgets::icon_button(ui, ic::DOWNLOAD, 34.0, false, "Скачать всё для офлайн").clicked() && !tracks.is_empty() {
                         self.download(&tracks);
                     }
                     if widgets::pill_button(ui, Some(ic::SHUFFLE), "Вперемешку", false).clicked() && !tracks.is_empty() {
                         let shuffled = crate::player::queue::shuffled(&tracks, None);
                         self.player.play_queue(shuffled, 0, Some(source));
                     }
-                    if id != "likes" && id != "offline" {
+                    if id != "likes" && id != "offline" && !id.starts_with("smart:") {
                         if widgets::icon_button(ui, ic::EDIT, 34.0, false, "Изменить").clicked() {
                             let d = lib.playlists.iter().find(|p| p.id == id).and_then(|p| p.description.clone()).unwrap_or_default();
                             self.dialog = Some(Dialog::Rename { id: id.to_string(), title: title.clone(), description: d });

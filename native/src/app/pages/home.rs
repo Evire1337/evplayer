@@ -14,6 +14,8 @@ use crate::ui::widgets;
 pub struct HomeState {
     for_you: Loaded<(Vec<Track>, Vec<(Track, Vec<Track>)>)>,
     trending: Loaded<Vec<Track>>,
+    /// "Ваш топ-10": week, month, all time
+    pub top_range: usize,
 }
 
 fn greeting() -> &'static str {
@@ -31,9 +33,25 @@ impl App {
     pub fn home(&mut self, ui: &mut Ui) {
         egui::ScrollArea::vertical().id_salt("home").auto_shrink([false, false]).show(ui, |ui| {
             ui.set_width(ui.available_width() - 8.0);
-            self.page_title(ui, greeting());
+            ui.horizontal(|ui| {
+                ui.vertical(|ui| self.page_title(ui, greeting()));
+                // "Сегодня прослушано", from a minute on
+                let today = crate::stats::listened_today();
+                if today >= 60_000.0 {
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.add_space(12.0);
+                        ui.vertical(|ui| {
+                            ui.add_space(26.0);
+                            ui.label(egui::RichText::new(crate::i18n::t("СЕГОДНЯ ПРОСЛУШАНО")).font(theme::medium(12.0)).color(theme::ink3()));
+                            ui.label(egui::RichText::new(crate::i18n::t(&crate::stats::format_time(today))).font(theme::heavy(24.0)));
+                        });
+                    });
+                }
+            });
             self.recent(ui);
             self.for_you(ui);
+            self.smart_row(ui);
+            self.tops(ui);
             widgets::section(ui, "В тренде на SoundCloud");
             let trending = self.pages.home.trending.get("trending", || crate::services::soundcloud::charts().unwrap_or_default()).cloned();
             match trending {
@@ -143,6 +161,90 @@ impl App {
         }
         let _ = theme::INK;
     }
+}
+
+impl App {
+    /// "Собрано для вас": the smart playlists that have songs
+    fn smart_row(&mut self, ui: &mut Ui) {
+        let liked: Vec<Track> = state::get().library.read().unwrap().likes.iter().map(|l| l.track.clone()).collect();
+        let lists: Vec<(&str, &str, f32, Vec<Track>)> = crate::stats::SMART.iter().map(|(k, title, _, hue)| (*k, *title, *hue, crate::stats::smart(k, &liked, 100))).filter(|l| !l.3.is_empty()).collect();
+        if lists.is_empty() {
+            return;
+        }
+        widgets::section(ui, "Собрано для вас");
+        let w = 172.0;
+        egui::ScrollArea::horizontal().id_salt("smart").auto_shrink([false, true]).show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 16.0;
+                for (kind, title, hue, tracks) in &lists {
+                    let (rect, r) = ui.allocate_exact_size(egui::vec2(w, w + 46.0), egui::Sense::click());
+                    let art = egui::Rect::from_min_size(rect.min, egui::vec2(w, w));
+                    // four covers in a square, tinted with the list's own colour
+                    for (i, t) in tracks.iter().take(4).enumerate() {
+                        let q = egui::Rect::from_min_size(art.min + egui::vec2((i % 2) as f32 * w / 2.0, (i / 2) as f32 * w / 2.0), egui::vec2(w / 2.0, w / 2.0));
+                        let src = crate::ui::images::artwork_of(t);
+                        widgets::paint_cover(ui, &mut self.images, src.as_deref(), q, 0);
+                    }
+                    let tint = egui::ecolor::Hsva::new(hue / 360.0, 0.7, 0.32, 0.5);
+                    ui.painter().rect_filled(art, 16, egui::Color32::from(tint));
+                    ui.painter().text(art.center(), egui::Align2::CENTER_CENTER, "{E734}", crate::ui::theme::icon(26.0), crate::ui::theme::INK);
+                    let g = widgets::clipped(ui, &crate::i18n::t(title), theme::medium(14.0), crate::ui::theme::INK, w);
+                    ui.painter().galley(egui::pos2(rect.left(), art.bottom() + 8.0), g, crate::ui::theme::INK);
+                    ui.painter().text(egui::pos2(rect.left(), art.bottom() + 28.0), egui::Align2::LEFT_TOP, crate::i18n::tracks(tracks.len()), theme::body(13.0), theme::ink2());
+                    if r.clicked() {
+                        self.go(Page::Playlist(format!("smart:{kind}")));
+                    }
+                }
+            });
+        });
+    }
+
+    /// "Ваш топ-10" with its period
+    fn tops(&mut self, ui: &mut Ui) {
+        if crate::stats::top_tracks(crate::stats::Range::All, 1).is_empty() {
+            return;
+        }
+        ui.add_space(18.0);
+        let mut range = self.pages.home.top_range;
+        ui.horizontal(|ui| {
+            ui.label(egui::RichText::new(crate::i18n::t("Ваш топ-10")).font(theme::heavy(19.0)));
+            ui.add_space(12.0);
+            if let Some(i) = widgets::tabs(ui, &["Неделя", "Месяц", "Всё время"], range) {
+                range = i;
+            }
+        });
+        self.pages.home.top_range = range;
+        ui.add_space(8.0);
+        let r = [crate::stats::Range::Week, crate::stats::Range::Month, crate::stats::Range::All][range];
+        let top = crate::stats::top_tracks(r, 10);
+        if top.is_empty() {
+            App::muted(ui, "За этот период ещё ничего не слушали.");
+            return;
+        }
+        let tracks: Vec<Track> = top.iter().map(|x| x.0.clone()).collect();
+        let current = self.view.current().map(|t| t.id.clone());
+        for (i, (t, n, _)) in top.iter().enumerate() {
+            let liked = self.is_liked(&t.id);
+            let note = crate::i18n::t(&plays_word(*n));
+            let out = widgets::track_row(ui, &mut self.images, t, current.as_deref() == Some(t.id.as_str()), liked, Some(&note), Some(i + 1));
+            if out.clicked || out.double {
+                self.play_list(&tracks, i, None);
+            }
+            if out.like {
+                self.toggle_like(t);
+            }
+            if out.menu {
+                self.menu = Some(crate::app::Menu { track: t.clone(), at: ui.ctx().pointer_latest_pos().unwrap_or(out.response.rect.center()), playlist_item: None });
+            }
+        }
+    }
+}
+
+/// "1 прослушивание", "3 прослушивания", "5 прослушиваний"
+fn plays_word(n: u32) -> String {
+    let (m10, m100) = (n % 10, n % 100);
+    let w = if m10 == 1 && m100 != 11 { "прослушивание" } else if (2..=4).contains(&m10) && !(12..=14).contains(&m100) { "прослушивания" } else { "прослушиваний" };
+    format!("{n} {w}")
 }
 
 /// a mix of songs similar to the seeds, and a row per seed

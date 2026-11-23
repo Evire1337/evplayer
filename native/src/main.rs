@@ -49,6 +49,7 @@ pub mod player;
 pub mod presence;
 pub mod services;
 pub mod state;
+pub mod stats;
 pub mod store;
 pub mod system;
 pub mod ui;
