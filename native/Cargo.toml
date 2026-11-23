@@ -30,7 +30,7 @@ rtrb = "0.3"
 # what the shared modules of src-tauri use (offline, library, discord, services, ...)
 tauri = { path = "shim/tauri" }
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+serde_json = { version = "1", features = ["preserve_order"] }
 reqwest = { version = "0.12", default-features = false, features = ["cookies", "gzip", "brotli", "deflate", "json", "blocking", "native-tls"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "fs", "io-util", "net"] }
 lofty = "0.22"

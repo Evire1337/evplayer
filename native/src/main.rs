@@ -28,7 +28,7 @@ pub mod offline;
 pub mod proxy;
 #[path = "../../src-tauri/src/services.rs"]
 #[allow(dead_code)]
-pub mod services;
+pub mod services_shared;
 #[path = "stems_stub.rs"]
 pub mod stems;
 #[path = "../../src-tauri/src/userproxy.rs"]
@@ -38,7 +38,12 @@ pub mod userproxy;
 pub mod app;
 pub mod audio;
 pub mod events;
+pub mod i18n;
 pub mod model;
+mod nettest;
+pub mod player;
+pub mod services;
+pub mod state;
 pub mod store;
 pub mod ui;
 
