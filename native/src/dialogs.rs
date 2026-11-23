@@ -36,11 +36,58 @@ pub fn pick_files() -> Vec<PathBuf> {
     }
 }
 
+/// "Save as" for a file named `name` of the kind `what` (`ext` without the dot)
+#[cfg(windows)]
+pub fn save_file(name: &str, what: &str, ext: &str) -> Option<PathBuf> {
+    use windows_sys::Win32::UI::Controls::Dialogs::*;
+    let mut buf: Vec<u16> = name.encode_utf16().collect();
+    buf.resize(4096, 0);
+    let filter: Vec<u16> = format!("{}\0*.{ext}\0\0", crate::i18n::t(what)).encode_utf16().collect();
+    let def = wide(ext);
+    // SAFETY: the structure points at buffers that live through the call
+    let ok = unsafe {
+        let mut ofn: OPENFILENAMEW = std::mem::zeroed();
+        ofn.lStructSize = std::mem::size_of::<OPENFILENAMEW>() as u32;
+        ofn.lpstrFilter = filter.as_ptr();
+        ofn.lpstrFile = buf.as_mut_ptr();
+        ofn.nMaxFile = buf.len() as u32;
+        ofn.lpstrDefExt = def.as_ptr();
+        ofn.Flags = OFN_EXPLORER | OFN_OVERWRITEPROMPT | OFN_NOCHANGEDIR | OFN_PATHMUSTEXIST;
+        GetSaveFileNameW(&mut ofn) != 0
+    };
+    ok.then(|| PathBuf::from(String::from_utf16_lossy(&buf[..buf.iter().position(|c| *c == 0).unwrap_or(buf.len())])))
+}
+
+/// one file of the kind `what` to open
+#[cfg(windows)]
+pub fn open_file(what: &str, ext: &str) -> Option<PathBuf> {
+    use windows_sys::Win32::UI::Controls::Dialogs::*;
+    let mut buf = vec![0u16; 4096];
+    let filter: Vec<u16> = format!("{}\0*.{ext}\0{}\0*.*\0\0", crate::i18n::t(what), crate::i18n::t("Все файлы")).encode_utf16().collect();
+    // SAFETY: the structure points at buffers that live through the call
+    let ok = unsafe {
+        let mut ofn: OPENFILENAMEW = std::mem::zeroed();
+        ofn.lStructSize = std::mem::size_of::<OPENFILENAMEW>() as u32;
+        ofn.lpstrFilter = filter.as_ptr();
+        ofn.lpstrFile = buf.as_mut_ptr();
+        ofn.nMaxFile = buf.len() as u32;
+        ofn.Flags = OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_NOCHANGEDIR;
+        GetOpenFileNameW(&mut ofn) != 0
+    };
+    ok.then(|| PathBuf::from(String::from_utf16_lossy(&buf[..buf.iter().position(|c| *c == 0).unwrap_or(buf.len())])))
+}
+
 /// a folder to add (with everything in it)
 #[cfg(windows)]
 pub fn pick_folder() -> Option<PathBuf> {
+    pick_folder_for("Папка с музыкой")
+}
+
+/// a folder, with `title` above the tree
+#[cfg(windows)]
+pub fn pick_folder_for(title: &str) -> Option<PathBuf> {
     use windows_sys::Win32::UI::Shell::*;
-    let title = wide(&crate::i18n::t("Папка с музыкой"));
+    let title = wide(&crate::i18n::t(title));
     // SAFETY: plain shell calls; the item list is freed after use
     unsafe {
         let mut bi: BROWSEINFOW = std::mem::zeroed();
@@ -84,3 +131,15 @@ pub fn pick_folder() -> Option<PathBuf> {
 }
 #[cfg(not(windows))]
 pub fn open_path(_p: &Path) {}
+#[cfg(not(windows))]
+pub fn save_file(_name: &str, _what: &str, _ext: &str) -> Option<PathBuf> {
+    None
+}
+#[cfg(not(windows))]
+pub fn open_file(_what: &str, _ext: &str) -> Option<PathBuf> {
+    None
+}
+#[cfg(not(windows))]
+pub fn pick_folder_for(_title: &str) -> Option<PathBuf> {
+    None
+}

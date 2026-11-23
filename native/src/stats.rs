@@ -133,6 +133,20 @@ pub fn record(track: &Track, session: &str, played_ms: f64) {
     VERSION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 }
 
+/// "Сбросить статистику": every listen forgotten
+pub fn clear() {
+    with(|d| {
+        *d = Data::default();
+        save(d);
+    });
+    VERSION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// how big the statistics are on disk (Настройки → Данные)
+pub fn bytes() -> usize {
+    crate::state::get().kv.size(KEY)
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Range {
     Week,

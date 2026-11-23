@@ -86,12 +86,26 @@ pub struct Menu {
     pub playlist_item: Option<(String, String)>,
 }
 
+/// toasts from other threads (a copy-out that finished), shown on the next frame
+static LATER: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+
+pub fn toast_later(text: impl Into<String>) {
+    LATER.lock().unwrap().push(text.into());
+    crate::events::repaint();
+}
+
 pub enum Dialog {
     NewPlaylist { title: String, add: Vec<Track> },
     Rename { id: String, title: String, description: String },
     ConfirmDelete { id: String, title: String },
     /// "Импорт по ссылке или коду": the text pasted, and whether it goes to the likes
     Import { text: String, likes: bool },
+    /// "Скачать для офлайн": the lists ticked, and whether they keep themselves complete
+    Download { picked: Vec<String>, follow: bool },
+    /// "Восстановить из копии?"
+    Restore(crate::backup::BackupFile),
+    /// "Сбросить статистику?"
+    ResetStats,
 }
 
 /// an import running (or just finished): its panel at the bottom
@@ -190,7 +204,14 @@ impl App {
             view: View::default(),
             tray: false,
             logo: None,
-            downloads: crate::downloads::Downloads::new(offline.clone(), resolver.clone()),
+            downloads: {
+                let d = crate::downloads::Downloads::new(offline.clone(), resolver.clone());
+                // a picture of a page (--snapshot) fetches nothing
+                if !std::env::args().any(|a| a == "--snapshot") {
+                    crate::keep::start(d.clone());
+                }
+                d
+            },
             resolver,
             keys,
         }
@@ -326,6 +347,12 @@ impl App {
 
     /// for --snapshot: open a page by its name
     pub fn open_page_by_name(&mut self, name: &str) {
+        // "settings:8" opens that tab of the settings
+        if let Some(tab) = name.strip_prefix("settings:").and_then(|t| t.parse().ok()) {
+            self.pages.settings_tab = tab;
+            self.page = Page::Settings;
+            return;
+        }
         self.page = match name {
             "now" => Page::Now,
             "search" => Page::Search,
@@ -794,6 +821,9 @@ impl App {
     }
 
     fn toasts_ui(&mut self, ui: &mut Ui, screen: Rect) {
+        for text in std::mem::take(&mut *LATER.lock().unwrap()) {
+            self.toast(&text);
+        }
         let now = Instant::now();
         self.toasts.retain(|t| t.until > now);
         let mut y = screen.bottom() - 120.0;

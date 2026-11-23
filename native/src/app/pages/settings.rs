@@ -19,7 +19,7 @@ const TABS: [(&str, &str, &str); 10] = [
     ("", ic::MINI, "Мини-плеер"),
     ("", ic::MINI, "Окно и трей"),
     ("", ic::DISCORD, "Discord"),
-    ("Другое", ic::FOLDER, "Данные и резервная копия"),
+    ("Другое", ic::FOLDER, "Данные и копия"),
     ("", ic::INFO, "О программе"),
 ];
 
@@ -318,20 +318,149 @@ impl App {
         });
     }
 
+    /// Данные и копия (DataTab in src/pages/SettingsPage.tsx)
     fn settings_data(&mut self, ui: &mut Ui) {
-        card(ui, "Данные", |ui| {
-            row(ui, "Папка с данными", "Библиотека, плейлисты, настройки, скачанное", |ui| {
-                if widgets::pill_button(ui, Some(ic::OPEN), "Открыть", false).clicked() {
+        App::muted(ui, "Всё хранится только на этом компьютере. Сделайте копию, чтобы перенести библиотеку.");
+        ui.add_space(8.0);
+        // what takes how much, looked at again every few seconds (not every frame: the cache is a folder walk)
+        let stale = self.pages.data_usage.as_ref().is_none_or(|(at, _)| at.elapsed() > std::time::Duration::from_secs(5));
+        if stale {
+            let kv = &state::get().kv;
+            let library = kv.size(crate::state::LIBRARY) as u64;
+            let stats = (kv.size(crate::state::HISTORY) + crate::stats::bytes()) as u64;
+            let cache = dir_size(&crate::app::cache_dir());
+            self.pages.data_usage = Some((std::time::Instant::now(), [library, stats, cache]));
+        }
+        let [library, stats, cache] = self.pages.data_usage.as_ref().map(|u| u.1).unwrap_or_default();
+        ui.horizontal(|ui| {
+            for (label, bytes) in [("Библиотека", library), ("Статистика и история", stats), ("Кэш обложек и ответов", cache)] {
+                widgets::glass_frame().show(ui, |ui| {
+                    ui.vertical(|ui| {
+                        ui.set_width(180.0);
+                        ui.label(egui::RichText::new(crate::i18n::t(label)).font(theme::body(12.0)).color(theme::ink2()));
+                        ui.label(egui::RichText::new(size_text(bytes)).font(theme::heavy(20.0)).color(INK));
+                    });
+                });
+            }
+        });
+        ui.add_space(10.0);
+        card(ui, "Резервная копия", |ui| {
+            App::muted(ui, "Лайки, плейлисты, статистика, история, пресеты и настройки одним файлом");
+            ui.add_space(6.0);
+            ui.horizontal(|ui| {
+                if widgets::pill_button(ui, Some(ic::DOWNLOAD), "Сохранить копию", true).clicked() {
+                    state::get().kv.flush();
+                    let b = crate::backup::make(&state::get().kv);
+                    if let Some(path) = crate::dialogs::save_file(&crate::backup::file_name(&b), "Резервная копия EvPlayer", "json") {
+                        match serde_json::to_string(&b).map_err(|e| e.to_string()).and_then(|t| std::fs::write(&path, t).map_err(|e| e.to_string())) {
+                            Ok(()) => self.toast("Копия сохранена"),
+                            Err(e) => self.toast(&format!("Не удалось сохранить: {e}")),
+                        }
+                    }
+                }
+                if widgets::pill_button(ui, Some(ic::OPEN), "Восстановить из копии", false).clicked() {
+                    if let Some(path) = crate::dialogs::open_file("Резервная копия EvPlayer", "json") {
+                        match std::fs::read_to_string(&path).map_err(|e| e.to_string()).and_then(|t| crate::backup::read(&t)) {
+                            Ok(b) => self.dialog = Some(crate::app::Dialog::Restore(b)),
+                            Err(e) => self.toast(&e),
+                        }
+                    }
+                }
+            });
+        });
+        self.offline_card(ui);
+        card(ui, "Очистка", |ui| {
+            row(ui, "Кэш", "Обложки и ответы сервисов — скачаются заново, когда понадобятся", |ui| {
+                if widgets::pill_button(ui, None, "Очистить", false).clicked() {
+                    let _ = std::fs::remove_dir_all(crate::app::cache_dir().join("covers"));
+                    self.images.release_all();
+                    self.pages.data_usage = None;
+                    self.toast("Кэш очищен");
+                }
+            });
+            row(ui, "История прослушиваний", "«Недавно слушали» на главной и недавние запросы в поиске", |ui| {
+                if widgets::pill_button(ui, None, "Очистить", false).clicked() {
+                    state::get().update_history(|h| *h = Default::default());
+                    super::search::clear_history();
+                    self.pages.data_usage = None;
+                    self.toast("История очищена");
+                }
+            });
+            row(ui, "Статистика", "Топы, графики и умные плейлисты строятся из неё", |ui| {
+                if widgets::pill_button(ui, None, "Сбросить", false).clicked() {
+                    self.dialog = Some(crate::app::Dialog::ResetStats);
+                }
+            });
+            row(ui, "Папка с данными", "Список ваших файлов и обложки к ним", |ui| {
+                if widgets::pill_button(ui, None, "Открыть", false).clicked() {
                     crate::dialogs::open_path(&self.data_dir);
                 }
             });
-            let size = dir_size(&crate::app::cache_dir());
-            row(ui, "Кэш обложек", &format!("{:.1} МБ", size as f64 / 1_048_576.0), |ui| {
-                if widgets::pill_button(ui, Some(ic::DELETE), "Очистить", false).clicked() {
-                    let _ = std::fs::remove_dir_all(crate::app::cache_dir().join("covers"));
-                    self.images.release_all();
+        });
+    }
+
+    /// "Скачанное для офлайн" (OfflineCard)
+    fn offline_card(&mut self, ui: &mut Ui) {
+        let saved = self.downloads.saved();
+        let count = saved.len();
+        let bytes: u64 = saved.iter().map(|e| e.size).sum();
+        let lists = crate::keep::get().lists;
+        card(ui, "Скачанное для офлайн", |ui| {
+            App::muted(ui, "Песни из SoundCloud и YouTube, сохранённые на этом компьютере: играют без интернета");
+            ui.add_space(4.0);
+            let (title, hint) = if count > 0 {
+                (crate::i18n::tracks(count), format!("{} {}", size_text(bytes), crate::i18n::t("на диске")))
+            } else {
+                (crate::i18n::t("Пока ничего не скачано"), crate::i18n::t("Скачать можно трек, плейлист или лайки: правый клик по треку или кнопка на странице списка"))
+            };
+            row(ui, &title, &hint, |ui| {
+                if widgets::pill_button(ui, Some(ic::DOWNLOAD), "Скачать…", true).clicked() {
+                    self.dialog = Some(crate::app::Dialog::Download { picked: vec![], follow: true });
                 }
             });
+            if !lists.is_empty() {
+                let names: Vec<String> = lists.iter().map(|l| crate::keep::title_of(l)).collect();
+                row(ui, "Докачиваются сами", &names.join(", "), |ui| {
+                    if widgets::pill_button(ui, None, "Перестать", false).clicked() {
+                        crate::keep::remove(&lists);
+                    }
+                });
+            }
+            row(ui, "Папка со скачанным", "Файлы лежат там под служебными именами", |ui| {
+                if widgets::pill_button(ui, None, "Открыть", false).clicked() {
+                    let dir = self.downloads.folder();
+                    let _ = std::fs::create_dir_all(&dir);
+                    crate::dialogs::open_path(&dir);
+                }
+            });
+            if count > 0 {
+                row(ui, "Сохранить в папку", "Копии как обычные файлы «Исполнитель - Название» с тегами и обложкой: для другого плеера или телефона. Скачанное остаётся как было", |ui| {
+                    if widgets::pill_button(ui, None, "Выбрать папку…", false).clicked() {
+                        if let Some(folder) = crate::dialogs::pick_folder_for("Куда сохранить копии") {
+                            let tracks = self.saved_tracks();
+                            let d = self.downloads.clone();
+                            self.toast("Сохраняю копии…");
+                            std::thread::spawn(move || match d.export(&tracks, &folder) {
+                                Ok(r) => {
+                                    let mut line = format!("{}: {} → {}", crate::i18n::t("Сохранено"), crate::i18n::tracks(r.copied), r.folder);
+                                    if r.missing > 0 {
+                                        line.push_str(&format!(" ({} {})", r.missing, crate::i18n::t("не нашлось")));
+                                    }
+                                    crate::app::toast_later(line);
+                                }
+                                Err(e) => crate::app::toast_later(e),
+                            });
+                        }
+                    }
+                });
+                row(ui, "Удалить всё скачанное", "Песни останутся в плейлистах и будут играть из интернета", |ui| {
+                    if widgets::pill_button(ui, Some(ic::DELETE), "Удалить", false).clicked() {
+                        crate::keep::remove(&lists);
+                        self.downloads.clear();
+                        self.toast("Скачанное удалено");
+                    }
+                });
+            }
         });
     }
 
@@ -364,6 +493,16 @@ impl App {
             ui.ctx().request_repaint_after(std::time::Duration::from_secs(1));
         });
         let _ = ACCENT;
+    }
+}
+
+/// "12 КБ", "3.4 МБ"
+fn size_text(bytes: u64) -> String {
+    let kb = bytes as f64 / 1024.0;
+    if kb > 1024.0 {
+        format!("{:.1} МБ", kb / 1024.0)
+    } else {
+        format!("{} КБ", kb.round().max(1.0) as u64)
     }
 }
 

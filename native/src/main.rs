@@ -49,6 +49,8 @@ pub mod player;
 pub mod presence;
 pub mod services;
 pub mod state;
+pub mod backup;
+pub mod keep;
 pub mod stats;
 pub mod store;
 pub mod system;
@@ -72,6 +74,10 @@ fn main() {
         return;
     }
     let snapshot = args.iter().any(|a| a == "--snapshot");
+    // started again after a backup was put back: the old copy finishes closing first
+    if let Some(pid) = args.iter().position(|a| a == "--after").and_then(|i| args.get(i + 1)).and_then(|p| p.parse().ok()) {
+        system::wait_for_exit(pid);
+    }
     if !snapshot && !system::single_instance() {
         return;
     }

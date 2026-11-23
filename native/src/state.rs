@@ -86,6 +86,8 @@ impl State {
         kv::write_state(&self.kv, LIBRARY, &*l, 0);
         drop(l);
         crate::events::repaint();
+        // songs added to a list kept offline are fetched too
+        crate::keep::changed();
         r
     }
 

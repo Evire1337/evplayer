@@ -66,6 +66,31 @@ pub fn single_instance() -> bool {
     true
 }
 
+/// wait (at most 15 s) until the process `pid` has ended: a restart waits for the old copy
+pub fn wait_for_exit(pid: u32) {
+    #[cfg(windows)]
+    unsafe {
+        use windows_sys::Win32::Foundation::CloseHandle;
+        use windows_sys::Win32::System::Threading::{OpenProcess, WaitForSingleObject, PROCESS_SYNCHRONIZE};
+        let h = OpenProcess(PROCESS_SYNCHRONIZE, 0, pid);
+        if !h.is_null() {
+            WaitForSingleObject(h, 15_000);
+            CloseHandle(h);
+        }
+    }
+    #[cfg(not(windows))]
+    let _ = pid;
+}
+
+/// The program closes and starts again (after a backup was put back): the new copy is started
+/// first and waits for this one to end, so the one-copy rule lets it in.
+pub fn restart() {
+    if let Ok(exe) = std::env::current_exe() {
+        let _ = std::process::Command::new(exe).arg("--after").arg(std::process::id().to_string()).spawn();
+    }
+    events::send(Event::Quit);
+}
+
 fn post_orders() {
     #[cfg(windows)]
     if let Some(&h) = HWND_.get() {

@@ -26,6 +26,8 @@ pub struct Status {
 struct Inner {
     queue: VecDeque<Track>,
     status: Status,
+    /// songs queued by a followed list topping itself up: a failure is remembered for them
+    auto: std::collections::HashSet<String>,
 }
 
 pub struct Downloads {
@@ -37,7 +39,7 @@ pub struct Downloads {
 
 impl Downloads {
     pub fn new(offline: Arc<crate::offline::Offline>, resolver: Arc<crate::player::resolve::Resolver>) -> Arc<Self> {
-        let me = Arc::new(Self { inner: Mutex::new(Inner { queue: VecDeque::new(), status: Status::default() }), wake: Condvar::new(), offline, resolver });
+        let me = Arc::new(Self { inner: Mutex::new(Inner { queue: VecDeque::new(), status: Status::default(), auto: Default::default() }), wake: Condvar::new(), offline, resolver });
         for _ in 0..AT_ONCE {
             let w = me.clone();
             let _ = std::thread::Builder::new().name("download".into()).spawn(move || w.worker());
@@ -67,6 +69,44 @@ impl Downloads {
         self.wake.notify_all();
         crate::events::repaint();
         n
+    }
+
+    /// songs from followed lists topping themselves up (failures are not tried again)
+    pub fn add_auto(&self, tracks: &[Track]) -> usize {
+        let mut g = self.inner.lock().unwrap();
+        let mut n = 0;
+        for t in tracks {
+            let queued = g.queue.iter().any(|q| q.id == t.id) || g.status.running.contains_key(&t.id);
+            if queued || self.offline.path_of(&t.id).is_some() || t.source == crate::model::Source::Local {
+                continue;
+            }
+            g.auto.insert(t.id.clone());
+            g.queue.push_back(t.clone());
+            n += 1;
+        }
+        g.status.waiting = g.queue.len();
+        drop(g);
+        self.wake.notify_all();
+        crate::events::repaint();
+        n
+    }
+
+    /// the folder the saved songs are in
+    pub fn folder(&self) -> std::path::PathBuf {
+        self.offline.folder().to_path_buf()
+    }
+
+    /// every saved song deleted (they stay in the lists and play from the network)
+    pub fn clear(&self) {
+        self.cancel_all();
+        self.offline.clear();
+        crate::events::repaint();
+    }
+
+    /// copies of saved songs in `folder` as "Artist - Title" with tags and cover
+    pub fn export(&self, tracks: &[Track], folder: &std::path::Path) -> Result<crate::offline::ExportResult, String> {
+        let items: Vec<crate::offline::ExportItem> = tracks.iter().map(|t| crate::offline::ExportItem { id: t.id.clone(), title: t.title.clone(), artist: t.artist_line(), artwork: t.artwork.clone() }).collect();
+        self.offline.export(&items, folder)
     }
 
     pub fn remove(&self, ids: &[String]) {
@@ -110,11 +150,16 @@ impl Downloads {
             let result = self.fetch(&track);
             let mut g = self.inner.lock().unwrap();
             g.status.running.remove(&track.id);
+            let auto = g.auto.remove(&track.id);
             match result {
                 Ok(()) => g.status.done_count += 1,
                 Err(e) => g.status.failed.push((track.id.clone(), format!("{} — {e}", track.title))),
             }
+            let failed = auto && !self.is_saved(&track.id);
             drop(g);
+            if failed {
+                crate::keep::mark_failed(std::slice::from_ref(&track.id));
+            }
             crate::events::repaint();
         }
     }

@@ -34,6 +34,10 @@ pub struct Pages {
     pub sound_open: bool,
     pub volume_open: bool,
     pub show_queue: Option<bool>,
+    /// Настройки → Данные: when the sizes were looked at, and library / statistics / cache bytes
+    pub data_usage: Option<(std::time::Instant, [u64; 3])>,
+    /// the offline menu of a playlist is open
+    pub offline_menu: bool,
 }
 
 impl App {
@@ -204,6 +208,8 @@ impl App {
     }
 
     pub fn dialogs(&mut self, ctx: &egui::Context) {
+        // what is saved, for the offline dialog's counts
+        let saved: std::collections::HashSet<String> = if matches!(self.dialog, Some(Dialog::Download { .. })) { self.downloads.saved().into_iter().map(|e| e.id).collect() } else { Default::default() };
         let Some(d) = &mut self.dialog else { return };
         let mut done = false;
         let mut apply: Option<Box<dyn FnOnce(&mut App)>> = None;
@@ -272,6 +278,111 @@ impl App {
                         if widgets::pill_button(ui, Some(ic::DOWNLOAD), "Импортировать", true).clicked() && ready {
                             let (t, l) = (text.clone(), *likes);
                             apply = Some(Box::new(move |app: &mut App| app.start_import(t, if l { Some(true) } else { None })));
+                            done = true;
+                        }
+                        if widgets::pill_button(ui, None, "Отмена", false).clicked() {
+                            done = true;
+                        }
+                    });
+                }
+                Dialog::Download { picked, follow } => {
+                    ui.label(egui::RichText::new(crate::i18n::t("Скачать для офлайн")).font(theme::heavy(22.0)));
+                    ui.add_space(6.0);
+                    ui.label(egui::RichText::new(crate::i18n::t("Отметьте, что сохранить на этом компьютере: лайки, плейлисты или всё сразу. Скачанное играет без интернета.")).font(theme::body(12.5)).color(theme::ink2()));
+                    ui.add_space(8.0);
+                    let kept_lists = crate::keep::get().lists;
+                    let rows: Vec<(String, usize, usize)> = crate::keep::all_scopes().into_iter().map(|s| {
+                        let (total, kept) = crate::keep::status(&s, &saved);
+                        (s, total, kept)
+                    }).filter(|r| r.1 > 0).collect();
+                    if rows.is_empty() {
+                        ui.label(egui::RichText::new(crate::i18n::t("Пока нечего скачивать: добавьте треки из SoundCloud или YouTube в лайки или плейлист.")).color(theme::ink2()));
+                    } else {
+                        let all_on = rows.iter().all(|r| picked.contains(&r.0));
+                        let mut all = all_on;
+                        if ui.checkbox(&mut all, egui::RichText::new(crate::i18n::t("Всё сразу")).font(theme::medium(13.5))).changed() {
+                            *picked = if all { rows.iter().map(|r| r.0.clone()).collect() } else { vec![] };
+                        }
+                        egui::ScrollArea::vertical().max_height(260.0).show(ui, |ui| {
+                            for (scope, total, kept) in &rows {
+                                let mut on = picked.contains(scope);
+                                let mut note = String::new();
+                                if kept == total {
+                                    note.push_str(&crate::i18n::t("всё скачано · "));
+                                } else if *kept > 0 {
+                                    note.push_str(&format!("{} {} {} ", crate::i18n::t("скачано"), kept, crate::i18n::t("из")));
+                                }
+                                note.push_str(&crate::i18n::tracks(*total));
+                                if kept_lists.contains(scope) {
+                                    note.push_str(&crate::i18n::t(" · следит"));
+                                }
+                                ui.horizontal(|ui| {
+                                    if ui.checkbox(&mut on, egui::RichText::new(crate::keep::title_of(scope)).font(theme::medium(13.5))).changed() {
+                                        if on {
+                                            picked.push(scope.clone());
+                                        } else {
+                                            picked.retain(|p| p != scope);
+                                        }
+                                    }
+                                    ui.label(egui::RichText::new(note).font(theme::body(12.0)).color(theme::ink3()));
+                                });
+                            }
+                        });
+                    }
+                    ui.add_space(6.0);
+                    if let Some(v) = widgets::toggle_row(ui, "Докачивать новые треки", "Что добавите в эти списки потом, скачается само", *follow, true) {
+                        *follow = v;
+                    }
+                    ui.add_space(10.0);
+                    let missing = crate::keep::tracks_of(picked).iter().filter(|t| !saved.contains(&t.id)).count();
+                    ui.horizontal(|ui| {
+                        let label = if picked.is_empty() { crate::i18n::t("Скачать") } else if missing > 0 { format!("{} {}", crate::i18n::t("Скачать"), crate::i18n::tracks(missing)) } else { crate::i18n::t("Сохранить выбор") };
+                        if widgets::pill_button(ui, Some(ic::DOWNLOAD), &label, true).clicked() && !picked.is_empty() {
+                            let (p, f) = (picked.clone(), *follow);
+                            apply = Some(Box::new(move |app: &mut App| {
+                                if f {
+                                    crate::keep::add(&p);
+                                }
+                                let n = app.downloads.add(&crate::keep::tracks_of(&p));
+                                app.toast(&if n > 0 { format!("{} {}", crate::i18n::t("Скачиваю для офлайн:"), crate::i18n::tracks(n)) } else { crate::i18n::t("Всё выбранное уже сохранено") });
+                            }));
+                            done = true;
+                        }
+                        if widgets::pill_button(ui, None, "Отмена", false).clicked() {
+                            done = true;
+                        }
+                    });
+                }
+                Dialog::Restore(b) => {
+                    ui.label(egui::RichText::new(crate::i18n::t("Восстановить из копии?")).font(theme::heavy(22.0)));
+                    ui.add_space(6.0);
+                    ui.label(egui::RichText::new(format!("{} {}.", crate::i18n::t("Всё, что сейчас есть в EvPlayer на этом компьютере, заменится содержимым копии от"), crate::backup::when(b))).color(theme::ink2()));
+                    ui.add_space(4.0);
+                    ui.label(egui::RichText::new(crate::i18n::t("EvPlayer перезапустится.")).font(theme::body(12.5)).color(theme::ink3()));
+                    ui.add_space(14.0);
+                    ui.horizontal(|ui| {
+                        if widgets::pill_button(ui, None, "Восстановить", true).clicked() {
+                            crate::backup::restore(&state::get().kv, b);
+                            crate::system::restart();
+                            done = true;
+                        }
+                        if widgets::pill_button(ui, None, "Отмена", false).clicked() {
+                            done = true;
+                        }
+                    });
+                }
+                Dialog::ResetStats => {
+                    ui.label(egui::RichText::new(crate::i18n::t("Сбросить статистику?")).font(theme::heavy(22.0)));
+                    ui.add_space(6.0);
+                    ui.label(egui::RichText::new(crate::i18n::t("Все прослушивания, топы и умные плейлисты обнулятся. Это нельзя отменить.")).color(theme::ink2()));
+                    ui.add_space(14.0);
+                    ui.horizontal(|ui| {
+                        if widgets::pill_button(ui, None, "Сбросить", true).clicked() {
+                            crate::stats::clear();
+                            apply = Some(Box::new(|app: &mut App| {
+                                app.pages.data_usage = None;
+                                app.toast("Статистика сброшена");
+                            }));
                             done = true;
                         }
                         if widgets::pill_button(ui, None, "Отмена", false).clicked() {

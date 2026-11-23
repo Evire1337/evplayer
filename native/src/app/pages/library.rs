@@ -149,8 +149,8 @@ impl App {
                     if widgets::pill_button(ui, Some(ic::PLAY), "Играть", true).clicked() && !tracks.is_empty() {
                         self.player.play_queue(tracks.clone(), 0, Some(source.clone()));
                     }
-                    if id != "offline" && !id.starts_with("smart:") && widgets::icon_button(ui, ic::DOWNLOAD, 34.0, false, "Скачать всё для офлайн").clicked() && !tracks.is_empty() {
-                        self.download(&tracks);
+                    if id != "offline" && !id.starts_with("smart:") {
+                        self.offline_menu(ui, id);
                     }
                     if widgets::pill_button(ui, Some(ic::SHUFFLE), "Вперемешку", false).clicked() && !tracks.is_empty() {
                         let shuffled = crate::player::queue::shuffled(&tracks, None);
@@ -229,4 +229,59 @@ pub fn gradient(ui: &Ui, rect: Rect, a: egui::Color32, b: egui::Color32) {
         mesh.add_triangle(0, i, next);
     }
     ui.painter().add(egui::Shape::mesh(mesh));
+}
+
+impl App {
+    /// The offline entries of a list (src/offline/menu.tsx): download it, download it together
+    /// with other lists, or delete the copies.
+    fn offline_menu(&mut self, ui: &mut Ui, scope: &str) {
+        let saved: std::collections::HashSet<String> = self.downloads.saved().into_iter().map(|e| e.id).collect();
+        let (total, kept) = crate::keep::status(scope, &saved);
+        if total == 0 {
+            return;
+        }
+        let follows = crate::keep::get().lists.iter().any(|l| l == scope);
+        let tip = if kept == total { "Скачано для офлайн" } else { "Скачать для офлайн" };
+        let r = widgets::icon_button(ui, ic::DOWNLOAD, 34.0, kept == total, tip);
+        if r.clicked() {
+            self.pages.offline_menu = !self.pages.offline_menu;
+        }
+        let mut open = self.pages.offline_menu;
+        let mut pick: Option<u8> = None;
+        widgets::popover(ui, "offline-menu", r.rect, 280.0, &mut open, |ui| {
+            if kept < total {
+                let label = if kept > 0 { format!("{} ({})", crate::i18n::t("Докачать остальное"), total - kept) } else { crate::i18n::t("Скачать для офлайн") };
+                if widgets::pill_button(ui, Some(ic::DOWNLOAD), &label, true).clicked() {
+                    pick = Some(0);
+                }
+            }
+            if widgets::pill_button(ui, Some(ic::ADD), "Скачать вместе с другими…", false).clicked() {
+                pick = Some(1);
+            }
+            if (kept > 0 || follows) && widgets::pill_button(ui, Some(ic::DELETE), "Удалить скачанное", false).clicked() {
+                pick = Some(2);
+            }
+        });
+        self.pages.offline_menu = open && pick.is_none();
+        let scope_list = vec![scope.to_string()];
+        match pick {
+            Some(0) => {
+                crate::keep::add(&scope_list);
+                let n = self.downloads.add(&crate::keep::scope_tracks(scope));
+                if n > 0 {
+                    self.toast(&format!("{} {}", crate::i18n::t("Скачиваю:"), n));
+                }
+            }
+            Some(1) => self.dialog = Some(Dialog::Download { picked: scope_list, follow: true }),
+            Some(2) => {
+                crate::keep::remove(&scope_list);
+                // a song that another list still keeps offline stays
+                let others: std::collections::HashSet<String> = crate::keep::tracks_of(&crate::keep::get().lists).into_iter().map(|t| t.id).collect();
+                let ids: Vec<String> = crate::keep::scope_tracks(scope).into_iter().filter(|t| saved.contains(&t.id) && !others.contains(&t.id)).map(|t| t.id).collect();
+                self.downloads.remove(&ids);
+                self.toast(&if ids.is_empty() { crate::i18n::t("Эти песни нужны другим спискам, оставил") } else { format!("{} {}", crate::i18n::t("Удалено копий:"), ids.len()) });
+            }
+            _ => {}
+        }
+    }
 }

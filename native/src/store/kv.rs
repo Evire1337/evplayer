@@ -5,6 +5,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
 
@@ -16,6 +17,8 @@ pub struct Kv {
     values: Mutex<BTreeMap<String, String>>,
     dirty: Mutex<BTreeSet<String>>,
     wake: Condvar,
+    /// a backup was put in place: nothing more is written until the program starts again
+    frozen: AtomicBool,
 }
 
 fn file_of(dir: &Path, key: &str) -> PathBuf {
@@ -39,7 +42,7 @@ impl Kv {
             }
         }
         let fresh = values.is_empty();
-        let me = Arc::new(Self { dir, values: Mutex::new(values), dirty: Mutex::new(BTreeSet::new()), wake: Condvar::new() });
+        let me = Arc::new(Self { dir, values: Mutex::new(values), dirty: Mutex::new(BTreeSet::new()), wake: Condvar::new(), frozen: AtomicBool::new(false) });
         if fresh {
             if let Some(seeded) = seed() {
                 for (k, v) in seeded {
@@ -58,6 +61,9 @@ impl Kv {
     }
 
     pub fn set(&self, key: &str, value: String) {
+        if self.frozen.load(Ordering::Relaxed) {
+            return;
+        }
         {
             let mut v = self.values.lock().unwrap();
             if v.get(key) == Some(&value) {
@@ -70,6 +76,9 @@ impl Kv {
     }
 
     pub fn remove(&self, key: &str) {
+        if self.frozen.load(Ordering::Relaxed) {
+            return;
+        }
         self.values.lock().unwrap().remove(key);
         let _ = std::fs::remove_file(file_of(&self.dir, key));
     }
@@ -79,8 +88,38 @@ impl Kv {
         self.values.lock().unwrap().get(key).map(|v| v.len()).unwrap_or(0)
     }
 
+    /// every key and its text
+    pub fn snapshot(&self) -> BTreeMap<String, String> {
+        self.values.lock().unwrap().clone()
+    }
+
+    /// Every key starting with `prefix` is replaced by `new` and written at once (a backup put
+    /// back). After that the store takes no writes: what the running program still holds in
+    /// memory must not overwrite the backup, and the program starts again right after.
+    pub fn replace_all(&self, prefix: &str, new: &BTreeMap<String, String>) {
+        self.frozen.store(true, Ordering::Relaxed);
+        self.dirty.lock().unwrap().clear();
+        let mut values = self.values.lock().unwrap();
+        let old: Vec<String> = values.keys().filter(|k| k.starts_with(prefix)).cloned().collect();
+        for k in old {
+            values.remove(&k);
+            let _ = std::fs::remove_file(file_of(&self.dir, &k));
+        }
+        for (k, v) in new.iter().filter(|(k, _)| k.starts_with(prefix)) {
+            let path = file_of(&self.dir, k);
+            let tmp = path.with_extension("json.tmp");
+            if std::fs::write(&tmp, v.as_bytes()).is_ok() {
+                let _ = std::fs::rename(&tmp, &path);
+            }
+            values.insert(k.clone(), v.clone());
+        }
+    }
+
     /// write everything changed now (on quit)
     pub fn flush(&self) {
+        if self.frozen.load(Ordering::Relaxed) {
+            return;
+        }
         let keys: Vec<String> = std::mem::take(&mut *self.dirty.lock().unwrap()).into_iter().collect();
         for key in keys {
             let Some(value) = self.get(&key) else { continue };

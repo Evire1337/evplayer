@@ -37,6 +37,11 @@ pub struct SearchState {
     results: Loaded<Results>,
 }
 
+/// "Очистить историю" in Настройки → Данные: the recent queries go too
+pub fn clear_history() {
+    kv::write_state(&state::get().kv, HISTORY_KEY, &History::default(), 0);
+}
+
 #[derive(serde::Serialize, serde::Deserialize, Default)]
 struct History {
     queries: Vec<String>,
