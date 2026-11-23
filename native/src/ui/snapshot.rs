@@ -83,7 +83,9 @@ pub fn run(mut app: App, ctx: egui::Context, mut o: Options) -> Result<(), Strin
     let mut renderer = SoftRenderer::new(((super::window::GROUND[0] as u32) << 16) | ((super::window::GROUND[1] as u32) << 8) | super::window::GROUND[2] as u32);
     let mut px = vec![0u32; (o.width * o.height) as usize];
     // a few passes: egui settles sizes over the first frames, pictures arrive
-    for pass in 0..6 {
+    // a search waits for the services to answer
+    let passes = if o.page.as_deref().is_some_and(|p| p.starts_with("search:")) { 40 } else { 6 };
+    for pass in 0..passes {
         let mut input = egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, points)), ..Default::default() };
         input.viewports.entry(egui::ViewportId::ROOT).or_default().native_pixels_per_point = Some(o.scale);
         input.time = Some(pass as f64 * 0.1);

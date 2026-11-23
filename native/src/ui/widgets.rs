@@ -314,7 +314,47 @@ pub struct RowOut {
 
 /// a song in a list: cover, title and artist, extra text (the date added), like, length
 pub fn track_row(ui: &mut Ui, images: &mut Images, t: &crate::model::Track, playing: bool, liked: bool, extra: Option<&str>, number: Option<usize>) -> RowOut {
-    track_row_full(ui, images, t, playing, liked, extra, number, false)
+    track_row_full(ui, images, t, playing, liked, extra, number, false, false)
+}
+
+/// "1.2 млн", "34 тыс." (formatCount in the page); K / M / B in English
+pub fn count(n: f64) -> String {
+    if crate::i18n::is_english() {
+        return if n >= 1e9 {
+            format!("{:.1}B", n / 1e9)
+        } else if n >= 1e6 {
+            format!("{:.1}M", n / 1e6)
+        } else if n >= 1e3 {
+            format!("{:.0}K", n / 1e3)
+        } else {
+            format!("{n:.0}")
+        };
+    }
+    if n >= 1e9 {
+        format!("{:.1} млрд", n / 1e9)
+    } else if n >= 1e6 {
+        format!("{:.1} млн", n / 1e6)
+    } else if n >= 1e3 {
+        format!("{:.0} тыс.", n / 1e3)
+    } else {
+        format!("{n:.0}")
+    }
+}
+
+/// .source-badge: "SC", "YT" or "Файл" in the service's colour, before the artist
+fn source_badge(ui: &Ui, source: crate::model::Source, at: egui::Pos2) -> f32 {
+    use crate::model::Source;
+    let (text, bg, fg) = match source {
+        Source::Soundcloud => ("SC".to_string(), Color32::from_rgba_unmultiplied(255, 136, 0, 51), Color32::from_rgb(0xff, 0xb4, 0x69)),
+        Source::Youtube => ("YT".to_string(), Color32::from_rgba_unmultiplied(255, 60, 60, 51), Color32::from_rgb(0xff, 0x9a, 0x9a)),
+        Source::Local => (crate::i18n::t("Файл"), Color32::from_rgba_unmultiplied(238, 247, 244, 31), theme::ink2()),
+    };
+    let job = egui::text::LayoutJob::single_section(text, egui::TextFormat { font_id: theme::heavy(10.0), color: fg, extra_letter_spacing: 0.4, ..Default::default() });
+    let g = ui.painter().layout_job(job);
+    let r = Rect::from_min_size(pos2(at.x, at.y - (g.size().y + 2.0) / 2.0), g.size() + vec2(10.0, 2.0));
+    ui.painter().rect_filled(r, CornerRadius::same(5), bg);
+    ui.painter().galley(r.center() - g.size() / 2.0, g, fg);
+    r.width() + 6.0
 }
 
 /// where a song row's columns sit from its right edge (.track-row: padding 8, gap 12; the
@@ -335,7 +375,10 @@ pub mod row_cols {
 /// the current one), title and artist, the date it was added (`dated`) or a note, the like, the
 /// length, the "…". Rows are 62 high, rounded 16.
 #[allow(clippy::too_many_arguments)]
-pub fn track_row_full(ui: &mut Ui, images: &mut Images, t: &crate::model::Track, playing: bool, liked: bool, extra: Option<&str>, number: Option<usize>, dated: bool) -> RowOut {
+pub fn track_row_full(ui: &mut Ui, images: &mut Images, t: &crate::model::Track, playing: bool, liked: bool, extra: Option<&str>, number: Option<usize>, dated: bool, badge: bool) -> RowOut {
+    // with no note of its own a row shows the service's play count (.track-plays)
+    let plays = (extra.is_none() && !dated).then(|| t.plays.map(count)).flatten();
+    let extra = extra.or(plays.as_deref());
     use row_cols::*;
     let width = ui.available_width();
     let (rect, r) = ui.allocate_exact_size(vec2(width, 62.0), Sense::click());
@@ -362,14 +405,19 @@ pub fn track_row_full(ui: &mut Ui, images: &mut Images, t: &crate::model::Track,
     let right_w = if dated { DATE_LEFT + 12.0 } else if extra.is_some() { LIKE + 17.0 + 12.0 + 140.0 } else { LIKE + 17.0 + 12.0 };
     let text_w = (rect.right() - x - right_w).max(60.0);
     let title_color = if playing { ACCENT } else { INK };
-    let g = clipped(ui, &t.title, theme::medium(14.5), title_color, text_w);
+    let g = clipped(ui, &t.title, theme::medium(14.0), title_color, text_w);
     ui.painter().galley(pos2(x, rect.center().y - 19.0), g, title_color);
     let mut sub = t.artist_line();
     if t.explicit {
         sub = format!("🅴 {sub}");
     }
-    let g = clipped(ui, &sub, theme::body(13.0), theme::ink2(), text_w);
-    ui.painter().galley(pos2(x, rect.center().y + 2.0), g, theme::ink2());
+    let sub_y = rect.center().y + 2.0;
+    let mut sx = x;
+    if badge {
+        sx += source_badge(ui, t.source, pos2(x, sub_y + 8.0));
+    }
+    let g = clipped(ui, &sub, theme::body(13.0), theme::ink2(), (text_w - (sx - x)).max(20.0));
+    ui.painter().galley(pos2(sx, sub_y), g, theme::ink2());
     if let Some(e) = extra {
         if dated {
             let g = clipped(ui, e, theme::body(13.0), theme::ink3(), 130.0);

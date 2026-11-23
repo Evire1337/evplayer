@@ -83,7 +83,7 @@ impl App {
             for i in range {
                 let t = &tracks[i];
                 let e = extra(i);
-                let out = widgets::track_row_full(ui, &mut self.images, t, current.as_deref() == Some(t.id.as_str()), lib_likes.contains(&t.id), e.as_deref(), None, dated);
+                let out = widgets::track_row_full(ui, &mut self.images, t, current.as_deref() == Some(t.id.as_str()), lib_likes.contains(&t.id), e.as_deref(), None, dated, false);
                 if (out.clicked && !double) || out.double {
                     self.play_list(tracks, i, source.clone());
                 }

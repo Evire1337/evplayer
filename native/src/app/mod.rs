@@ -405,10 +405,16 @@ impl App {
         if let Some(tab) = name.strip_prefix("settings:").and_then(|t| t.parse().ok()) {
             self.pages.settings_tab = tab;
             // the picture of the diagnostics tab shows it without turning it on for good
-            if tab == 9 {
+            if tab == 8 {
                 state::get().settings.write().unwrap().dev_tools = true;
             }
             self.page = Page::Settings;
+            return;
+        }
+        // "search:<words>" opens the search with that query
+        if let Some(q) = name.strip_prefix("search:") {
+            self.pages.search.query = q.to_string();
+            self.page = Page::Search;
             return;
         }
         // "playlist:first" opens the first of your playlists
