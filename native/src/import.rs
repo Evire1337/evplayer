@@ -287,11 +287,34 @@ fn youtube_link(url: &url::Url) -> Result<Fetched, String> {
     Ok(Fetched { title: t.title.clone(), tracks: vec![t], ..Default::default() })
 }
 
-/// Spotify's embed page (the one other sites use for the Spotify player): at most 100 songs
-fn spotify(url: &url::Url) -> Result<Fetched, String> {
+/// Spotify, best source first: your account or own app (the official API, any length), then
+/// the guest access of Spotify's web player (a whole playlist, no sign-in), then the embed page
+/// (100 songs)
+fn spotify(url: &url::Url, cancel: Option<&AtomicBool>, step: &dyn Fn(&str)) -> Result<Fetched, String> {
     let m = regex::Regex::new(r"/(playlist|album|track)/([A-Za-z0-9]+)").unwrap();
     let c = m.captures(url.path()).ok_or("Ссылка Spotify должна вести на плейлист, альбом или трек")?;
     let (kind, id) = (c[1].to_string(), c[2].to_string());
+    let read = |n: usize, total: usize| step(&format!("Spotify: прочитано {n} из {total}"));
+    if crate::services::spotify::has_access() {
+        let (title, named, artwork) = crate::services::spotify::collection(&kind, &id, cancel, &read)?;
+        return Ok(Fetched { title, named, artwork, description: Some("Импортировано из Spotify".into()), ..Default::default() });
+    }
+    let embed = spotify_embed(&kind, &id)?;
+    if kind == "playlist" {
+        // the web player changed or Spotify refused: the embed page still works
+        if let Ok((named, total)) = crate::services::spotify::guest_playlist(&id, cancel, &read) {
+            if !named.is_empty() && named.len() >= embed.named.len() {
+                let truncated = total.is_some_and(|t| named.len() < t);
+                return Ok(Fetched { named, truncated, ..embed });
+            }
+        }
+    }
+    Ok(embed)
+}
+
+/// Spotify's embed page (the one other sites use for the Spotify player): at most 100 songs
+fn spotify_embed(kind: &str, id: &str) -> Result<Fetched, String> {
+    let (kind, id) = (kind.to_string(), id.to_string());
     let html = get_text(&format!("https://open.spotify.com/embed/{kind}/{id}"))?;
     let json = regex::Regex::new(r#"(?s)<script id="__NEXT_DATA__" type="application/json">(.+?)</script>"#).unwrap().captures(&html).map(|m| m[1].to_string()).ok_or("Spotify не показал список треков")?;
     let v: Value = serde_json::from_str(&json).map_err(|e| e.to_string())?;
@@ -379,6 +402,11 @@ fn urlencoding(s: &str) -> String {
 }
 
 pub fn fetch(text: &str) -> Result<Fetched, String> {
+    fetch_with(text, None, &|_| {})
+}
+
+/// read a link, a code or a list of songs; `step` hears what is being read
+pub fn fetch_with(text: &str, cancel: Option<&AtomicBool>, step: &dyn Fn(&str)) -> Result<Fetched, String> {
     let kind = link_kind(text);
     if kind.is_none() && looks_like_track_list(text) {
         return Ok(Fetched { title: "Импорт списком".into(), named: parse_track_list(text), description: Some("Импортировано списком песен".into()), ..Default::default() });
@@ -394,7 +422,7 @@ pub fn fetch(text: &str) -> Result<Fetched, String> {
             Ok(Fetched { title, tracks, artwork, description: Some("Импортировано из SoundCloud".into()), ..Default::default() })
         }
         Some(Kind::Youtube) => youtube_link(&url),
-        Some(Kind::Spotify) => spotify(&url),
+        Some(Kind::Spotify) => spotify(&url, cancel, step),
         Some(Kind::Deezer) => deezer(&url),
         Some(Kind::Yandex) => yandex(&url),
         Some(Kind::Apple) => Err("Apple Music не даёт читать плейлисты без своего аккаунта разработчика. Экспортируйте плейлист в Spotify или вставьте названия вручную.".into()),
@@ -499,7 +527,7 @@ pub fn run(text: String, to_likes: Option<bool>, cancel: Arc<AtomicBool>, progre
         _ => "Читаю ссылку…",
     });
     let result = (|| -> Result<(String, Option<String>), String> {
-        let f = fetch(&text)?;
+        let f = fetch_with(&text, Some(&cancel), &set)?;
         let mut tracks = f.tracks.clone();
         if !f.named.is_empty() {
             let total = f.named.len();

@@ -71,6 +71,18 @@ impl State {
         self.settings.read().unwrap().clone()
     }
 
+    /// a setting the native build keeps as the Tauri build wrote it (accounts and the like)
+    pub fn extra(&self, key: &str) -> Option<serde_json::Value> {
+        self.settings.read().unwrap().rest.get(key).filter(|v| !v.is_null()).cloned()
+    }
+
+    /// change such a setting (null removes it)
+    pub fn set_extra(&self, key: &str, value: serde_json::Value) {
+        self.set_settings(|s| {
+            s.rest.insert(key.to_string(), value);
+        });
+    }
+
     /// change the settings and save them
     pub fn set_settings(&self, f: impl FnOnce(&mut Settings)) {
         let mut s = self.settings.write().unwrap();

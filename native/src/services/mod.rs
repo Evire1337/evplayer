@@ -4,4 +4,5 @@ pub mod http;
 pub mod lyrics;
 pub mod region;
 pub mod soundcloud;
+pub mod spotify;
 pub mod youtube;

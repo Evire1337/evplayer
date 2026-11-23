@@ -236,6 +236,24 @@ fn net_imports_read_deezer_and_spotify_and_find_the_songs() {
     }
 }
 
+/// a Spotify playlist longer than the embed page's 100 songs, read whole without signing in
+#[test]
+#[ignore]
+fn net_spotify_reads_a_whole_playlist_without_signing_in() {
+    init();
+    for id in ["37i9dQZF1DX4UtSsGT1Sbe", "37i9dQZF1DXbTxeAdrVG2l", "37i9dQZF1DWXRqgorJj26U"] {
+        match crate::services::spotify::guest_playlist(id, None, &|_, _| {}) {
+            Ok((named, total)) => {
+                println!("{id}: {} songs of {:?}, first {:?}", named.len(), total, named.first().map(|n| (&n.title, &n.artists)));
+                assert!(!named.is_empty());
+            }
+            Err(e) => println!("{id}: FAILED {e}"),
+        }
+    }
+    let f = crate::import::fetch("https://open.spotify.com/playlist/37i9dQZF1DX4UtSsGT1Sbe").expect("import");
+    println!("import: «{}» {} names, truncated {}", f.title, f.named.len(), f.truncated);
+}
+
 /// what the updater makes of the real latest.json (nothing is installed)
 #[test]
 #[ignore]
