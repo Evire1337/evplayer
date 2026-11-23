@@ -1,6 +1,6 @@
-//! "Звук и эффекты": the panel over the player (src/ui/components/SoundPanel.tsx and the
-//! equalizer of settings/EqualizerSection.tsx): the speed, the pitch, the reverb, and the
-//! equalizer with its curve, its points to drag, its presets and volume levelling.
+//! The equalizer of Настройки → Звук и эквалайзер (settings/EqualizerSection.tsx): its curve,
+//! its points to drag, its presets, volume levelling and clip protection. The speed, pitch and
+//! reverb are in the player's own panel (app::sound_panel).
 
 use egui::{pos2, vec2, Align2, Color32, CornerRadius, Rect, Sense, Stroke, Ui};
 
@@ -48,87 +48,8 @@ fn switch_row(ui: &mut Ui, label: &str, on: bool) -> Option<bool> {
 }
 
 impl App {
-    pub fn sound_panel(&mut self, ui: &mut Ui, rect: Rect) {
-        let height = 560.0;
-        let at = pos2(rect.left(), (rect.bottom() - height).max(8.0));
-        let area = egui::Area::new(egui::Id::unique("sound-panel")).order(egui::Order::Foreground).fixed_pos(at).constrain(true);
-        let r = area.show(ui.ctx(), |ui| {
-            egui::Frame::new().fill(Color32::from_rgb(0x0d, 0x2e, 0x2a)).stroke(Stroke::new(1.0, theme::edge())).corner_radius(20).inner_margin(16).show(ui, |ui| {
-                ui.set_width(rect.width() + 40.0);
-                ui.label(egui::RichText::new(crate::i18n::t("Звук и эффекты")).font(theme::medium(15.0)).color(INK));
-                ui.add_space(8.0);
-                self.effects_ui(ui);
-                ui.add_space(8.0);
-                ui.separator();
-                ui.add_space(4.0);
-                self.equalizer_ui(ui);
-            });
-        });
-        // a press outside closes it (the button that opened it toggles it by itself)
-        let pressed_at = ui.ctx().input(|i| if i.pointer.any_pressed() { i.pointer.interact_pos() } else { None });
-        let outside = pressed_at.is_some_and(|p| !r.response.rect.contains(p) && p.y < rect.bottom() + 8.0);
-        if outside || ui.ctx().input(|i| i.key_pressed(egui::Key::Escape)) {
-            self.pages.sound_open = false;
-        }
-    }
-
-    fn effects_ui(&mut self, ui: &mut Ui) {
-        let fx = state::get().effects.read().unwrap().clone();
-        let mut changed = false;
-        let mut speed = ((fx.speed - 0.5) / 1.5) as f32;
-        if slider_row(ui, "Скорость", format!("×{:.2}", fx.speed), &mut speed) {
-            let s = ((0.5 + speed as f64 * 1.5) * 20.0).round() / 20.0;
-            state::get().set_effects(|e| e.speed = s);
-            changed = true;
-        }
-        ui.horizontal(|ui| {
-            for s in [0.8, 0.9, 1.0, 1.15, 1.25, 1.35] {
-                if widgets::tab(ui, &format!("×{s}"), (fx.speed - s).abs() < 1e-6).clicked() {
-                    state::get().set_effects(|e| e.speed = s);
-                    changed = true;
-                }
-            }
-        });
-        if let Some(v) = switch_row(ui, "Тон вместе со скоростью (как пластинка)", fx.linked) {
-            state::get().set_effects(|e| e.linked = v);
-            changed = true;
-        }
-        if !fx.linked {
-            let mut pitch = ((fx.pitch + 12.0) / 24.0) as f32;
-            if slider_row(ui, "Тон", format!("{:+.1} пт", fx.pitch), &mut pitch) {
-                let p = ((pitch as f64 * 24.0 - 12.0) * 2.0).round() / 2.0;
-                state::get().set_effects(|e| e.pitch = p);
-                changed = true;
-            }
-        }
-        if let Some(v) = switch_row(ui, "Реверберация", fx.reverb) {
-            state::get().set_effects(|e| e.reverb = v);
-            changed = true;
-        }
-        if fx.reverb {
-            let mut amount = fx.reverb_amount as f32;
-            if slider_row(ui, "Сила", format!("{:.0}%", fx.reverb_amount * 100.0), &mut amount) {
-                state::get().set_effects(|e| e.reverb_amount = (amount as f64 * 20.0).round() / 20.0);
-                changed = true;
-            }
-        }
-        ui.horizontal(|ui| {
-            if let Some(v) = switch_row(ui, "Оставлять для следующих треков", fx.keep) {
-                state::get().set_effects(|e| e.keep = v);
-            }
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.add(egui::Label::new(egui::RichText::new(crate::i18n::t("Сбросить")).font(theme::body(12.5)).color(theme::ink3())).sense(Sense::click())).clicked() {
-                    state::get().set_effects(|e| *e = crate::store::state::Effects { keep: e.keep, ..Default::default() });
-                    changed = true;
-                }
-            });
-        });
-        if changed {
-            self.player.apply_sound();
-        }
-    }
-
-    fn equalizer_ui(&mut self, ui: &mut Ui) {
+    /// the equalizer (Настройки → Звук и эквалайзер, as in the Tauri build)
+    pub fn equalizer_ui(&mut self, ui: &mut Ui) {
         let e = state::get().eq.read().unwrap().clone();
         let mut set: Option<Box<dyn FnOnce(&mut EqState)>> = None;
         ui.horizontal(|ui| {

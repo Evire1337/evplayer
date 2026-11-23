@@ -30,25 +30,26 @@ impl App {
 
         // the cover and the controls
         let mut lui = ui.new_child(egui::UiBuilder::new().max_rect(left).layout(egui::Layout::top_down(egui::Align::Min)));
-        let art = (left_w - 20.0).min(full.height() - 280.0).max(160.0);
+        let art = (left_w - 20.0).min(full.height() - 330.0).max(160.0);
         let src = cur.as_ref().and_then(artwork_of);
         lui.add_space(16.0);
         widgets::cover(&mut lui, &mut self.images, src.as_deref(), art, 26);
-        lui.add_space(16.0);
+        lui.add_space(18.0);
         let (title, sub) = match &cur {
             Some(t) => (t.title.clone(), t.artist_line()),
             None => (crate::i18n::t("Ничего не играет"), crate::i18n::t("Выберите песню на главной или в поиске")),
         };
-        let g = widgets::clipped(&lui, &title, theme::heavy(24.0), INK, art);
-        let (r, _) = lui.allocate_exact_size(vec2(art, 32.0), Sense::hover());
+        // .now-title: 28 px, 800; .now-artist: 16 px
+        let g = widgets::clipped(&lui, &title, theme::heavy(28.0), INK, art);
+        let (r, _) = lui.allocate_exact_size(vec2(art, 34.0), Sense::hover());
         lui.painter().galley(r.min, g, INK);
-        let artist_resp = lui.add(egui::Label::new(egui::RichText::new(&sub).font(theme::body(14.0)).color(theme::ink2())).sense(Sense::click()).truncate());
+        let artist_resp = lui.add(egui::Label::new(egui::RichText::new(&sub).font(theme::body(16.0)).color(theme::ink2())).sense(Sense::click()).truncate());
         if let Some(a) = cur.as_ref().and_then(|t| t.artists.first()).filter(|a| a.id.starts_with("scu:") || a.id.starts_with("yta:")) {
             if artist_resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
                 self.go(crate::app::Page::Artist(a.id.clone()));
             }
         }
-        // what the sound is and where it comes from
+        // what the sound is and where it comes from (.now-source)
         let mut info = Vec::new();
         if let Some(q) = &v.quality {
             info.push(q.clone());
@@ -65,51 +66,54 @@ impl App {
                 lui.label(egui::RichText::new(e).font(theme::body(12.5)).color(theme::DANGER));
             }
         } else if !info.is_empty() {
-            lui.label(egui::RichText::new(crate::i18n::t(&info.join(" · "))).font(theme::body(12.0)).color(theme::ink3()));
+            lui.label(egui::RichText::new(crate::i18n::t(&info.join(" · "))).font(theme::body(12.5)).color(theme::ink3()));
         }
         lui.add_space(10.0);
-        if let Some(f) = widgets::seek_bar(&mut lui, art, (v.position_ms / v.duration_ms.max(1.0)) as f32, v.buffered) {
+        // the big progress (7 px), the times under it
+        if let Some(f) = widgets::seek_bar_sized(&mut lui, art, (v.position_ms / v.duration_ms.max(1.0)) as f32, v.buffered, 7.0) {
             self.player.seek(f as f64 * v.duration_ms);
         }
         lui.horizontal(|ui| {
             ui.set_width(art);
-            ui.label(egui::RichText::new(widgets::time(v.position_ms)).font(theme::body(11.5)).color(theme::ink2()));
+            ui.label(egui::RichText::new(widgets::time(v.position_ms)).font(theme::body(11.5)).color(theme::ink3()));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                ui.label(egui::RichText::new(format!("-{}", widgets::time((v.duration_ms - v.position_ms).max(0.0)))).font(theme::body(11.5)).color(theme::ink2()));
+                ui.label(egui::RichText::new(format!("-{}", widgets::time((v.duration_ms - v.position_ms).max(0.0)))).font(theme::body(11.5)).color(theme::ink3()));
             });
         });
-        lui.add_space(6.0);
-        lui.horizontal(|ui| {
-            ui.add_space(((art - (44.0 * 4.0 + 68.0 + 24.0)) / 2.0).max(0.0));
-            ui.spacing_mut().item_spacing.x = 6.0;
-            self.transport(ui, 44.0, 68.0);
-        });
-        lui.add_space(8.0);
-        lui.horizontal(|ui| {
-            ui.add_space(((art - 5.0 * 38.0) / 2.0).max(0.0));
-            if let Some(t) = &cur {
-                let liked = self.is_liked(&t.id);
-                if widgets::icon_button(ui, if liked { ic::HEART_FILL } else { ic::HEART }, 34.0, liked, if liked { "Убрать из «Любимого»" } else { "Нравится" }).clicked() {
-                    let t = t.clone();
-                    self.toggle_like(&t);
-                }
-                if widgets::icon_button(ui, ic::RADIO, 34.0, false, "Радио по треку").clicked() {
-                    self.player.start_radio(t.clone());
-                }
+        lui.add_space(10.0);
+        // the transport across the column (.transport.is-big: 46, 58, 78, space between)
+        let (row, _) = lui.allocate_exact_size(vec2(art, 78.0), Sense::hover());
+        let used = 46.0 * 2.0 + 58.0 * 2.0 + 78.0;
+        let gap = ((art - used) / 4.0).max(4.0);
+        let mut tui = lui.new_child(egui::UiBuilder::new().max_rect(row).layout(egui::Layout::left_to_right(egui::Align::Center)));
+        tui.spacing_mut().item_spacing.x = gap;
+        self.transport(&mut tui, 46.0, 58.0, 78.0);
+        lui.add_space(12.0);
+        // the tools: like, radio, sound, volume, the queue
+        let (row, _) = lui.allocate_exact_size(vec2(art, 40.0), Sense::hover());
+        let n = if cur.is_some() { 5.0 } else { 3.0 };
+        let tools_w = n * 40.0 + (n - 1.0) * 6.0;
+        let tools = Rect::from_center_size(row.center(), vec2(tools_w, 40.0));
+        let mut oui = lui.new_child(egui::UiBuilder::new().max_rect(tools).layout(egui::Layout::left_to_right(egui::Align::Center)));
+        oui.spacing_mut().item_spacing.x = 6.0;
+        if let Some(t) = &cur {
+            let liked = self.is_liked(&t.id);
+            if widgets::tool_button(&mut oui, if liked { ic::HEART_FILL } else { ic::HEART }, liked, if liked { "Убрать из «Любимого»" } else { "Нравится" }).clicked() {
+                let t = t.clone();
+                self.toggle_like(&t);
             }
-            if widgets::icon_button(ui, ic::EQ, 34.0, self.pages.sound_open, "Звук и эффекты").clicked() {
-                self.pages.sound_open = !self.pages.sound_open;
+            if widgets::tool_button(&mut oui, ic::RADIO, false, "Радио по треку").clicked() {
+                self.player.start_radio(t.clone());
             }
-            if widgets::icon_button(ui, if v.muted { ic::MUTE } else { ic::VOLUME }, 34.0, false, "Без звука").clicked() {
-                self.player.toggle_mute();
-            }
-            if widgets::icon_button(ui, ic::QUEUE, 34.0, show_queue, if show_queue { "Скрыть «Далее»" } else { "Показать «Далее»" }).clicked() {
-                self.pages.show_queue = Some(!show_queue);
-                state::get().set_settings(|s| s.show_queue = !show_queue);
-            }
-        });
-        if self.pages.sound_open {
-            self.sound_panel(ui, Rect::from_min_size(pos2(left.left(), (full.bottom() - 430.0).max(full.top())), vec2(366.0, 410.0)));
+        }
+        // the volume and the sound panel, opening above their buttons (laid out right to left)
+        let mut pui = oui.new_child(egui::UiBuilder::new().max_rect(Rect::from_min_size(oui.cursor().min, vec2(86.0, 40.0))).layout(egui::Layout::left_to_right(egui::Align::Center)));
+        pui.spacing_mut().item_spacing.x = 6.0;
+        self.player_tools(&mut pui);
+        oui.add_space(92.0);
+        if widgets::tool_button(&mut oui, ic::QUEUE, show_queue, if show_queue { "Скрыть «Далее»" } else { "Показать «Далее»" }).clicked() {
+            self.pages.show_queue = Some(!show_queue);
+            state::get().set_settings(|s| s.show_queue = !show_queue);
         }
 
         // the lyrics

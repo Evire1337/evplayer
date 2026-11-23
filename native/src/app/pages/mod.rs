@@ -32,6 +32,7 @@ pub struct Pages {
     pub playlist_filter: String,
     pub settings_tab: usize,
     pub sound_open: bool,
+    pub volume_open: bool,
     pub show_queue: Option<bool>,
 }
 

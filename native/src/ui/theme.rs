@@ -70,8 +70,37 @@ fn map_font(name: &str) -> Option<Arc<FontData>> {
 }
 
 /// the fonts: Windows' own, mapped from its font folder
+/// Onest, the font of the Tauri build (@fontsource/onest), in the weights the page uses: 400
+/// for text, 500 for menus, 600 for names and buttons, 800 for headings. Each weight comes in
+/// four parts (Latin, Latin extended, Cyrillic, Cyrillic extended), turned from the package's
+/// WOFF files by fonts/woff2ttf.py. They are part of the program file: no private memory.
+macro_rules! onest {
+    ($w:literal) => {
+        [
+            include_bytes!(concat!("../../fonts/onest-latin-", $w, "-normal.ttf")).as_slice(),
+            include_bytes!(concat!("../../fonts/onest-latin-ext-", $w, "-normal.ttf")).as_slice(),
+            include_bytes!(concat!("../../fonts/onest-cyrillic-", $w, "-normal.ttf")).as_slice(),
+            include_bytes!(concat!("../../fonts/onest-cyrillic-ext-", $w, "-normal.ttf")).as_slice(),
+        ]
+    };
+}
+
+pub fn medium500() -> FontFamily {
+    FontFamily::Name("w500".into())
+}
+
 pub fn fonts() -> FontDefinitions {
     let mut defs = FontDefinitions::empty();
+    // Onest first, each weight its own family
+    let weights: [(&str, [&'static [u8]; 4]); 4] = [("400", onest!("400")), ("500", onest!("500")), ("600", onest!("600")), ("800", onest!("800"))];
+    let mut onest_keys: std::collections::HashMap<&str, Vec<String>> = Default::default();
+    for (w, parts) in weights {
+        for (i, bytes) in parts.into_iter().enumerate() {
+            let key = format!("onest-{w}-{i}");
+            defs.font_data.insert(key.clone(), Arc::new(FontData::from_static(bytes)));
+            onest_keys.entry(w).or_default().push(key);
+        }
+    }
     let mut add = |key: &str, file: &str| {
         if let Some(d) = map_font(file) {
             defs.font_data.insert(key.to_string(), d);
@@ -80,22 +109,24 @@ pub fn fonts() -> FontDefinitions {
             false
         }
     };
+    // Windows' own fonts behind it: letters Onest has not (Greek, Arabic, ...), signs, CJK
     let regular = add("segoe", "segoeui.ttf");
-    let semi = add("segoe-semibold", "seguisb.ttf");
-    let heavy = add("segoe-bold", "segoeuib.ttf");
     // Windows 11 has the newer icon font; Windows 10 the MDL2 one (the same codes)
     let icons = add("icons", "SegoeIcons.ttf") || add("icons", "segmdl2.ttf");
-    // ♥ ★ ⏯ and other signs in titles, then Chinese, Japanese and Korean titles: mapped, they
-    // cost no memory until a title needs them
+    // signs in titles, then Chinese, Japanese and Korean titles: mapped, they cost no memory
+    // until a title needs them
     let symbols = add("symbols", "seguisym.ttf");
     let cjk = [("zh", "msyh.ttc"), ("ja", "YuGothM.ttc"), ("ko", "malgun.ttf"), ("emoji", "seguiemj.ttf")].into_iter().filter(|(k, f)| add(k, f)).map(|(k, _)| k.to_string()).collect::<Vec<_>>();
     let base: Vec<String> = [regular.then_some("segoe"), symbols.then_some("symbols")].into_iter().flatten().map(str::to_string).chain(cjk).collect();
-    let with = |first: Option<&str>| -> Vec<String> { first.map(str::to_string).into_iter().chain(base.iter().cloned()).collect() };
-    defs.families.insert(FontFamily::Proportional, with(None));
-    defs.families.insert(FontFamily::Monospace, with(None));
-    defs.families.insert(semibold(), with(semi.then_some("segoe-semibold")));
-    defs.families.insert(bold(), with(heavy.then_some("segoe-bold")));
-    defs.families.insert(icons_family(), with(icons.then_some("icons")));
+    let with = |w: &str| -> Vec<String> { onest_keys.get(w).cloned().unwrap_or_default().into_iter().chain(base.iter().cloned()).collect() };
+    defs.families.insert(FontFamily::Proportional, with("400"));
+    defs.families.insert(FontFamily::Monospace, with("400"));
+    defs.families.insert(medium500(), with("500"));
+    defs.families.insert(semibold(), with("600"));
+    defs.families.insert(bold(), with("800"));
+    let mut ic: Vec<String> = icons.then(|| "icons".to_string()).into_iter().collect();
+    ic.extend(with("400"));
+    defs.families.insert(icons_family(), ic);
     defs
 }
 

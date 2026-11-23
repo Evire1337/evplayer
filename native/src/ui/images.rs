@@ -110,6 +110,39 @@ fn decode(bytes: &[u8], px: u32) -> Option<image::RgbaImage> {
     Some(img.into_rgba8())
 }
 
+/// the size asked for the backdrop's picture (not a real size)
+const BACKDROP: u32 = 0;
+/// the backdrop's key differs from the cover's
+const BACKDROP_SALT: u64 = 0x5eed_bacd_0000_0001;
+
+/// a cover already on disk, at any size (the backdrop needs only a small one)
+fn find_cached(dir: &std::path::Path, cover_key: u64) -> Option<Vec<u8>> {
+    let prefix = format!("{cover_key:016x}_");
+    let rd = std::fs::read_dir(dir).ok()?;
+    let file = rd.flatten().find(|e| e.file_name().to_string_lossy().starts_with(&prefix))?;
+    std::fs::read(file.path()).ok()
+}
+
+/// The backdrop as the page's shader made it, without the movement: the middle 70 % of the
+/// cover, tiny and blurred, colours made 28 % richer and dimmed to 78 %.
+fn backdrop(bytes: &[u8]) -> Option<image::RgbaImage> {
+    let img = image::load_from_memory(bytes).ok()?;
+    let (w, h) = (img.width(), img.height());
+    let side = (w.min(h) as f32 * 0.7) as u32;
+    if side == 0 {
+        return None;
+    }
+    let img = img.crop_imm((w - side) / 2, (h - side) / 2, side, side).resize_exact(32, 32, image::imageops::FilterType::Triangle).into_rgba8();
+    let mut img = image::imageops::blur(&img, 2.2);
+    for p in img.pixels_mut() {
+        let [r, g, b, _] = p.0.map(|c| c as f32);
+        let l = 0.299 * r + 0.587 * g + 0.114 * b;
+        let rich = |c: f32| ((l + (c - l) * 1.28) * 0.6).clamp(0.0, 255.0) as u8;
+        p.0 = [rich(r), rich(g), rich(b), 255];
+    }
+    Some(img)
+}
+
 fn worker(shared: Arc<Shared>, disk: Option<PathBuf>, local_covers: PathBuf) {
     loop {
         let job = {
@@ -121,6 +154,17 @@ fn worker(shared: Arc<Shared>, disk: Option<PathBuf>, local_covers: PathBuf) {
                 q = shared.wake.wait(q).unwrap();
             }
         };
+        // the backdrop: the cover, small, blurred and richer (px 0 asks for it)
+        if job.px == BACKDROP {
+            let img = disk.as_ref().and_then(|d| find_cached(d, job.key.0 ^ BACKDROP_SALT)).or_else(|| fetch(&job.src, &local_covers)).and_then(|b| backdrop(&b));
+            let image = img.map(|img| {
+                let (w, h) = img.dimensions();
+                ColorImage::from_rgba_unmultiplied([w as usize, h as usize], img.as_raw())
+            });
+            shared.done.lock().unwrap().push((job.key, image));
+            crate::events::repaint();
+            continue;
+        }
         let cached = disk.as_ref().map(|d| d.join(format!("{:016x}_{}.jpg", job.key.0, job.px)));
         let mut rgba = cached.as_ref().and_then(|p| std::fs::read(p).ok()).and_then(|b| image::load_from_memory(&b).ok()).map(|i| i.into_rgba8());
         if rgba.is_none() {
@@ -222,6 +266,23 @@ impl Images {
         }
         self.shared.jobs.lock().unwrap().push_back(Job { key, src: src.to_string(), px });
         self.shared.wake.notify_one();
+    }
+
+    /// the backdrop made from a cover (None while it is made)
+    pub fn backdrop(&mut self, src: &str) -> Option<TextureId> {
+        let key = Key(hash(src) ^ BACKDROP_SALT, BACKDROP);
+        let frame = self.frame;
+        match self.slots.get_mut(&key) {
+            Some(Slot::Ready(t, used)) => {
+                *used = frame;
+                Some(t.id())
+            }
+            Some(_) => None,
+            None => {
+                self.request(key, src, BACKDROP);
+                None
+            }
+        }
     }
 
     /// the colour of a picture already loaded (any size)

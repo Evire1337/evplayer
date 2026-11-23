@@ -125,13 +125,11 @@ impl App {
     }
 
     fn settings_sound(&mut self, ui: &mut Ui) {
-        card(ui, "Эквалайзер и эффекты", |ui| {
-            App::muted(ui, "Эквалайзер, выравнивание громкости, скорость, тон и реверберация — в панели «Звук и эффекты» (кнопка с ползунками внизу).");
-            ui.add_space(6.0);
-            if widgets::pill_button(ui, Some(ic::EQ), "Открыть панель звука", false).clicked() {
-                self.pages.sound_open = true;
-            }
+        widgets::glass_frame().show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            self.equalizer_ui(ui);
         });
+        ui.add_space(10.0);
     }
 
     fn settings_services(&mut self, ui: &mut Ui) {

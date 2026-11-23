@@ -101,31 +101,41 @@ pub fn tabs(ui: &mut Ui, items: &[&str], selected: usize) -> Option<usize> {
     pressed
 }
 
-/// a switch; true when it was flipped
+/// a switch like the page's .switch: accent when on, the knob in the ground colour
 pub fn toggle(ui: &mut Ui, on: &mut bool) -> Response {
-    let (rect, mut r) = ui.allocate_exact_size(vec2(36.0, 20.0), Sense::click());
+    switch_sized(ui, on, 42.0, 24.0)
+}
+
+pub fn switch_sized(ui: &mut Ui, on: &mut bool, w: f32, h: f32) -> Response {
+    let (rect, mut r) = ui.allocate_exact_size(vec2(w, h), Sense::click());
     if r.clicked() {
         *on = !*on;
         r.mark_changed();
     }
     let p = ui.painter();
-    let track = if *on { Color32::from_rgba_unmultiplied(111, 240, 196, 200) } else { Color32::from_rgba_unmultiplied(238, 247, 244, 40) };
-    p.rect_filled(rect, CornerRadius::same(10), track);
-    let x = if *on { rect.right() - 10.0 } else { rect.left() + 10.0 };
-    p.circle_filled(pos2(x, rect.center().y), 7.5, if *on { Color32::from_rgb(0x06, 0x20, 0x1d) } else { INK });
+    let track = if *on { ACCENT } else { Color32::from_rgba_unmultiplied(238, 247, 244, 46) };
+    p.rect_filled(rect, CornerRadius::same((h / 2.0) as u8), track);
+    let knob = h / 2.0 - 3.0;
+    let x = if *on { rect.right() - 3.0 - knob } else { rect.left() + 3.0 + knob };
+    p.circle_filled(pos2(x, rect.center().y), knob, if *on { theme::GROUND } else { INK });
     r
 }
 
-/// The seek bar: the part heard, the part fetched, and a knob while the pointer is over it.
-/// Returns where it was pressed or dragged to, 0..1.
+/// The seek bar (the page's .slider): 5 px (7 px on "Сейчас играет"), the part heard in ink,
+/// the rest faint, the knob only while the pointer is over it. Returns where it was let go, 0..1.
 pub fn seek_bar(ui: &mut Ui, width: f32, frac: f32, buffered: f32) -> Option<f32> {
-    let (rect, r) = ui.allocate_exact_size(vec2(width, 14.0), Sense::click_and_drag());
-    let line = Rect::from_center_size(rect.center(), vec2(rect.width(), if r.hovered() || r.dragged() { 5.0 } else { 4.0 }));
+    seek_bar_sized(ui, width, frac, buffered, 5.0)
+}
+
+pub fn seek_bar_sized(ui: &mut Ui, width: f32, frac: f32, buffered: f32, thick: f32) -> Option<f32> {
+    let (rect, r) = ui.allocate_exact_size(vec2(width, 16.0), Sense::click_and_drag());
+    let line = Rect::from_center_size(rect.center(), vec2(rect.width(), thick));
     let p = ui.painter();
-    p.rect_filled(line, CornerRadius::same(3), Color32::from_rgba_unmultiplied(238, 247, 244, 36));
+    let round = CornerRadius::same((thick / 2.0).ceil() as u8);
+    p.rect_filled(line, round, Color32::from_rgba_unmultiplied(238, 247, 244, 46));
     if buffered > 0.0 && buffered < 1.0 {
         let b = Rect::from_min_max(line.min, pos2(line.left() + line.width() * buffered.clamp(0.0, 1.0), line.max.y));
-        p.rect_filled(b, CornerRadius::same(3), Color32::from_rgba_unmultiplied(238, 247, 244, 36));
+        p.rect_filled(b, round, Color32::from_rgba_unmultiplied(238, 247, 244, 30));
     }
     let mut f = frac.clamp(0.0, 1.0);
     let at = r.interact_pointer_pos().filter(|_| r.dragged() || r.clicked()).map(|p| ((p.x - line.left()) / line.width()).clamp(0.0, 1.0));
@@ -133,9 +143,9 @@ pub fn seek_bar(ui: &mut Ui, width: f32, frac: f32, buffered: f32) -> Option<f32
         f = a;
     }
     let done = Rect::from_min_max(line.min, pos2(line.left() + line.width() * f, line.max.y));
-    p.rect_filled(done, CornerRadius::same(3), INK);
+    p.rect_filled(done, round, INK);
     if r.hovered() || r.dragged() {
-        p.circle_filled(pos2(done.right(), line.center().y), 6.0, INK);
+        p.circle_filled(pos2(done.right(), line.center().y), 7.0, INK);
     }
     // the seek happens when the button is let go (a drag shows where it will land)
     if r.drag_stopped() || r.clicked() {
@@ -282,11 +292,11 @@ pub fn card(ui: &mut Ui, images: &mut Images, src: Option<&str>, title: &str, su
     r
 }
 
-/// a heading of a section on a page
+/// a heading of a section on a page (.row-title: 19 px, 800)
 pub fn section(ui: &mut Ui, text: &str) {
-    ui.add_space(14.0);
-    ui.label(egui::RichText::new(crate::i18n::t(text)).font(theme::medium(18.0)).color(INK));
-    ui.add_space(6.0);
+    ui.add_space(18.0);
+    ui.label(egui::RichText::new(crate::i18n::t(text)).font(theme::heavy(19.0)).color(INK));
+    ui.add_space(8.0);
 }
 
 /// a glass panel (settings cards, the queue)
@@ -309,4 +319,224 @@ pub fn search_field(ui: &mut Ui, text: &mut String, hint: &str, width: f32) -> R
 /// the rounded outline used around focused things
 pub fn outline(ui: &Ui, rect: Rect, radius: u8) {
     ui.painter().rect_stroke(rect, CornerRadius::same(radius), Stroke::new(1.0, theme::edge()), StrokeKind::Inside);
+}
+
+
+/// the kinds of the page's round buttons
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Round {
+    /// no background until hovered (shuffle, repeat)
+    Ghost,
+    /// a faint disc (previous, next)
+    Soft,
+    /// the white disc of play / pause
+    Main,
+}
+
+/// a round button (.round-btn): `size` across, its icon a little under half of it
+pub fn round_button(ui: &mut Ui, icon: &str, size: f32, kind: Round, on: bool, tip: &str) -> Response {
+    let (rect, r) = ui.allocate_exact_size(vec2(size, size), Sense::click());
+    let p = ui.painter();
+    let c = rect.center();
+    // pressed: the main button sinks a little, as the page's scale(0.94)
+    let radius = if kind == Round::Main && r.is_pointer_button_down_on() { size * 0.47 } else { size / 2.0 };
+    let (bg, fg) = match kind {
+        Round::Ghost => (if r.hovered() { theme::hover() } else { Color32::TRANSPARENT }, if on { ACCENT } else if r.hovered() { INK } else { theme::ink2() }),
+        Round::Soft => (Color32::from_rgba_unmultiplied(238, 247, 244, if r.hovered() { 46 } else { 26 }), if on { ACCENT } else { INK }),
+        Round::Main => (INK, theme::GROUND),
+    };
+    if bg != Color32::TRANSPARENT {
+        p.circle_filled(c, radius, bg);
+    }
+    let icon_size = match kind {
+        Round::Main => size * 0.36,
+        _ => (size * 0.4).min(19.0),
+    };
+    p.text(c, Align2::CENTER_CENTER, icon, theme::icon(icon_size), fg);
+    if tip.is_empty() {
+        r
+    } else {
+        r.on_hover_text(crate::i18n::t(tip))
+    }
+}
+
+/// a tool button of the player's side (.tool-btn): 40 x 40, rounded 14, accent when on
+pub fn tool_button(ui: &mut Ui, icon: &str, on: bool, tip: &str) -> Response {
+    let (rect, r) = ui.allocate_exact_size(vec2(40.0, 40.0), Sense::click());
+    let p = ui.painter();
+    if on {
+        p.rect_filled(rect, CornerRadius::same(14), theme::active());
+    } else if r.hovered() {
+        p.rect_filled(rect, CornerRadius::same(14), theme::hover());
+    }
+    let fg = if on { ACCENT } else if r.hovered() { INK } else { theme::ink2() };
+    p.text(rect.center(), Align2::CENTER_CENTER, icon, theme::icon(15.0), fg);
+    if tip.is_empty() {
+        r
+    } else {
+        r.on_hover_text(crate::i18n::t(tip))
+    }
+}
+
+/// a row of quick choices on a faint ground (.preset-row): the one chosen in ink
+pub fn preset_row(ui: &mut Ui, items: &[String], selected: Option<usize>) -> Option<usize> {
+    let w = ui.available_width();
+    let (rect, _) = ui.allocate_exact_size(vec2(w, 32.0), Sense::hover());
+    ui.painter().rect_filled(rect, CornerRadius::same(12), Color32::from_rgba_unmultiplied(238, 247, 244, 15));
+    let inner = rect.shrink(3.0);
+    let n = items.len().max(1) as f32;
+    let cell = (inner.width() - 2.0 * (n - 1.0)) / n;
+    let mut pressed = None;
+    for (i, label) in items.iter().enumerate() {
+        let r = Rect::from_min_size(pos2(inner.left() + i as f32 * (cell + 2.0), inner.top()), vec2(cell, inner.height()));
+        let resp = ui.interact(r, ui.scope_id().with(("preset", i)), Sense::click());
+        let on = selected == Some(i);
+        if on {
+            ui.painter().rect_filled(r, CornerRadius::same(9), INK);
+        } else if resp.hovered() {
+            ui.painter().rect_filled(r, CornerRadius::same(9), theme::hover());
+        }
+        let fg = if on { theme::GROUND } else if resp.hovered() { INK } else { theme::ink2() };
+        ui.painter().text(r.center(), Align2::CENTER_CENTER, label, theme::medium(11.5), fg);
+        if resp.clicked() {
+            pressed = Some(i);
+        }
+    }
+    pressed
+}
+
+/// The page's Stepper: a label, a dial (a strip of ticks, the filled part brighter, an accent
+/// notch where the value is) and a row of minus, the value and plus. Returns the new value.
+#[allow(clippy::too_many_arguments)]
+pub fn stepper(ui: &mut Ui, label: &str, value: f64, display: &str, min: f64, max: f64, step: f64, disabled: bool) -> Option<f64> {
+    let mut out = None;
+    let w = ui.available_width();
+    let label_color = if disabled { theme::ink3() } else { INK };
+    ui.label(egui::RichText::new(crate::i18n::t(label)).font(theme::medium(12.5)).color(label_color));
+    let (dial, r) = ui.allocate_exact_size(vec2(w, 18.0), if disabled { Sense::hover() } else { Sense::click_and_drag() });
+    let p = ui.painter();
+    let fill = ((value - min) / (max - min)).clamp(0.0, 1.0) as f32;
+    let alpha = if disabled { 0.45 } else { 1.0 };
+    let tick = |a: u8| Color32::from_rgba_unmultiplied(238, 247, 244, (a as f32 * alpha) as u8);
+    let mut x = dial.left();
+    while x + 2.0 <= dial.right() {
+        let filled = x < dial.left() + dial.width() * fill;
+        let t = Rect::from_min_size(pos2(x, dial.center().y - 6.0), vec2(2.0, 12.0));
+        p.rect_filled(t, CornerRadius::ZERO, if filled { tick(140) } else { tick(41) });
+        x += 9.0;
+    }
+    let nx = dial.left() + dial.width() * fill;
+    let notch = Rect::from_center_size(pos2(nx.clamp(dial.left() + 2.0, dial.right() - 2.0), dial.center().y), vec2(4.0, 18.0));
+    if !disabled {
+        p.rect_filled(notch.expand(3.0), CornerRadius::same(4), Color32::from_rgba_unmultiplied(111, 240, 196, 40));
+    }
+    p.rect_filled(notch, CornerRadius::same(2), if disabled { theme::ink3() } else { ACCENT });
+    if !disabled {
+        if let Some(pt) = r.interact_pointer_pos().filter(|_| r.dragged() || r.clicked()) {
+            let f = ((pt.x - dial.left()) / dial.width()).clamp(0.0, 1.0) as f64;
+            let v = ((min + f * (max - min)) / step).round() * step;
+            out = Some(v.clamp(min, max));
+        }
+        if r.double_clicked() {
+            out = Some(if min < 0.0 { 0.0 } else { 1.0 });
+        }
+    }
+    ui.add_space(2.0);
+    let (row, _) = ui.allocate_exact_size(vec2(w, 26.0), Sense::hover());
+    let minus = Rect::from_min_size(row.min, vec2(30.0, 26.0));
+    let plus = Rect::from_min_size(pos2(row.right() - 30.0, row.top()), vec2(30.0, 26.0));
+    let mid = Rect::from_min_max(pos2(minus.right() + 6.0, row.top()), pos2(plus.left() - 6.0, row.bottom()));
+    let faint = Color32::from_rgba_unmultiplied(238, 247, 244, 20);
+    for (i, (b, sign)) in [(minus, "\u{E738}"), (plus, "\u{E710}")].into_iter().enumerate() {
+        let br = ui.interact(b, ui.scope_id().with((label, "step", i)), if disabled { Sense::hover() } else { Sense::click() });
+        ui.painter().rect_filled(b, CornerRadius::same(9), if br.hovered() && !disabled { Color32::from_rgba_unmultiplied(238, 247, 244, 41) } else { faint });
+        ui.painter().text(b.center(), Align2::CENTER_CENTER, sign, theme::icon(11.0), if disabled { theme::ink3() } else { INK });
+        if br.clicked() && !disabled {
+            let d = if i == 0 { -step * 5.0 } else { step * 5.0 };
+            out = Some((value + d).clamp(min, max));
+        }
+    }
+    ui.painter().rect_filled(mid, CornerRadius::same(9), faint);
+    ui.painter().text(mid.center(), Align2::CENTER_CENTER, display, theme::medium(12.5), if disabled { theme::ink3() } else { INK });
+    out
+}
+
+/// a setting with a switch (.toggle-row): its title and hint on the left, the switch on the right
+pub fn toggle_row(ui: &mut Ui, title: &str, hint: &str, on: bool, compact: bool) -> Option<bool> {
+    let mut v = on;
+    let mut out = None;
+    let w = ui.available_width();
+    ui.horizontal(|ui| {
+        ui.set_width(w);
+        let (sw, sh) = if compact { (36.0, 20.0) } else { (42.0, 24.0) };
+        ui.vertical(|ui| {
+            ui.set_width(w - sw - 12.0);
+            ui.label(egui::RichText::new(crate::i18n::t(title)).font(theme::medium(if compact { 12.5 } else { 13.5 })).color(INK));
+            if !hint.is_empty() {
+                ui.label(egui::RichText::new(crate::i18n::t(hint)).font(theme::body(if compact { 11.0 } else { 12.0 })).color(theme::ink3()));
+            }
+        });
+        if switch_sized(ui, &mut v, sw, sh).changed() {
+            out = Some(v);
+        }
+    });
+    out
+}
+
+/// A panel that opens above its button (the page's Popover): centred on the button, slid in
+/// from the window's edges, closed by Escape or a press elsewhere. `open` is flipped by the
+/// button itself; returns the panel's response so the caller can see where it is.
+pub fn popover(ui: &mut Ui, id: &str, anchor: Rect, width: f32, open: &mut bool, add: impl FnOnce(&mut Ui)) {
+    if !*open {
+        return;
+    }
+    const MARGIN: f32 = 12.0;
+    let screen = ui.ctx().content_rect();
+    let w = width.min(screen.width() - MARGIN * 2.0);
+    let left = (anchor.center().x - w / 2.0).clamp(MARGIN, screen.right() - w - MARGIN);
+    let bottom = anchor.top() - 10.0;
+    let area = egui::Area::new(egui::Id::unique(id)).order(egui::Order::Foreground).pivot(Align2::LEFT_BOTTOM).fixed_pos(pos2(left, bottom)).constrain(true);
+    let r = area.show(ui.ctx(), |ui| {
+        egui::Frame::new()
+            .fill(Color32::from_rgba_unmultiplied(8, 22, 24, 250))
+            .corner_radius(CornerRadius::same(20))
+            .inner_margin(egui::Margin::same(12))
+            .shadow(egui::Shadow { offset: [0, 24], blur: 60, spread: 0, color: Color32::from_black_alpha(115) })
+            .show(ui, |ui| {
+                ui.set_width(w - 24.0);
+                ui.spacing_mut().item_spacing.y = 11.0;
+                add(ui);
+            });
+    });
+    let pressed = ui.ctx().input(|i| if i.pointer.any_pressed() { i.pointer.interact_pos() } else { None });
+    if pressed.is_some_and(|p| !r.response.rect.contains(p) && !anchor.contains(p)) || ui.ctx().input(|i| i.key_pressed(egui::Key::Escape)) {
+        *open = false;
+    }
+}
+
+/// a vertical slider (the volume panel's .vslider): the filled part from the bottom
+pub fn vertical_level(ui: &mut Ui, value: &mut f32) -> Response {
+    let (rect, mut r) = ui.allocate_exact_size(vec2(34.0, 150.0), Sense::click_and_drag());
+    if let Some(p) = r.interact_pointer_pos().filter(|_| r.dragged() || r.clicked()) {
+        let v = ((rect.bottom() - p.y) / rect.height()).clamp(0.0, 1.0);
+        if (v - *value).abs() > f32::EPSILON {
+            *value = v;
+            r.mark_changed();
+        }
+    }
+    let scroll = ui.ctx().input(|i| i.smooth_scroll_delta.y);
+    if r.hovered() && scroll != 0.0 {
+        *value = (*value + if scroll > 0.0 { 0.05 } else { -0.05 }).clamp(0.0, 1.0);
+        r.mark_changed();
+    }
+    let p = ui.painter();
+    p.rect_filled(rect, CornerRadius::same(14), Color32::from_rgba_unmultiplied(238, 247, 244, 31));
+    let fill_h = rect.height() * *value;
+    if fill_h > 0.5 {
+        let filled = Rect::from_min_max(pos2(rect.left(), rect.bottom() - fill_h), rect.max);
+        // rounded at the bottom always, at the top only once it reaches it
+        let top_r = if fill_h > rect.height() - 14.0 { 14 } else { 0 };
+        p.rect_filled(filled, CornerRadius { nw: top_r, ne: top_r, sw: 14, se: 14 }, Color32::from_rgba_unmultiplied(238, 247, 244, 217));
+    }
+    r
 }

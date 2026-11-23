@@ -382,13 +382,13 @@ impl App {
         self.backdrop(ui, screen);
         self.titlebar(ui, screen);
         self.rail(ui, screen);
-        let bottom = if self.page == Page::Now { screen.bottom() - 14.0 } else { screen.bottom() - 110.0 };
+        let bottom = if self.page == Page::Now { screen.bottom() - 14.0 } else { screen.bottom() - 118.0 };
         let content = Rect::from_min_max(pos2(screen.left() + 92.0, screen.top() + 40.0), pos2(screen.right() - 14.0, bottom));
         let mut child = ui.new_child(egui::UiBuilder::new().max_rect(content).layout(egui::Layout::top_down(egui::Align::Min)));
         child.set_clip_rect(content.expand2(vec2(12.0, 0.0)));
         self.page_ui(&mut child);
         if self.page != Page::Now {
-            self.mini_player(ui, Rect::from_min_max(pos2(screen.left() + 92.0, screen.bottom() - 96.0), pos2(screen.right() - 14.0, screen.bottom() - 14.0)));
+            self.mini_player(ui, Rect::from_min_max(pos2(screen.left() + 92.0, screen.bottom() - 104.0), pos2(screen.right() - 20.0, screen.bottom() - 20.0)));
         }
         self.track_menu(&ctx);
         self.dialogs(&ctx);
@@ -410,21 +410,44 @@ impl App {
         }
     }
 
-    /// the ground and a soft glow in the colour of the cover playing
+    /// The backdrop (src/ui/backdrop): the cover playing, blurred and rich, filling the window,
+    /// with the page's vignette and shade; a still picture, so it costs nothing at rest. With
+    /// nothing playing, the page's teal glow.
     fn backdrop(&mut self, ui: &Ui, rect: Rect) {
         let p = ui.painter();
         p.rect_filled(rect, CornerRadius::ZERO, theme::GROUND);
-        let tint = self.view.current().and_then(artwork_of).and_then(|s| self.images.tint(&s)).unwrap_or(Color32::from_rgb(20, 96, 86));
-        let glow = |a: u8| Color32::from_rgba_unmultiplied(tint.r(), tint.g(), tint.b(), a);
-        let mut mesh = egui::Mesh::default();
-        let c = [glow(70), glow(22), glow(10), glow(46)];
-        let corners = [rect.left_top(), rect.right_top(), rect.right_bottom(), rect.left_bottom()];
-        for (pos, col) in corners.iter().zip(c) {
-            mesh.colored_vertex(*pos, col);
+        let tex = self.view.current().and_then(artwork_of).and_then(|s| self.images.backdrop(&s));
+        match tex {
+            Some(id) => {
+                // as the shader mapped it: the width limited to an aspect of 1.8, zoomed to 82 %
+                let aspect = rect.width() / rect.height().max(1.0);
+                let half_u = 0.5 * 0.82 * aspect.min(1.8) / 1.8;
+                let half_v = 0.5 * 0.82;
+                let uv = Rect::from_min_max(pos2(0.5 - half_u, 0.5 - half_v), pos2(0.5 + half_u, 0.5 + half_v));
+                p.image(id, rect, uv, Color32::WHITE);
+                // the vignette: dimmer toward the edges, from the point a little above the middle
+                p.add(grid_mesh(rect, 10, |u, v| {
+                    let d = ((u - 0.5).powi(2) + (v - 0.45).powi(2)).sqrt();
+                    let t = ((1.15 - d) / (1.15 - 0.25)).clamp(0.0, 1.0);
+                    let vig = t * t * (3.0 - 2.0 * t);
+                    let keep = 0.55 + 0.45 * vig;
+                    Color32::from_black_alpha(((1.0 - keep) * 255.0) as u8)
+                }));
+            }
+            None => {
+                // radial-gradient(circle at 25% 30%, #1f8a73, ground 65%)
+                let (w, h) = (rect.width(), rect.height());
+                let far = (w * w + h * h).sqrt() * 0.75;
+                p.add(grid_mesh(rect, 16, |u, v| {
+                    let d = ((u - 0.25) * w).hypot((v - 0.3) * h) / far;
+                    let t = (d / 0.65).clamp(0.0, 1.0);
+                    let mix = |a: u8, b: u8| (a as f32 + (b as f32 - a as f32) * t) as u8;
+                    Color32::from_rgb(mix(0x1f, 0x06), mix(0x8a, 0x20), mix(0x73, 0x1d))
+                }));
+            }
         }
-        mesh.add_triangle(0, 1, 2);
-        mesh.add_triangle(0, 2, 3);
-        p.add(egui::Shape::mesh(mesh));
+        // .backdrop-shade: a little darker toward the bottom
+        p.add(grid_mesh(rect, 2, |_, v| Color32::from_rgba_unmultiplied(3, 10, 12, ((0.15 + 0.30 * v) * 255.0) as u8)));
     }
 
     fn titlebar(&mut self, ui: &mut Ui, screen: Rect) {
@@ -511,94 +534,138 @@ impl App {
         }
     }
 
-    /// the player at the bottom of every page but "Сейчас играет"
+    /// the player at the bottom of every page but "Сейчас играет" (.mini-player: 84 px high,
+    /// rounded 28, the song, the controls and the tools in columns of 1 : 1.3 : 1)
     fn mini_player(&mut self, ui: &mut Ui, rect: Rect) {
-        ui.painter().rect_filled(rect, CornerRadius::same(24), theme::glass_strong());
-        ui.painter().rect_stroke(rect, CornerRadius::same(24), egui::Stroke::new(1.0, theme::edge()), egui::StrokeKind::Inside);
+        ui.painter().rect_filled(rect, CornerRadius::same(28), theme::glass_strong());
         let v = self.view.clone();
         let cur = v.current().cloned();
-        // the song
-        let art = Rect::from_min_size(pos2(rect.left() + 14.0, rect.center().y - 26.0), vec2(52.0, 52.0));
+        let inner = Rect::from_min_max(pos2(rect.left() + 12.0, rect.top()), pos2(rect.right() - 14.0, rect.bottom()));
+        let unit = (inner.width() - 32.0) / 3.3;
+        let left = Rect::from_min_size(inner.min, vec2(unit, inner.height()));
+        let center = Rect::from_min_size(pos2(left.right() + 16.0, inner.top()), vec2(unit * 1.3, inner.height()));
+        let right = Rect::from_min_max(pos2(center.right() + 16.0, inner.top()), inner.max);
+
+        // the song: cover, title and artist, like
+        let art = Rect::from_min_size(pos2(left.left(), left.center().y - 30.0), vec2(60.0, 60.0));
         let src = cur.as_ref().and_then(artwork_of);
-        widgets::paint_cover(ui, &mut self.images, src.as_deref(), art, 12);
+        widgets::paint_cover(ui, &mut self.images, src.as_deref(), art, 16);
         let open = ui.interact(art, ui.scope_id().with("mini-art"), Sense::click());
         if open.on_hover_text(crate::i18n::t("Открыть «Сейчас играет»")).clicked() {
             self.go(Page::Now);
         }
-        let text_w = (rect.width() * 0.28 - 90.0).max(80.0);
+        let text_w = (left.right() - art.right() - 12.0 - 46.0).max(60.0);
         let (title, sub) = match &cur {
             Some(t) => (t.title.clone(), t.artist_line()),
             None => (crate::i18n::t("Ничего не играет"), crate::i18n::t("Найдите трек в поиске")),
         };
         let g = widgets::clipped(ui, &title, theme::medium(14.0), INK, text_w);
-        ui.painter().galley(pos2(art.right() + 12.0, rect.center().y - 19.0), g, INK);
+        let title_w = g.size().x;
+        ui.painter().galley(pos2(art.right() + 12.0, left.center().y - 20.0), g, INK);
         let sub_line = if let (Some(e), Status::Error) = (&v.error, v.status) { e.clone() } else { sub };
         let sub_color = if v.status == Status::Error { theme::DANGER } else { theme::ink2() };
-        let g = widgets::clipped(ui, &sub_line, theme::body(12.5), sub_color, text_w);
-        ui.painter().galley(pos2(art.right() + 12.0, rect.center().y + 1.0), g, sub_color);
+        let g = widgets::clipped(ui, &sub_line, theme::body(13.0), sub_color, text_w);
+        let sub_w = g.size().x;
+        ui.painter().galley(pos2(art.right() + 12.0, left.center().y + 3.0), g, sub_color);
         if let Some(t) = &cur {
-            let heart = Rect::from_center_size(pos2(art.right() + 24.0 + text_w, rect.center().y), vec2(30.0, 30.0));
+            let x = art.right() + 12.0 + title_w.max(sub_w) + 6.0;
+            let heart = Rect::from_min_size(pos2(x, left.center().y - 20.0), vec2(40.0, 40.0));
             let liked = self.is_liked(&t.id);
-            let r = ui.interact(heart, ui.scope_id().with("mini-like"), Sense::click());
-            widgets::paint_icon_button(ui, heart, &r, if liked { ic::HEART_FILL } else { ic::HEART }, liked);
-            if r.on_hover_text(crate::i18n::t(if liked { "Убрать из «Любимого»" } else { "Нравится" })).clicked() {
+            let mut hui = ui.new_child(egui::UiBuilder::new().max_rect(heart));
+            if widgets::tool_button(&mut hui, if liked { ic::HEART_FILL } else { ic::HEART }, false, if liked { "Убрать из «Любимого»" } else { "Нравится" }).clicked() {
                 let t = t.clone();
                 self.toggle_like(&t);
             }
+            if liked {
+                ui.painter().text(heart.center(), Align2::CENTER_CENTER, ic::HEART_FILL, theme::icon(15.0), theme::ACCENT);
+            }
         }
-        // the controls and the position
-        let mid = rect.center().x;
-        let center = Rect::from_center_size(pos2(mid, rect.top() + 30.0), vec2(220.0, 44.0));
-        let mut cui = ui.new_child(egui::UiBuilder::new().max_rect(center).layout(egui::Layout::left_to_right(egui::Align::Center)));
-        cui.spacing_mut().item_spacing.x = 6.0;
-        self.transport(&mut cui, 36.0, 44.0);
-        let bar_w = (rect.width() * 0.42).clamp(220.0, 560.0);
-        let y = rect.top() + 64.0;
+
+        // the controls, and under them the position with the times above the bar
+        let controls = Rect::from_center_size(pos2(center.center().x, center.top() + 30.0), vec2(40.0 * 2.0 + 36.0 * 2.0 + 42.0 + 40.0, 42.0));
+        let mut cui = ui.new_child(egui::UiBuilder::new().max_rect(controls).layout(egui::Layout::left_to_right(egui::Align::Center)));
+        cui.spacing_mut().item_spacing.x = 10.0;
+        self.transport(&mut cui, 40.0, 36.0, 42.0);
+        let bar_w = center.width().min(560.0);
+        let bar_left = center.center().x - bar_w / 2.0;
         let pos = v.position_ms;
         let dur = v.duration_ms.max(1.0);
-        ui.painter().text(pos2(mid - bar_w / 2.0 - 8.0, y), Align2::RIGHT_CENTER, widgets::time(pos), theme::body(11.5), theme::ink2());
-        ui.painter().text(pos2(mid + bar_w / 2.0 + 8.0, y), Align2::LEFT_CENTER, widgets::time(v.duration_ms), theme::body(11.5), theme::ink2());
-        let bar = Rect::from_center_size(pos2(mid, y), vec2(bar_w, 14.0));
+        let times_y = center.top() + 58.0;
+        ui.painter().text(pos2(bar_left + 2.0, times_y), Align2::LEFT_CENTER, widgets::time(pos), theme::body(11.0), theme::ink3());
+        ui.painter().text(pos2(bar_left + bar_w - 2.0, times_y), Align2::RIGHT_CENTER, widgets::time(v.duration_ms), theme::body(11.0), theme::ink3());
+        let bar = Rect::from_min_size(pos2(bar_left, center.top() + 62.0), vec2(bar_w, 16.0));
         let mut bui = ui.new_child(egui::UiBuilder::new().max_rect(bar));
         if let Some(f) = widgets::seek_bar(&mut bui, bar_w, (pos / dur) as f32, v.buffered) {
             self.player.seek(f as f64 * dur);
         }
-        // volume and the full screen
-        let right = Rect::from_min_max(pos2(rect.right() - 210.0, rect.center().y - 16.0), pos2(rect.right() - 14.0, rect.center().y + 16.0));
-        let mut rui = ui.new_child(egui::UiBuilder::new().max_rect(right).layout(egui::Layout::right_to_left(egui::Align::Center)));
-        if widgets::icon_button(&mut rui, ic::FULLSCREEN, 32.0, false, "Сейчас играет — во весь экран").clicked() {
+
+        // the tools: sound and effects, the volume, the full screen
+        let tools = Rect::from_min_max(pos2(right.left(), right.center().y - 20.0), pos2(right.right(), right.center().y + 20.0));
+        let mut rui = ui.new_child(egui::UiBuilder::new().max_rect(tools).layout(egui::Layout::right_to_left(egui::Align::Center)));
+        rui.spacing_mut().item_spacing.x = 4.0;
+        if widgets::tool_button(&mut rui, ic::FULLSCREEN, false, "Сейчас играет — во весь экран").clicked() {
             self.go(Page::Now);
         }
-        let mut vol = if v.muted { 0.0 } else { v.volume };
-        if widgets::level(&mut rui, 90.0, &mut vol).changed() {
-            self.player.set_volume(vol);
+        self.player_tools(&mut rui);
+    }
+
+    /// the sound panel's and the volume's buttons, each opening its panel above it
+    pub fn player_tools(&mut self, ui: &mut Ui) {
+        let v = self.view.clone();
+        let vol_icon = if v.muted || v.volume == 0.0 { ic::MUTE } else { ic::VOLUME };
+        let vr = widgets::tool_button(ui, vol_icon, self.pages.volume_open, if self.pages.volume_open { "" } else { "Громкость" });
+        if vr.clicked() {
+            self.pages.volume_open = !self.pages.volume_open;
         }
-        if widgets::icon_button(&mut rui, if v.muted || v.volume == 0.0 { ic::MUTE } else { ic::VOLUME }, 32.0, false, "Без звука").clicked() {
-            self.player.toggle_mute();
-        }
-        if widgets::icon_button(&mut rui, ic::EQ, 32.0, self.pages.sound_open, "Звук и эффекты").clicked() {
+        let fx = state::get().effects.read().unwrap().clone();
+        let tuned = !fx.is_neutral();
+        let sr = widgets::tool_button(ui, ic::EQ, self.pages.sound_open || tuned, if self.pages.sound_open { "" } else { "Звук, скорость и тон" });
+        if sr.clicked() {
             self.pages.sound_open = !self.pages.sound_open;
         }
-        if self.pages.sound_open {
-            self.sound_panel(ui, Rect::from_min_size(pos2(rect.right() - 380.0, rect.top() - 420.0), vec2(366.0, 410.0)));
+        let mut open = self.pages.sound_open;
+        let mut changed = false;
+        widgets::popover(ui, "sound-panel", sr.rect, 292.0, &mut open, |ui| {
+            changed = sound_panel(ui);
+        });
+        self.pages.sound_open = open;
+        if changed {
+            self.player.apply_sound();
+        }
+        let mut open = self.pages.volume_open;
+        let mut vol = if v.muted { 0.0 } else { v.volume };
+        let mut set = None;
+        widgets::popover(ui, "volume-panel", vr.rect, 36.0 + 24.0, &mut open, |ui| {
+            ui.vertical_centered(|ui| {
+                if widgets::vertical_level(ui, &mut vol).changed() {
+                    set = Some(vol);
+                }
+                ui.label(egui::RichText::new(format!("{}", (vol * 100.0).round())).font(theme::medium(12.5)).color(INK));
+            });
+        });
+        self.pages.volume_open = open;
+        if let Some(x) = set {
+            self.player.set_volume(x);
         }
     }
 
-    /// shuffle, previous, play, next, repeat
-    pub fn transport(&mut self, ui: &mut Ui, small: f32, big: f32) {
+    /// shuffle, previous, play, next, repeat (.transport): `ghost`, `soft` and `main` are the
+    /// sizes of the three kinds of round buttons
+    pub fn transport(&mut self, ui: &mut Ui, ghost: f32, soft: f32, main: f32) {
+        use widgets::Round;
         let v = &self.view;
         let p = self.player.clone();
-        if widgets::icon_button(ui, ic::SHUFFLE, small, v.shuffle, "Перемешать").clicked() {
+        if widgets::round_button(ui, ic::SHUFFLE, ghost, Round::Ghost, v.shuffle, "Перемешать").clicked() {
             p.toggle_shuffle();
         }
-        if widgets::icon_button(ui, ic::PREV, small, false, "Предыдущий").clicked() {
+        if widgets::round_button(ui, ic::PREV, soft, Round::Soft, false, "Предыдущий").clicked() {
             p.prev();
         }
         let playing = matches!(v.status, Status::Playing | Status::Loading);
-        if widgets::play_button(ui, playing, big).clicked() {
+        if widgets::round_button(ui, if playing { ic::PAUSE } else { ic::PLAY }, main, Round::Main, false, if playing { "Пауза" } else { "Играть" }).clicked() {
             p.toggle();
         }
-        if widgets::icon_button(ui, ic::NEXT, small, false, "Следующий").clicked() {
+        if widgets::round_button(ui, ic::NEXT, soft, Round::Soft, false, "Следующий").clicked() {
             p.next();
         }
         let (icon, tip) = match v.repeat {
@@ -606,7 +673,7 @@ impl App {
             crate::player::Repeat::All => (ic::REPEAT, "Повтор: вся очередь"),
             crate::player::Repeat::Off => (ic::REPEAT, "Повтор: выключен"),
         };
-        if widgets::icon_button(ui, icon, small, v.repeat != crate::player::Repeat::Off, tip).clicked() {
+        if widgets::round_button(ui, icon, ghost, Round::Ghost, v.repeat != crate::player::Repeat::Off, tip).clicked() {
             p.cycle_repeat();
         }
     }
@@ -671,4 +738,72 @@ pub fn apply_language(s: &crate::store::state::Settings) {
 /// %LOCALAPPDATA%\EvPlayer: what can be fetched again (covers)
 pub fn cache_dir() -> PathBuf {
     std::env::var_os("LOCALAPPDATA").map(PathBuf::from).unwrap_or_else(std::env::temp_dir).join("EvPlayer").join("native-cache")
+}
+
+/// the panel "Звук, скорость и тон" (src/ui/components/SoundPanel.tsx); true when changed
+pub fn sound_panel(ui: &mut Ui) -> bool {
+    use crate::store::state::Effects;
+    let fx = state::get().effects.read().unwrap().clone();
+    let mut next = fx.clone();
+    const SPEEDS: [f64; 6] = [0.8, 0.9, 1.0, 1.15, 1.25, 1.35];
+    let labels: Vec<String> = SPEEDS.iter().map(|p| if *p == 1.0 { "×1.0".into() } else { format!("×{p}") }).collect();
+    let on = SPEEDS.iter().position(|p| (fx.speed - p).abs() < 0.001);
+    if let Some(i) = widgets::preset_row(ui, &labels, on) {
+        next.speed = SPEEDS[i];
+    }
+    if let Some(v) = widgets::stepper(ui, "Скорость", fx.speed, &format!("×{:.2}", fx.speed), 0.5, 2.0, 0.01, false) {
+        next.speed = (v * 100.0).round() / 100.0;
+    }
+    // linked: the pitch is the speed's own shift, shown and not set
+    let pitch = if fx.linked { 12.0 * fx.speed.log2() } else { fx.pitch };
+    let label = if fx.linked { "Тон (идёт за скоростью)" } else { "Тон" };
+    let shown = format!("{}{:.1} пт", if pitch > 0.0 { "+" } else { "" }, pitch);
+    if let Some(v) = widgets::stepper(ui, label, (pitch * 10.0).round() / 10.0, &shown, -12.0, 12.0, 0.1, fx.linked) {
+        next.pitch = (v * 10.0).round() / 10.0;
+    }
+    if let Some(v) = widgets::toggle_row(ui, "Тон вместе со скоростью", "Как пластинка: быстрее — выше, медленнее — ниже", fx.linked, true) {
+        next.linked = v;
+    }
+    if let Some(v) = widgets::toggle_row(ui, "Оставлять для следующих треков", "Иначе всё сбросится, когда начнётся новый трек", fx.keep, true) {
+        next.keep = v;
+    }
+    if let Some(v) = widgets::toggle_row(ui, "Реверберация", "Объём и пространство, как в зале", fx.reverb, true) {
+        next.reverb = v;
+    }
+    if fx.reverb {
+        let pct = (fx.reverb_amount * 100.0).round();
+        if let Some(v) = widgets::stepper(ui, "Сила реверберации", pct, &format!("{pct:.0}%"), 0.0, 100.0, 1.0, false) {
+            next.reverb_amount = (v / 100.0).clamp(0.0, 1.0);
+        }
+    }
+    if ui.add(egui::Label::new(egui::RichText::new(crate::i18n::t("Сбросить")).font(theme::body(12.5)).color(theme::ink3())).sense(Sense::click())).clicked() {
+        next = Effects { speed: 1.0, pitch: 0.0, linked: false, reverb: false, ..next };
+    }
+    if next != fx {
+        state::get().set_effects(|e| *e = next);
+        true
+    } else {
+        false
+    }
+}
+
+/// a rectangle cut into n x n quads, each corner coloured by `f(u, v)` (0..1 across the
+/// rectangle): smooth gradients drawn by the video card from vertex colours
+fn grid_mesh(rect: Rect, n: usize, f: impl Fn(f32, f32) -> Color32) -> egui::Shape {
+    let mut m = egui::Mesh::default();
+    for j in 0..=n {
+        for i in 0..=n {
+            let (u, v) = (i as f32 / n as f32, j as f32 / n as f32);
+            m.colored_vertex(pos2(rect.left() + rect.width() * u, rect.top() + rect.height() * v), f(u, v));
+        }
+    }
+    let row = (n + 1) as u32;
+    for j in 0..n as u32 {
+        for i in 0..n as u32 {
+            let a = j * row + i;
+            m.add_triangle(a, a + 1, a + row);
+            m.add_triangle(a + 1, a + row + 1, a + row);
+        }
+    }
+    egui::Shape::mesh(m)
 }
