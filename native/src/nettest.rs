@@ -283,6 +283,60 @@ fn net_jam_two_copies_hear_each_other_through_the_relays() {
     assert_eq!(b.unseal(&sealed, &a.id()).as_deref(), Some("JAM-AAAA-BBBB"));
 }
 
+/// A whole session on the real relays with two players at volume zero (silence reaches the
+/// sound card): the host plays a song, a guest joins by code, and the guest's player plays
+/// the same song at the same place; the guest's "next" goes to the host, and both move on.
+#[test]
+#[ignore]
+fn net_jam_a_guest_follows_the_host() {
+    use crate::player::{Player, Status};
+    init();
+    let st = crate::state::get();
+    let make = || {
+        let library = crate::library::Library::new(st.data_dir.clone());
+        let offline = crate::offline::Offline::new(&st.data_dir);
+        let p = Player::new(crate::player::resolve::Resolver::new(library, offline), || {});
+        p.set_volume(0.0);
+        p
+    };
+    let (hp, gp) = (make(), make());
+    let host = crate::jam::engine::Jam::new(hp.clone());
+    let guest = crate::jam::engine::Jam::new(gp.clone());
+    host.set_profile(Some("Хост".into()), None);
+    guest.set_profile(Some("Гость".into()), None);
+    let a = youtube::search("daft punk around the world").expect("search");
+    let b = youtube::search("daft punk harder better faster").expect("search");
+    hp.play_queue(vec![a[0].clone(), b[0].clone()], 0, None);
+    let wait = |what: &str, secs: u64, f: &dyn Fn() -> bool| {
+        let t = Instant::now();
+        while !f() {
+            assert!(t.elapsed() < Duration::from_secs(secs), "waited too long for {what}");
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        println!("{what}: {:?}", t.elapsed());
+    };
+    wait("the host plays", 40, &|| hp.status() == Status::Playing);
+    host.start();
+    wait("the session is on", 15, &|| host.view().status == crate::jam::engine::JamStatus::Live);
+    let code = host.view().code;
+    println!("code {code}");
+    guest.join(&code);
+    wait("the guest is in", 20, &|| guest.view().status == crate::jam::engine::JamStatus::Live && host.view().people.len() == 2);
+    wait("the guest plays the host's song", 40, &|| gp.status() == Status::Playing && gp.current().map(|t| t.id.clone()) == hp.current().map(|t| t.id.clone()));
+    std::thread::sleep(Duration::from_secs(5));
+    let (h, g) = (hp.position_ms(), gp.position_ms());
+    println!("host at {h:.0} ms, guest at {g:.0} ms, apart {:.0} ms", (h - g).abs());
+    assert!((h - g).abs() < 1600.0, "the guest drifted: {h} vs {g}");
+    // the guest's "next" is a request to the host
+    gp.next();
+    wait("both on the next song", 40, &|| hp.current().map(|t| t.id.clone()) == Some(b[0].id.clone()) && gp.current().map(|t| t.id.clone()) == Some(b[0].id.clone()) && gp.status() == Status::Playing);
+    guest.leave();
+    wait("the host sees the guest leave", 15, &|| host.view().people.len() == 1);
+    host.leave();
+    hp.shutdown();
+    gp.shutdown();
+}
+
 /// what the updater makes of the real latest.json (nothing is installed)
 #[test]
 #[ignore]

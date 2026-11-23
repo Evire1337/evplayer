@@ -300,6 +300,20 @@ impl Player {
         self.core.lock().unwrap().deck.as_ref().is_some_and(|d| d.ended.load(Ordering::Relaxed))
     }
 
+    /// what a session's host watches, without copying the queue: (a hash of the queue's songs,
+    /// index, status, position)
+    pub fn fingerprint(&self) -> (u64, usize, Status, f64) {
+        use std::hash::{Hash, Hasher};
+        let mut c = self.core.lock().unwrap();
+        c.refresh_position();
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        c.view.queue.len().hash(&mut h);
+        for t in &c.view.queue {
+            t.id.hash(&mut h);
+        }
+        (h.finish(), c.view.index, c.view.status, c.view.position_ms)
+    }
+
     /// the whole queue and where it is, without copying the view twice
     pub fn queue_state(&self) -> (Vec<Track>, usize, Status, f64) {
         let mut c = self.core.lock().unwrap();
