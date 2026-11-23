@@ -194,7 +194,7 @@ unsafe fn tray_menu(hwnd: win::HWND) {
     use win::*;
     let menu = CreatePopupMenu();
     let playing = *PLAYING.lock().unwrap();
-    let items: [(usize, &str); 4] = [(1, "Показать EvPlayer"), (2, if playing { "Пауза" } else { "Играть" }), (3, "Следующий трек"), (4, "Предыдущий трек")];
+    let items: [(usize, &str); 5] = [(1, "Показать EvPlayer"), (2, if playing { "Пауза" } else { "Играть" }), (3, "Следующий трек"), (4, "Предыдущий трек"), (5, "Мини-плеер")];
     for (id, text) in items {
         let w = tr(text);
         AppendMenuW(menu, MF_STRING, id, w.as_ptr());
@@ -213,6 +213,7 @@ unsafe fn tray_menu(hwnd: win::HWND) {
         2 => events::send(Event::Action(Action::PlayPause)),
         3 => events::send(Event::Action(Action::Next)),
         4 => events::send(Event::Action(Action::Prev)),
+        5 => events::send(Event::Action(Action::ToggleOverlay)),
         9 => events::send(Event::Quit),
         _ => {}
     }

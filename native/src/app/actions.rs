@@ -16,6 +16,8 @@ pub enum Action {
     Repeat,
     ShowWindow,
     ToggleOverlay,
+    /// the mini player's own "спрятать" key
+    HideOverlay,
     Search,
     Settings,
     NowPlaying,

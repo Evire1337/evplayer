@@ -11,6 +11,8 @@ use crate::store::state::Settings;
 pub enum Scope {
     App,
     Global,
+    /// while the mini player has the keyboard
+    Overlay,
 }
 
 pub struct Shortcut {
@@ -41,13 +43,26 @@ pub const SHORTCUTS: &[Shortcut] = &[
     s("app.search", Action::Search, Scope::App, "Поиск", "Открыть поиск", Some("Ctrl+F")),
     s("app.settings", Action::Settings, Scope::App, "Настройки", "Открыть настройки", Some("Ctrl+,")),
     s("app.nowPlaying", Action::NowPlaying, Scope::App, "Сейчас играет", "Открыть экран с текстом и очередью", Some("Ctrl+N")),
+    s("app.overlay", Action::ToggleOverlay, Scope::App, "Мини-плеер", "Показать или спрятать мини-плеер поверх окон", Some("Ctrl+M")),
     s("global.playPause", Action::PlayPause, Scope::Global, "Играть / пауза", "Из любой программы", Some("Ctrl+Alt+Space")),
     s("global.next", Action::Next, Scope::Global, "Следующий трек", "Из любой программы", Some("Ctrl+Alt+Right")),
     s("global.prev", Action::Prev, Scope::Global, "Предыдущий трек", "Из любой программы", Some("Ctrl+Alt+Left")),
     s("global.like", Action::Like, Scope::Global, "Нравится", "Лайкнуть то, что играет, не открывая окно", Some("Ctrl+Alt+L")),
     s("global.volumeUp", Action::VolumeUp, Scope::Global, "Громче", "Громкость EvPlayer, не системы", None),
     s("global.volumeDown", Action::VolumeDown, Scope::Global, "Тише", "Громкость EvPlayer, не системы", None),
+    s("global.overlay", Action::ToggleOverlay, Scope::Global, "Мини-плеер", "Показать или спрятать мини-плеер поверх окон", Some("Ctrl+Alt+M")),
     s("global.show", Action::ShowWindow, Scope::Global, "Показать EvPlayer", "Вывести окно на передний план", Some("Ctrl+Alt+E")),
+    s("overlay.playPause", Action::PlayPause, Scope::Overlay, "Играть / пауза", "Когда мини-плеер в фокусе (кликните по нему)", Some("Space")),
+    s("overlay.next", Action::Next, Scope::Overlay, "Следующий трек", "Когда мини-плеер в фокусе", Some("Right")),
+    s("overlay.prev", Action::Prev, Scope::Overlay, "Предыдущий трек", "Когда мини-плеер в фокусе", Some("Left")),
+    s("overlay.seekForward", Action::SeekForward, Scope::Overlay, "Вперёд на 5 секунд", "Когда мини-плеер в фокусе", Some("Shift+Right")),
+    s("overlay.seekBackward", Action::SeekBack, Scope::Overlay, "Назад на 5 секунд", "Когда мини-плеер в фокусе", Some("Shift+Left")),
+    s("overlay.volumeUp", Action::VolumeUp, Scope::Overlay, "Громче", "Когда мини-плеер в фокусе", Some("Up")),
+    s("overlay.volumeDown", Action::VolumeDown, Scope::Overlay, "Тише", "Когда мини-плеер в фокусе", Some("Down")),
+    s("overlay.mute", Action::Mute, Scope::Overlay, "Без звука", "Когда мини-плеер в фокусе", Some("M")),
+    s("overlay.like", Action::Like, Scope::Overlay, "Нравится", "Когда мини-плеер в фокусе", Some("L")),
+    s("overlay.show", Action::ShowWindow, Scope::Overlay, "Открыть EvPlayer", "Развернуть основное окно", Some("Enter")),
+    s("overlay.hide", Action::HideOverlay, Scope::Overlay, "Спрятать мини-плеер", "Убрать мини-плеер с экрана", Some("Escape")),
 ];
 
 /// the key for a shortcut: the person's own, or the default
@@ -130,24 +145,34 @@ impl Keys {
             if key == egui::Key::Escape && app.menu.is_some() {
                 continue;
             }
-            let Some(name) = key_name(key) else { continue };
-            let mut parts = Vec::new();
-            if m.ctrl || m.command {
-                parts.push("Ctrl".to_string());
-            }
-            if m.alt {
-                parts.push("Alt".to_string());
-            }
-            if m.shift {
-                parts.push("Shift".to_string());
-            }
-            parts.push(name);
-            let acc = parts.join("+");
-            if let Some(def) = SHORTCUTS.iter().find(|d| d.scope == Scope::App && binding(&overrides, d) == Some(acc.as_str())) {
-                app.action(def.action);
+            if let Some(a) = action_for(&overrides, Scope::App, key, m) {
+                app.action(a);
             }
         }
     }
+}
+
+/// "Ctrl+Shift+Right" for a pressed key, in the page's accelerator words
+pub fn accelerator(key: egui::Key, m: egui::Modifiers) -> Option<String> {
+    let name = key_name(key)?;
+    let mut parts = Vec::new();
+    if m.ctrl || m.command {
+        parts.push("Ctrl".to_string());
+    }
+    if m.alt {
+        parts.push("Alt".to_string());
+    }
+    if m.shift {
+        parts.push("Shift".to_string());
+    }
+    parts.push(name);
+    Some(parts.join("+"))
+}
+
+/// what a key pressed in `scope` does, by the person's bindings
+pub fn action_for(overrides: &Map<String, Value>, scope: Scope, key: egui::Key, m: egui::Modifiers) -> Option<Action> {
+    let acc = accelerator(key, m)?;
+    SHORTCUTS.iter().find(|d| d.scope == scope && binding(overrides, d) == Some(acc.as_str())).map(|d| d.action)
 }
 
 impl Default for Keys {

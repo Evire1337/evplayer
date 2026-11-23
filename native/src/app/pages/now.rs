@@ -232,3 +232,18 @@ impl App {
         });
     }
 }
+
+/// The line being sung now, for the mini player's "Строка текста песни". The lyrics are looked
+/// up once per song and shared with this page.
+pub fn sung_line(track: &crate::model::Track, pos_ms: f64) -> Option<String> {
+    let t = track.clone();
+    LYRICS.with(|l| {
+        let mut l = l.borrow_mut();
+        let lyr = l.get(&track.id, move || lyrics::find(&t))?.as_ref()?;
+        if !lyr.synced {
+            return None;
+        }
+        let i = lyrics::active_line(&lyr.lines, pos_ms)?;
+        Some(lyr.lines[i].text.trim().to_string()).filter(|s| !s.is_empty())
+    })
+}

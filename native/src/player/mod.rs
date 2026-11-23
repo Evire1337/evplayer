@@ -198,6 +198,11 @@ impl Player {
         self.core.lock().unwrap().view.status
     }
 
+    /// the song's length, without copying the queue
+    pub fn duration_ms(&self) -> f64 {
+        self.core.lock().unwrap().view.duration_ms
+    }
+
     pub fn position_ms(&self) -> f64 {
         let mut c = self.core.lock().unwrap();
         c.refresh_position();

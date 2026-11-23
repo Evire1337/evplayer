@@ -10,12 +10,13 @@ use crate::store::state::{Language, LyricsSize, Settings};
 use crate::ui::theme::{self, ic, ACCENT, INK};
 use crate::ui::widgets;
 
-const TABS: [(&str, &str, &str); 9] = [
+const TABS: [(&str, &str, &str); 10] = [
     ("Музыка", ic::PLAY, "Воспроизведение"),
     ("", ic::EQ, "Звук и эквалайзер"),
     ("", ic::SYNC, "Сервисы и импорт"),
     ("Приложение", ic::SPARK, "Внешний вид"),
     ("", ic::KEYBOARD, "Клавиши"),
+    ("", ic::MINI, "Мини-плеер"),
     ("", ic::MINI, "Окно и трей"),
     ("", ic::DISCORD, "Discord"),
     ("Другое", ic::FOLDER, "Данные и резервная копия"),
@@ -95,9 +96,10 @@ impl App {
                 2 => self.settings_services(ui),
                 3 => self.settings_look(ui),
                 4 => self.settings_keys(ui),
-                5 => self.settings_window(ui),
-                6 => self.settings_discord(ui),
-                7 => self.settings_data(ui),
+                5 => self.settings_overlay(ui),
+                6 => self.settings_window(ui),
+                7 => self.settings_discord(ui),
+                8 => self.settings_data(ui),
                 _ => self.settings_about(ui),
             }
         });
@@ -216,6 +218,7 @@ impl App {
                 let scope = match def.scope {
                     crate::app::keys::Scope::App => "в окне",
                     crate::app::keys::Scope::Global => "везде",
+                    crate::app::keys::Scope::Overlay => "в мини-плеере",
                 };
                 row(ui, def.title, &format!("{} · {}", crate::i18n::t(scope), crate::i18n::t(def.hint)), |ui| {
                     let text = acc.map(crate::app::keys::pretty).unwrap_or_else(|| crate::i18n::t("нет"));
@@ -224,6 +227,75 @@ impl App {
                     });
                 });
             }
+        });
+    }
+
+    /// Мини-плеер (src/pages/settings/OverlayTab.tsx)
+    fn settings_overlay(&mut self, ui: &mut Ui) {
+        let s = state::get().settings();
+        let shown = crate::ui::mini::is_shown();
+        card(ui, if shown { "Мини-плеер открыт" } else { "Мини-плеер спрятан" }, |ui| {
+            App::muted(ui, "Маленькое окно поверх всех программ: обложка, название, строка текста и кнопки. Перетаскивайте его за название трека.");
+            ui.add_space(6.0);
+            ui.add_enabled_ui(s.overlay_enabled, |ui| {
+                if widgets::pill_button(ui, Some(ic::MINI), if shown { "Спрятать" } else { "Показать сейчас" }, true).clicked() {
+                    crate::events::send(crate::events::Event::Action(crate::app::actions::Action::ToggleOverlay));
+                }
+            });
+        });
+        card(ui, "Поведение", |ui| {
+            switch(ui, "Мини-плеер включён", "Если выключить, его нельзя будет открыть ни клавишей, ни из трея", |s| s.overlay_enabled, |s, v| s.overlay_enabled = v);
+            ui.add_enabled_ui(s.overlay_enabled, |ui| {
+                switch(ui, "Поверх всех окон", "Не прячется за браузером и играми в окне", |s| s.overlay_on_top, |s, v| s.overlay_on_top = v);
+                switch(ui, "Показывать при сворачивании", "Свернули EvPlayer — появился мини-плеер; развернули — исчез", |s| s.overlay_on_minimize, |s, v| s.overlay_on_minimize = v);
+                switch(ui, "Строка текста песни", "Вместо исполнителя показывать строку, которую сейчас поют", |s| s.overlay_show_lyrics, |s, v| s.overlay_show_lyrics = v);
+            });
+        });
+        card(ui, "Где появляется", |ui| {
+            App::muted(ui, "Если вы перетащили мини-плеер, он остаётся там, пока не выберете угол заново");
+            ui.add_space(8.0);
+            use crate::store::state::OverlayCorner::*;
+            let corners = [(TopLeft, "Слева сверху"), (TopCenter, "По центру сверху"), (TopRight, "Справа сверху"), (BottomLeft, "Слева снизу"), (BottomCenter, "По центру снизу"), (BottomRight, "Справа снизу")];
+            // a little screen with the six places on it
+            let (screen, _) = ui.allocate_exact_size(vec2(200.0, 124.0), egui::Sense::hover());
+            let p = ui.painter();
+            p.rect(screen, 12, theme::hover(), egui::Stroke::new(1.0, theme::edge()), egui::StrokeKind::Inside);
+            for (i, (c, label)) in corners.iter().enumerate() {
+                let col = (i % 3) as f32;
+                let top = i < 3;
+                let size = vec2(52.0, 16.0);
+                let x = screen.left() + 12.0 + col * (screen.width() - 24.0 - size.x) / 2.0;
+                let y = if top { screen.top() + 12.0 } else { screen.bottom() - 12.0 - size.y };
+                let rect = egui::Rect::from_min_size(egui::pos2(x, y), size);
+                let r = ui.interact(rect, ui.scope_id().with(("corner", i)), egui::Sense::click());
+                let on = s.overlay_corner == *c;
+                let fill = if on { ACCENT } else if r.hovered() { theme::ink3() } else { egui::Color32::from_rgba_unmultiplied(238, 247, 244, 30) };
+                ui.painter().rect_filled(rect, 5, fill);
+                if r.clicked() {
+                    let c = *c;
+                    state::get().set_settings(|s| s.overlay_corner = c);
+                }
+                r.on_hover_text(crate::i18n::t(label));
+            }
+        });
+        card(ui, "Клавиши", |ui| {
+            let key = |id: &str| crate::app::keys::SHORTCUTS.iter().find(|d| d.id == id).and_then(|d| crate::app::keys::binding(&s.shortcuts, d)).map(crate::app::keys::pretty).unwrap_or_else(|| crate::i18n::t("не задано"));
+            row(ui, "В окне EvPlayer", &key("app.overlay"), |_| {});
+            row(ui, "Из любой программы", &key("global.overlay"), |_| {});
+            let inside = format!(
+                "{} — {}, {} / {} — {}, {} — {}, {} — {}",
+                key("overlay.playPause"),
+                crate::i18n::t("пауза"),
+                key("overlay.prev"),
+                key("overlay.next"),
+                crate::i18n::t("треки"),
+                key("overlay.like"),
+                crate::i18n::t("нравится"),
+                key("overlay.hide"),
+                crate::i18n::t("спрятать")
+            );
+            row(ui, "Внутри мини-плеера", &inside, |_| {});
+            App::muted(ui, "Ещё мини-плеер открывается из меню значка в трее.");
         });
     }
 

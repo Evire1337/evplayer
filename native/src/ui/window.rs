@@ -22,6 +22,7 @@ use winit::window::{Icon, Window, WindowId};
 
 use super::gpu::GpuRenderer;
 use super::soft::SoftRenderer;
+use crate::app::actions::Action;
 use crate::app::App;
 use crate::events::{self, Event};
 
@@ -50,6 +51,13 @@ struct Shell {
     hidden_since: Option<Instant>,
     /// the window let go of its painter and pages; they come back when it is shown
     asleep: bool,
+    /// the window was minimized (the mini player stands in for it then)
+    minimized: bool,
+    /// the window's own place and size, kept when it is hidden (a minimized window hidden in
+    /// the tray loses them)
+    placement: Option<Placement>,
+    /// the mini player above all windows
+    mini: super::mini::Mini,
 }
 
 /// after this long out of sight the window lets go of the video card and its pages
@@ -132,6 +140,12 @@ impl Shell {
             }
         }
         let (Some(window), Some(state)) = (self.window.clone(), self.state.as_mut()) else { return };
+        // while Windows restores a minimized window it may report the icon's tiny size for a
+        // moment; laid out that small the pages would have negative room (egui stops on that)
+        let sz = window.inner_size();
+        if (sz.width as f64) < 400.0 * window.scale_factor() || (sz.height as f64) < 300.0 * window.scale_factor() {
+            return;
+        }
         let input = state.take_egui_input(&window);
         egui_winit::update_viewport_info(&mut self.info, &self.ctx, &window, false);
         let app = &mut self.app;
@@ -198,18 +212,26 @@ impl Shell {
         if !visible && self.hidden_since.is_none() {
             self.hidden_since = Some(Instant::now());
         }
-        match (self.next_frame, visible) {
-            (Some(t), true) => el.set_control_flow(ControlFlow::WaitUntil(t)),
+        let main = match (self.next_frame, visible) {
+            (Some(t), true) => Some(t),
             // out of sight: wake once more to let go of the video card, then sleep
-            (_, false) if !self.asleep => el.set_control_flow(ControlFlow::WaitUntil(self.hidden_since.unwrap_or_else(Instant::now) + sleep_after())),
-            _ => el.set_control_flow(ControlFlow::Wait),
+            (_, false) if !self.asleep => Some(self.hidden_since.unwrap_or_else(Instant::now) + sleep_after()),
+            _ => None,
+        };
+        match [main, self.mini.deadline()].into_iter().flatten().min() {
+            Some(t) => el.set_control_flow(ControlFlow::WaitUntil(t)),
+            None => el.set_control_flow(ControlFlow::Wait),
         }
     }
 
     fn show(&mut self) {
+        if std::env::var_os("EVPLAYER_TRACE").is_some() {
+            eprintln!("[window] show, iconic={}", self.window.as_ref().map(|w| iconic(w)).unwrap_or(false));
+        }
+        self.mini.hide_for_restore();
         if let Some(w) = &self.window {
             w.set_visible(true);
-            w.set_minimized(false);
+            restore(w, self.placement.take());
             w.focus_window();
             self.dirty = true;
             w.request_redraw();
@@ -217,8 +239,19 @@ impl Shell {
         self.app.window_shown(true);
     }
 
+    /// what the interface asked of the window (shown from the tray, hidden on close)
+    fn after_app(&mut self) {
+        if self.app.wants_hide() {
+            self.hide();
+        }
+        if self.app.wants_show() {
+            self.show();
+        }
+    }
+
     fn hide(&mut self) {
         if let Some(w) = &self.window {
+            self.placement = placement_of(w);
             w.set_visible(false);
         }
         self.hidden_since = Some(Instant::now());
@@ -265,7 +298,13 @@ impl ApplicationHandler<Event> for Shell {
         window.request_redraw();
     }
 
-    fn window_event(&mut self, el: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
+    fn window_event(&mut self, el: &ActiveEventLoop, id: WindowId, event: WindowEvent) {
+        if self.mini.owns(id) {
+            self.mini.window_event(el, &event, &mut self.app);
+            self.after_app();
+            self.schedule(el);
+            return;
+        }
         let Some(window) = self.window.clone() else { return };
         // a redraw is not an input: passed to egui it asks for another redraw, forever
         if let (Some(state), false) = (self.state.as_mut(), matches!(event, WindowEvent::RedrawRequested)) {
@@ -302,6 +341,20 @@ impl ApplicationHandler<Event> for Shell {
             WindowEvent::DroppedFile(path) => self.app.dropped_file(path),
             _ => {}
         }
+        // minimized or back, looked at after every event: winit may still call the window
+        // minimized while it reports the restoring resize
+        let minimized = iconic(&window);
+        if minimized != self.minimized {
+            if std::env::var_os("EVPLAYER_TRACE").is_some() {
+                eprintln!("[window] minimized {} -> {minimized}", self.minimized);
+            }
+            self.minimized = minimized;
+            if minimized {
+                self.mini.show_for_minimize(el);
+            } else {
+                self.mini.hide_for_restore();
+            }
+        }
         self.schedule(el);
     }
 
@@ -313,15 +366,21 @@ impl ApplicationHandler<Event> for Shell {
                     if let Some(w) = &self.window {
                         w.request_redraw();
                     }
+                    // a song, a pause, a like: the mini player looks again
+                    self.mini.changed(&self.app);
                 } else if self.next_frame.is_none_or(|t| at < t) {
                     self.next_frame = Some(at);
                 }
             }
+            Event::MiniRepaint(delay) => self.mini.repaint(delay),
+            Event::Action(Action::ToggleOverlay) => self.mini.toggle(el),
+            Event::Action(Action::HideOverlay) => self.mini.hide(),
             Event::Action(a) => {
                 self.app.action(a);
                 if let Some(w) = &self.window {
                     w.request_redraw();
                 }
+                self.mini.changed(&self.app);
             }
             Event::ShowWindow => self.show(),
             Event::OpenLink(link) => {
@@ -343,27 +402,25 @@ impl ApplicationHandler<Event> for Shell {
                 }
             }
         }
-        if self.app.wants_hide() {
-            self.hide();
-        }
-        if self.app.wants_show() {
-            self.show();
-        }
+        self.after_app();
         self.schedule(el);
     }
 
     fn new_events(&mut self, el: &ActiveEventLoop, cause: winit::event::StartCause) {
         if let winit::event::StartCause::ResumeTimeReached { .. } = cause {
+            let now = Instant::now();
             if !self.visible() {
                 if self.hidden_since.is_some_and(|t| t.elapsed() >= sleep_after()) {
                     self.sleep();
                 }
-            } else {
+            } else if self.next_frame.is_some_and(|t| t <= now) {
+                // the wake may have been the mini player's: the window draws only when it asked
                 self.next_frame = None;
                 if let Some(w) = &self.window {
                     w.request_redraw();
                 }
             }
+            self.mini.tick(el);
         }
         let _ = el;
     }
@@ -377,8 +434,87 @@ pub fn run(app: App, ctx: egui::Context, event_loop: EventLoop<Event>) {
     events::install(event_loop.create_proxy());
     // egui asks for frames from any thread (an animation, a picture that arrived)
     ctx.set_request_repaint_callback(|info| events::send(Event::Repaint(info.delay)));
-    let mut shell = Shell { app, ctx, window: None, state: None, painter: None, info: Default::default(), next_frame: None, last_print: 0, dirty: true, hidden_since: None, asleep: false };
+    let mut shell = Shell { app, ctx, window: None, state: None, painter: None, info: Default::default(), next_frame: None, last_print: 0, dirty: true, hidden_since: None, asleep: false, minimized: false, placement: None, mini: super::mini::Mini::new() };
     if let Err(e) = event_loop.run_app(&mut shell) {
         eprintln!("[window] {e}");
     }
+}
+
+fn hwnd(window: &Window) -> Option<isize> {
+    match window.window_handle().map(|h| h.as_raw()) {
+        Ok(RawWindowHandle::Win32(h)) => Some(h.hwnd.get()),
+        _ => None,
+    }
+}
+
+/// Minimized, as Windows has it. A minimized window hidden in the tray stops being "iconic"
+/// (winit rewrites its style on hiding) but stays parked at −32000, so that counts too.
+fn iconic(window: &Window) -> bool {
+    #[cfg(windows)]
+    if let Some(h) = hwnd(window) {
+        use windows_sys::Win32::Foundation::RECT;
+        use windows_sys::Win32::UI::WindowsAndMessaging::{GetWindowRect, IsIconic};
+        let mut r = RECT { left: 0, top: 0, right: 0, bottom: 0 };
+        unsafe {
+            GetWindowRect(h as _, &mut r);
+            return IsIconic(h as _) != 0 || r.left <= -30000;
+        }
+    }
+    window.is_minimized().unwrap_or(false)
+}
+
+/// a window's normal rectangle and whether it comes back maximized
+#[derive(Clone, Copy)]
+struct Placement {
+    rect: (i32, i32, i32, i32),
+    maximized: bool,
+}
+
+fn placement_of(window: &Window) -> Option<Placement> {
+    #[cfg(windows)]
+    if let Some(h) = hwnd(window) {
+        use windows_sys::Win32::UI::WindowsAndMessaging::{GetWindowPlacement, SW_SHOWMAXIMIZED, WINDOWPLACEMENT, WPF_RESTORETOMAXIMIZED};
+        unsafe {
+            let mut wp: WINDOWPLACEMENT = std::mem::zeroed();
+            wp.length = std::mem::size_of::<WINDOWPLACEMENT>() as u32;
+            if GetWindowPlacement(h as _, &mut wp) == 0 {
+                return None;
+            }
+            let r = wp.rcNormalPosition;
+            let maximized = wp.showCmd == SW_SHOWMAXIMIZED as u32 || (wp.flags & WPF_RESTORETOMAXIMIZED) != 0;
+            return Some(Placement { rect: (r.left, r.top, r.right, r.bottom), maximized });
+        }
+    }
+    let _ = window;
+    None
+}
+
+/// back to its own place and size: a window minimized and then hidden in the tray would
+/// otherwise come back at -32000, off every screen, or the size of a taskbar button
+fn restore(window: &Window, saved: Option<Placement>) {
+    #[cfg(windows)]
+    if let Some(h) = hwnd(window) {
+        use windows_sys::Win32::Foundation::RECT;
+        use windows_sys::Win32::UI::WindowsAndMessaging::{GetWindowPlacement, SetWindowPlacement, SW_RESTORE, SW_SHOWMAXIMIZED, WINDOWPLACEMENT};
+        if iconic(window) {
+            unsafe {
+                let mut wp: WINDOWPLACEMENT = std::mem::zeroed();
+                wp.length = std::mem::size_of::<WINDOWPLACEMENT>() as u32;
+                if GetWindowPlacement(h as _, &mut wp) != 0 {
+                    wp.showCmd = SW_RESTORE as u32;
+                    if let Some(p) = saved.filter(|p| p.rect.0 > -30000 && p.rect.2 - p.rect.0 >= 400) {
+                        let (left, top, right, bottom) = p.rect;
+                        wp.rcNormalPosition = RECT { left, top, right, bottom };
+                        if p.maximized {
+                            wp.showCmd = SW_SHOWMAXIMIZED as u32;
+                        }
+                    }
+                    SetWindowPlacement(h as _, &wp);
+                }
+            }
+        }
+        return;
+    }
+    let _ = saved;
+    window.set_minimized(false);
 }

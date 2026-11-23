@@ -13,6 +13,8 @@ use crate::app::actions::Action;
 pub enum Event {
     /// draw again after this long (egui asks this way, so do the background threads)
     Repaint(Duration),
+    /// the mini player asks to be drawn again after this long
+    MiniRepaint(Duration),
     /// something the person did outside the window: a global key, the tray, media keys
     Action(Action),
     /// bring the window up (the tray, a second start of the program)

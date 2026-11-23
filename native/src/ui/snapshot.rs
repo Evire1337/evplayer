@@ -64,8 +64,15 @@ pub fn glyph_sheet(out: &str, codes: &[String]) -> Result<(), String> {
     image::save_buffer(Path::new(out), &rgb, w, h, image::ColorType::Rgb8).map_err(|e| e.to_string())
 }
 
-pub fn run(mut app: App, ctx: egui::Context, o: Options) -> Result<(), String> {
-    if let Some(page) = &o.page {
+pub fn run(mut app: App, ctx: egui::Context, mut o: Options) -> Result<(), String> {
+    // the mini player's bar alone, at its own size
+    let mini = o.page.as_deref() == Some("mini");
+    let mut cover = None;
+    if mini {
+        o.width = (super::mini::WIDTH as f32 * o.scale).round() as u32;
+        o.height = (super::mini::HEIGHT as f32 * o.scale).round() as u32;
+    }
+    if let Some(page) = o.page.as_ref().filter(|_| !mini) {
         app.open_page_by_name(page);
     }
     let points = egui::vec2(o.width as f32 / o.scale, o.height as f32 / o.scale);
@@ -76,7 +83,7 @@ pub fn run(mut app: App, ctx: egui::Context, o: Options) -> Result<(), String> {
         let mut input = egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, points)), ..Default::default() };
         input.viewports.entry(egui::ViewportId::ROOT).or_default().native_pixels_per_point = Some(o.scale);
         input.time = Some(pass as f64 * 0.1);
-        let out = ctx.run_ui(input, |ui| app.ui(ui));
+        let out = if mini { ctx.run_ui(input, |ui| super::mini::snapshot_bar(ui, &app, &mut cover)) } else { ctx.run_ui(input, |ui| app.ui(ui)) };
         let prims = ctx.tessellate(out.shapes, out.pixels_per_point);
         renderer.set_textures(&out.textures_delta);
         renderer.render(&prims, out.pixels_per_point, &mut px, o.width as usize, o.height as usize, true);

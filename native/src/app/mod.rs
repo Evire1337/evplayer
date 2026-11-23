@@ -8,6 +8,7 @@
 pub mod actions;
 pub mod keys;
 mod pages;
+pub use pages::now::sung_line;
 pub mod task;
 
 use std::path::PathBuf;
@@ -291,7 +292,8 @@ impl App {
             Action::Shuffle => p.toggle_shuffle(),
             Action::Repeat => p.cycle_repeat(),
             Action::ShowWindow => self.want_show = true,
-            Action::ToggleOverlay => {}
+            // the mini player is the event loop's: it goes there
+            Action::ToggleOverlay | Action::HideOverlay => crate::events::send(crate::events::Event::Action(a)),
             Action::Search => {
                 self.want_show = true;
                 self.go(Page::Search);

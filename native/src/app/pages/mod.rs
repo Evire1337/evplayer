@@ -5,7 +5,7 @@ mod artist;
 mod files;
 mod home;
 mod library;
-mod now;
+pub mod now;
 mod search;
 mod settings;
 mod sound;

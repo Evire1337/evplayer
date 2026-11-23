@@ -143,6 +143,41 @@ fn backdrop(bytes: &[u8]) -> Option<image::RgbaImage> {
     Some(img)
 }
 
+/// a cover scaled to `px`: from the disk cache, else fetched (and then kept on disk)
+fn load_cover(src: &str, key: u64, px: u32, disk: Option<&std::path::Path>, local_covers: &std::path::Path) -> Option<ColorImage> {
+    let cached = disk.map(|d| d.join(format!("{key:016x}_{px}.jpg")));
+    let mut rgba = cached.as_ref().and_then(|p| std::fs::read(p).ok()).and_then(|b| image::load_from_memory(&b).ok()).map(|i| i.into_rgba8());
+    if rgba.is_none() {
+        rgba = fetch(src, local_covers).and_then(|b| decode(&b, px));
+        if let (Some(img), Some(path)) = (&rgba, &cached) {
+            if !src.starts_with("localcover:") && !src.starts_with("data:") {
+                let rgb = image::DynamicImage::ImageRgba8(img.clone()).into_rgb8();
+                let _ = rgb.save_with_format(path, image::ImageFormat::Jpeg);
+            }
+        }
+    }
+    rgba.map(|img| {
+        let (w, h) = img.dimensions();
+        ColorImage::from_rgba_unmultiplied([w as usize, h as usize], img.as_raw())
+    })
+}
+
+/// Loads single covers away from the window's own loader (the mini player has a context of
+/// its own), through the same disk cache.
+#[derive(Clone)]
+pub struct CoverLoader {
+    disk: Option<PathBuf>,
+    local_covers: PathBuf,
+}
+
+impl CoverLoader {
+    /// blocking: call it from a thread
+    pub fn load(&self, src: &str, px: u32) -> Option<ColorImage> {
+        let px = px.div_ceil(64) * 64;
+        load_cover(src, hash(src), px.clamp(64, 1024), self.disk.as_deref(), &self.local_covers)
+    }
+}
+
 fn worker(shared: Arc<Shared>, disk: Option<PathBuf>, local_covers: PathBuf) {
     loop {
         let job = {
@@ -165,21 +200,7 @@ fn worker(shared: Arc<Shared>, disk: Option<PathBuf>, local_covers: PathBuf) {
             crate::events::repaint();
             continue;
         }
-        let cached = disk.as_ref().map(|d| d.join(format!("{:016x}_{}.jpg", job.key.0, job.px)));
-        let mut rgba = cached.as_ref().and_then(|p| std::fs::read(p).ok()).and_then(|b| image::load_from_memory(&b).ok()).map(|i| i.into_rgba8());
-        if rgba.is_none() {
-            rgba = fetch(&job.src, &local_covers).and_then(|b| decode(&b, job.px));
-            if let (Some(img), Some(path)) = (&rgba, &cached) {
-                if !job.src.starts_with("localcover:") && !job.src.starts_with("data:") {
-                    let rgb = image::DynamicImage::ImageRgba8(img.clone()).into_rgb8();
-                    let _ = rgb.save_with_format(path, image::ImageFormat::Jpeg);
-                }
-            }
-        }
-        let image = rgba.map(|img| {
-            let (w, h) = img.dimensions();
-            ColorImage::from_rgba_unmultiplied([w as usize, h as usize], img.as_raw())
-        });
+        let image = load_cover(&job.src, job.key.0, job.px, disk.as_deref(), &local_covers);
         shared.done.lock().unwrap().push((job.key, image));
         crate::events::repaint();
     }
@@ -283,6 +304,10 @@ impl Images {
                 None
             }
         }
+    }
+
+    pub fn loader(&self) -> CoverLoader {
+        CoverLoader { disk: self.disk.clone(), local_covers: self.local_covers.clone() }
     }
 
     /// the colour of a picture already loaded (any size)
