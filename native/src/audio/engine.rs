@@ -25,6 +25,8 @@ pub struct Engine {
     decks: [Option<Decoder>; 2],
     /// what the sound card is ("Динамики (Realtek) · 48 кГц"), for the diagnostics
     pub device: String,
+    /// the system's id of that device (to notice when the default one changes)
+    device_id: String,
 }
 
 impl Engine {
@@ -34,7 +36,7 @@ impl Engine {
         let (ttx, trash) = rtrb::RingBuffer::new(16);
         let (fx, fx_rx) = rtrb::RingBuffer::new(32);
         let mixer = Arc::new(Mutex::new(Mixer::with_fx(crx, ttx, shared.clone(), 48_000, Some(fx_rx))));
-        Self { shared, cmds, fx, trash, mixer, stream: None, running: false, decks: [None, None], device: String::new() }
+        Self { shared, cmds, fx, trash, mixer, stream: None, running: false, decks: [None, None], device: String::new(), device_id: String::new() }
     }
 
     fn build(&mut self) -> Result<(), String> {
@@ -44,6 +46,7 @@ impl Engine {
         let rate = config.sample_rate();
         let channels = config.channels() as usize;
         self.device = format!("{} · {} кГц", device.description().map(|d| d.to_string()).unwrap_or_else(|_| "звуковая карта".into()), rate / 1000);
+        self.device_id = device.id().map(|i| i.to_string()).unwrap_or_default();
         self.shared.device_rate.store(rate, Ordering::Relaxed);
         if let Ok(mut m) = self.mixer.lock() {
             m.set_rate(rate);
@@ -130,6 +133,21 @@ impl Engine {
 
     pub fn is_running(&self) -> bool {
         self.running
+    }
+
+    /// The sound card the stream plays to went away, or the system's default output changed
+    /// (headphones unplugged or plugged in). The stream is then made anew on the next play.
+    pub fn output_changed(&mut self) -> bool {
+        if self.stream.is_none() {
+            return false;
+        }
+        let now = cpal::default_host().default_output_device().and_then(|d| d.id().ok()).map(|i| i.to_string()).unwrap_or_default();
+        let changed = self.shared.broken.load(Ordering::Relaxed) || now != self.device_id;
+        if changed {
+            self.shared.broken.store(true, Ordering::Relaxed);
+            self.running = false;
+        }
+        changed
     }
 
     /// the sound card's thread let go of songs: freed here

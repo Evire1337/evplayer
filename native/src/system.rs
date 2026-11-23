@@ -37,6 +37,34 @@ static PLAYING: Mutex<bool> = Mutex::new(false);
 
 const WM_TRAY: u32 = 0x0400 + 1; // WM_USER + 1
 const WM_ORDERS: u32 = 0x8000 + 7; // WM_APP + 7
+/// a second start of the program asks the running one to show its window
+const WM_SHOW_APP: u32 = 0x8000 + 8;
+
+/// One copy of the program at a time: true when this is the only one. A second start finds
+/// the first one's tray window, asks it to show itself and quits.
+#[cfg(windows)]
+pub fn single_instance() -> bool {
+    use win::*;
+    let name = wide("Local\\EvPlayerNativeOneCopy");
+    // SAFETY: a named mutex held for the life of the process (never closed on purpose)
+    unsafe {
+        let m = windows_sys::Win32::System::Threading::CreateMutexW(std::ptr::null(), 0, name.as_ptr());
+        if m.is_null() || GetLastError() != ERROR_ALREADY_EXISTS {
+            return true;
+        }
+        let class = wide("EvPlayerTray");
+        let other = FindWindowExW(HWND_MESSAGE, std::ptr::null_mut(), class.as_ptr(), std::ptr::null());
+        if !other.is_null() {
+            PostMessageW(other, WM_SHOW_APP, 0, 0);
+        }
+    }
+    false
+}
+
+#[cfg(not(windows))]
+pub fn single_instance() -> bool {
+    true
+}
 
 fn post_orders() {
     #[cfg(windows)]
@@ -146,6 +174,10 @@ unsafe extern "system" fn wndproc(hwnd: win::HWND, msg: u32, wparam: win::WPARAM
         }
         WM_ORDERS => {
             apply_orders(hwnd);
+            0
+        }
+        WM_SHOW_APP => {
+            events::send(Event::ShowWindow);
             0
         }
         _ => DefWindowProcW(hwnd, msg, wparam, lparam),

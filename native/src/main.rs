@@ -68,6 +68,10 @@ fn main() {
         }
         return;
     }
+    let snapshot = args.iter().any(|a| a == "--snapshot");
+    if !snapshot && !system::single_instance() {
+        return;
+    }
     let dir = data_dir();
     let _ = std::fs::create_dir_all(&dir);
     userproxy::load(&dir);
@@ -82,7 +86,6 @@ fn main() {
     state::init(dir.clone());
     let ctx = egui::Context::default();
     let app = app::App::new(&ctx, dir, started);
-    let args: Vec<String> = std::env::args().collect();
     if let Some(opts) = ui::snapshot::parse(&args) {
         if let Err(e) = ui::snapshot::run(app, ctx, opts) {
             eprintln!("[snapshot] {e}");

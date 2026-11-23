@@ -127,6 +127,9 @@ pub fn apply(ctx: &egui::Context) {
     v.widgets.hovered.bg_stroke = Stroke::NONE;
     v.widgets.active.bg_fill = active();
     v.widgets.active.weak_bg_fill = active();
+    // glyphs on whole pixels and hinted: sub-pixel binning makes text visibly blurrier
+    v.text_options.subpixel_binning = false;
+    v.text_options.font_hinting = true;
     v.popup_shadow = egui::Shadow::NONE;
     v.window_shadow = egui::Shadow { offset: [0, 8], blur: 24, spread: 0, color: Color32::from_black_alpha(90) };
     ctx.set_visuals(v);

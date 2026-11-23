@@ -119,6 +119,8 @@ struct Core {
     leveler: crate::audio::dsp::loudness::Leveler,
     leveler_track: Option<String>,
     leveler_at: Instant,
+    /// the last look at the output device
+    device_check: Instant,
 }
 
 pub struct Player {
@@ -165,6 +167,7 @@ impl Player {
             leveler: Default::default(),
             leveler_track: None,
             leveler_at: Instant::now(),
+            device_check: Instant::now(),
         };
         let me = Arc::new(Self { core: Mutex::new(core), wake: Condvar::new(), resolver, notify: Box::new(notify) });
         me.apply_sound();
@@ -874,6 +877,23 @@ impl Player {
                 } else {
                     c.view.buffered = 1.0;
                 }
+            }
+        }
+        // headphones unplugged or another output chosen in the system: the stream moves to the
+        // new device; with "pause when headphones are unplugged" the music stops instead of
+        // going on from the speakers (the page did this with devicechange)
+        if c.device_check.elapsed() > Duration::from_secs(2) && c.engine.is_running() {
+            c.device_check = Instant::now();
+            if c.engine.output_changed() {
+                let pause = state::get().settings.read().unwrap().pause_on_device_change;
+                if pause && c.view.status == Status::Playing {
+                    c.engine.set_paused(true);
+                    c.view.status = Status::Paused;
+                    c.paused_since = Some(Instant::now());
+                } else if c.view.status == Status::Playing {
+                    let _ = c.engine.ensure_running();
+                }
+                changed = true;
             }
         }
         // a long pause lets the sound card go
