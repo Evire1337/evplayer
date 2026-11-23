@@ -10,7 +10,10 @@ use crate::store::state::{Language, LyricsSize, Settings};
 use crate::ui::theme::{self, ic, ACCENT, INK};
 use crate::ui::widgets;
 
-const TABS: [(&str, &str, &str); 10] = [
+/// the diagnostics tab's place: shown once turned on (seven clicks on the version)
+const DIAGNOSTICS: usize = 9;
+
+const TABS: [(&str, &str, &str); 11] = [
     ("Музыка", ic::PLAY, "Воспроизведение"),
     ("", ic::EQ, "Звук и эквалайзер"),
     ("", ic::SYNC, "Сервисы и импорт"),
@@ -20,6 +23,7 @@ const TABS: [(&str, &str, &str); 10] = [
     ("", ic::MINI, "Окно и трей"),
     ("", ic::DISCORD, "Discord"),
     ("Другое", ic::FOLDER, "Данные и копия"),
+    ("", ic::CHART, "Диагностика"),
     ("", ic::INFO, "О программе"),
 ];
 
@@ -29,7 +33,9 @@ fn row(ui: &mut Ui, title: &str, hint: &str, control: impl FnOnce(&mut Ui)) {
         ui.set_min_height(42.0);
         ui.vertical(|ui| {
             ui.set_max_width(ui.available_width() - 200.0);
-            ui.label(egui::RichText::new(crate::i18n::t(title)).font(theme::medium(13.5)).color(INK));
+            if !title.is_empty() {
+                ui.label(egui::RichText::new(crate::i18n::t(title)).font(theme::medium(13.5)).color(INK));
+            }
             if !hint.is_empty() {
                 ui.label(egui::RichText::new(crate::i18n::t(hint)).font(theme::body(12.0)).color(theme::ink2()));
             }
@@ -68,7 +74,14 @@ impl App {
         let body = egui::Rect::from_min_max(egui::pos2(side.right() + 18.0, avail.top()), avail.max);
         ui.painter().rect_filled(side, 18, theme::glass());
         let mut sui = ui.new_child(egui::UiBuilder::new().max_rect(side.shrink(10.0)).layout(egui::Layout::top_down(egui::Align::Min)));
+        let dev_tools = state::get().settings.read().unwrap().dev_tools;
+        if self.pages.settings_tab == DIAGNOSTICS && !dev_tools {
+            self.pages.settings_tab = 0;
+        }
         for (i, (group, icon, name)) in TABS.iter().enumerate() {
+            if i == DIAGNOSTICS && !dev_tools {
+                continue;
+            }
             if !group.is_empty() {
                 sui.add_space(if i == 0 { 2.0 } else { 10.0 });
                 sui.label(egui::RichText::new(crate::i18n::t(group).to_uppercase()).font(theme::medium(10.5)).color(theme::ink3()));
@@ -100,6 +113,7 @@ impl App {
                 6 => self.settings_window(ui),
                 7 => self.settings_discord(ui),
                 8 => self.settings_data(ui),
+                DIAGNOSTICS => self.settings_diagnostics(ui),
                 _ => self.settings_about(ui),
             }
         });
@@ -464,35 +478,169 @@ impl App {
         });
     }
 
+    /// О программе (About in src/pages/SettingsPage.tsx)
     fn settings_about(&mut self, ui: &mut Ui) {
-        card(ui, "EvPlayer", |ui| {
-            App::muted(ui, &format!("{} {} · {}", crate::i18n::t("Версия"), env!("CARGO_PKG_VERSION"), crate::i18n::t("Нативная версия")));
-            ui.add_space(4.0);
-            ui.label(egui::RichText::new(crate::i18n::t("Музыкальный плеер для SoundCloud, YouTube Music и ваших файлов. Без браузерного движка: окно рисует видеокарта, звук — свой.")).color(theme::ink2()));
-        });
-        card(ui, "Диагностика", |ui| {
-            let mem = crate::diagnostics::memory();
-            let line = |ui: &mut Ui, k: &str, v: String| {
-                ui.horizontal(|ui| {
-                    ui.label(egui::RichText::new(crate::i18n::t(k)).color(theme::ink2()));
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        ui.label(egui::RichText::new(v).font(theme::medium(13.0)).color(INK));
-                    });
-                });
-            };
-            line(ui, "Отрисовка", crate::app::renderer_name().into());
-            line(ui, "Память программы", format!("{:.1} МБ ({} {:.1} МБ)", mem.private_mb, crate::i18n::t("рабочий набор"), mem.working_mb));
-            line(ui, "Обложек в памяти", self.images.count().to_string());
-            let dev = self.player.device();
-            line(ui, "Звуковая карта", if dev.is_empty() { crate::i18n::t("не открыта (тишина)") } else { dev });
-            if let Some(t) = self.first_frame {
-                line(ui, "Первый кадр", format!("{} мс", t.as_millis()));
+        ui.horizontal(|ui| {
+            if let Some(logo) = &self.logo {
+                ui.add(egui::Image::new(egui::load::SizedTexture::new(logo.id(), vec2(64.0, 64.0))).corner_radius(16));
             }
-            ui.add_space(4.0);
-            ui.label(egui::RichText::new(crate::i18n::t("Обновляется раз в секунду, пока открыта эта вкладка.")).font(theme::body(11.5)).color(theme::ink3()));
-            ui.ctx().request_repaint_after(std::time::Duration::from_secs(1));
+            ui.add_space(10.0);
+            ui.vertical(|ui| {
+                ui.add_space(8.0);
+                ui.label(egui::RichText::new("EvPlayer").font(theme::heavy(26.0)).color(INK));
+                let line = format!("{} {} · {}", crate::i18n::t("Версия"), env!("CARGO_PKG_VERSION"), crate::i18n::t("открытый проект, лицензия MIT"));
+                let r = ui.add(egui::Label::new(egui::RichText::new(line).color(theme::ink2())).sense(egui::Sense::click()));
+                // seven clicks on the version within three seconds turn the developer's tools on or off
+                if r.clicked() {
+                    let now = std::time::Instant::now();
+                    self.pages.version_clicks.retain(|t| now.duration_since(*t) < std::time::Duration::from_secs(3));
+                    self.pages.version_clicks.push(now);
+                    if self.pages.version_clicks.len() >= 7 {
+                        self.pages.version_clicks.clear();
+                        let on = !state::get().settings.read().unwrap().dev_tools;
+                        state::get().set_settings(|s| s.dev_tools = on);
+                        self.toast(if on { "Диагностика включена: Настройки → Диагностика" } else { "Диагностика выключена" });
+                    }
+                }
+            });
         });
-        let _ = ACCENT;
+        ui.add_space(12.0);
+        card(ui, "Поддержать автора", |ui| {
+            row(ui, "", "EvPlayer бесплатный и без рекламы. Если он вам нравится, можно поддержать разработку через DonationAlerts.", |ui| {
+                if widgets::pill_button(ui, Some(ic::HEART_FILL), "Поддержать", true).clicked() {
+                    crate::dialogs::open_path(std::path::Path::new("https://www.donationalerts.com/r/evire"));
+                }
+            });
+        });
+        card(ui, "Проект", |ui| {
+            self.updates_row(ui);
+            row(ui, "Исходный код", "github.com/Evire1337/evplayer", |ui| {
+                if widgets::pill_button(ui, None, "Открыть", false).clicked() {
+                    crate::dialogs::open_path(std::path::Path::new("https://github.com/Evire1337/evplayer"));
+                }
+            });
+            row(ui, "Отрисовка", &crate::i18n::t("Без браузерного движка: окно рисует видеокарта, звук — свой."), |ui| {
+                ui.label(egui::RichText::new(crate::app::renderer_name()).font(theme::medium(13.0)).color(INK));
+            });
+        });
+        App::muted(ui, "Музыка — SoundCloud и YouTube, тексты — LRCLIB и Genius. EvPlayer не связан с этими сервисами.");
+    }
+
+    /// "Обновления" (filled in by the updater)
+    fn updates_row(&mut self, _ui: &mut Ui) {}
+
+    /// Диагностика (src/pages/settings/DiagnosticsTab.tsx): what the program takes right now
+    /// and what to do about it. Measures only while this tab is open.
+    fn settings_diagnostics(&mut self, ui: &mut Ui) {
+        App::muted(ui, "Сколько памяти и процессора берёт приложение, что из этого стоит дороже всего и что с этим сделать. Замеры идут только пока открыт этот раздел.");
+        ui.add_space(8.0);
+        let probe = self.pages.probe.get_or_insert_with(crate::diagnostics::Probe::new);
+        probe.tick(std::time::Duration::from_secs(2));
+        ui.ctx().request_repaint_after(std::time::Duration::from_secs(2));
+        let sample = probe.last.clone().unwrap_or_default();
+        let settings = state::get().settings();
+        let fx = state::get().effects.read().unwrap().clone();
+        let (eq_on, normalize) = {
+            let eq = state::get().eq.read().unwrap();
+            (eq.enabled, eq.normalize)
+        };
+        let sound_processing = eq_on || normalize || fx.reverb || (fx.speed - 1.0).abs() > 0.001 || fx.pitch.abs() > 0.001 || settings.crossfade > 0.0;
+        let mut stored: Vec<(String, usize)> = state::get().kv.snapshot().into_iter().map(|(k, v)| (k, v.len())).collect();
+        stored.sort_by(|a, b| b.1.cmp(&a.1));
+        let advice = crate::diagnostics::advise(&sample, &crate::diagnostics::Knobs { memory_saver: settings.memory_saver, overlay_enabled: settings.overlay_enabled, sound_processing }, &stored);
+        let lib = state::get().library.read().unwrap();
+        let counts = (lib.likes.len(), lib.playlists.len(), lib.playlists.iter().map(|p| p.items.len()).sum::<usize>());
+        drop(lib);
+        let history = state::get().history.lock().unwrap().entries.len();
+        let queue = self.view.queue.len();
+        let offline = self.downloads.saved().len();
+        let report = {
+            let mut lines = vec![
+                format!("EvPlayer (нативная версия {}) — диагностика, {}", env!("CARGO_PKG_VERSION"), chrono::Local::now().format("%d.%m.%Y %H:%M:%S")),
+                format!("Память: своя {:.1} МБ, в оперативной {:.1} МБ; потоков {}", sample.private_mb, sample.working_mb, sample.threads),
+                format!("Процессор: {:.1}%; кадров в секунду {:.1}; звук {:.2}% ядра; отрисовка: {}", sample.cpu, sample.fps, sample.sound, crate::app::renderer_name()),
+                format!("Обложек в памяти: {}; звуковая карта: {}", self.images.count(), self.player.device()),
+                format!("Данные: лайков {}, плейлистов {} ({} треков), история {}, очередь {}, офлайн {}", counts.0, counts.1, counts.2, history, queue, offline),
+                format!("Хранилище: {}", stored.iter().take(8).map(|(k, b)| format!("{k} {}", crate::diagnostics::mb(*b as f64))).collect::<Vec<_>>().join(", ")),
+            ];
+            lines.push(format!("Советы: {}", if advice.is_empty() { "нет".to_string() } else { advice.iter().map(|a| a.title).collect::<Vec<_>>().join(", ") }));
+            lines.join("\n")
+        };
+        card(ui, "Сейчас", |ui| {
+            if probe_ready(&sample) {
+                row(ui, "Память", "Своя память программы, как «Память» в диспетчере задач", |ui| {
+                    ui.label(egui::RichText::new(format!("{:.0} МБ", sample.private_mb)).font(theme::medium(13.5)).color(INK));
+                });
+                row(ui, "В оперативной памяти", &format!("{} {}", crate::i18n::t("С общими библиотеками Windows; потоков:"), sample.threads), |ui| {
+                    ui.label(egui::RichText::new(format!("{:.0} МБ", sample.working_mb)).font(theme::medium(13.5)).color(INK));
+                });
+                row(ui, "Процессор", "Доля всего процессора, как в диспетчере задач", |ui| {
+                    ui.label(egui::RichText::new(format!("{:.1}%", sample.cpu)).font(theme::medium(13.5)).color(INK));
+                });
+                row(ui, "Отрисовка", &format!("{}: {}", crate::i18n::t("Окно рисуется только когда что-то меняется"), crate::app::renderer_name()), |ui| {
+                    ui.label(egui::RichText::new(format!("{:.0} {}", sample.fps, crate::i18n::t("кадр/с"))).font(theme::medium(13.5)).color(INK));
+                });
+                let dev = self.player.device();
+                row(ui, "Обработка звука", &format!("{} · {}", if sound_processing { crate::i18n::t("Эквалайзер, эффекты, кроссфейд: включена") } else { crate::i18n::t("выключена") }, if dev.is_empty() { crate::i18n::t("звуковая карта не открыта") } else { dev }), |ui| {
+                    ui.label(egui::RichText::new(format!("{:.2}% {}", sample.sound, crate::i18n::t("ядра"))).font(theme::medium(13.5)).color(INK));
+                });
+                row(ui, "Обложек в памяти", "Картинки, которые сейчас на видеокарте", |ui| {
+                    ui.label(egui::RichText::new(self.images.count().to_string()).font(theme::medium(13.5)).color(INK));
+                });
+                if let Some(t) = self.first_frame {
+                    row(ui, "Первый кадр", "С запуска программы до первого нарисованного окна", |ui| {
+                        ui.label(egui::RichText::new(format!("{} мс", t.as_millis())).font(theme::medium(13.5)).color(INK));
+                    });
+                }
+                ui.add_space(4.0);
+                if widgets::pill_button(ui, None, "Скопировать отчёт", false).clicked() {
+                    ui.ctx().copy_text(report.clone());
+                    self.toast("Отчёт скопирован: его можно прислать разработчику");
+                }
+            } else {
+                App::muted(ui, "Замеряю…");
+            }
+        });
+        card(ui, "Советы", |ui| {
+            if advice.is_empty() {
+                App::muted(ui, "Всё в порядке: ничего лишнего не тратится.");
+            }
+            for a in &advice {
+                let tag = match a.level {
+                    0 => "важно",
+                    1 => "стоит",
+                    _ => "к сведению",
+                };
+                row(ui, a.title, &format!("{} · {}", crate::i18n::t(tag), a.detail), |ui| {
+                    match a.id {
+                        "memory" => {
+                            if widgets::pill_button(ui, None, "Включить экономию памяти", true).clicked() {
+                                state::get().set_settings(|s| s.memory_saver = true);
+                            }
+                        }
+                        "overlay" => {
+                            if widgets::pill_button(ui, None, "Выключить мини-плеер", false).clicked() {
+                                state::get().set_settings(|s| s.overlay_enabled = false);
+                            }
+                        }
+                        _ => {}
+                    }
+                });
+            }
+        });
+        card(ui, "Данные", |ui| {
+            row(ui, "Библиотека", &format!("{} {}, {} {}", counts.1, crate::i18n::t("плейлистов"), crate::i18n::tracks(counts.2), crate::i18n::t("в них")), |ui| {
+                ui.label(egui::RichText::new(format!("{} {}", counts.0, crate::i18n::t("лайков"))).font(theme::medium(13.5)).color(INK));
+            });
+            row(ui, "История и очередь", &format!("{} {offline}", crate::i18n::t("Офлайн:")), |ui| {
+                ui.label(egui::RichText::new(format!("{history} / {queue}")).font(theme::medium(13.5)).color(INK));
+            });
+            for (k, b) in stored.iter().take(5) {
+                row(ui, k, "Хранится на этом устройстве", |ui| {
+                    ui.label(egui::RichText::new(crate::diagnostics::mb(*b as f64)).font(theme::medium(13.5)).color(INK));
+                });
+            }
+        });
     }
 }
 
@@ -511,4 +659,9 @@ fn dir_size(p: &std::path::Path) -> u64 {
         Ok(t) if t.is_dir() => dir_size(&e.path()),
         _ => e.metadata().map(|m| m.len()).unwrap_or(0),
     }).sum()).unwrap_or(0)
+}
+
+/// the first reading is in
+fn probe_ready(s: &crate::diagnostics::Sample) -> bool {
+    s.private_mb > 0.0 || s.working_mb > 0.0
 }

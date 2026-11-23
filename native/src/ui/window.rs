@@ -26,6 +26,10 @@ use crate::app::actions::Action;
 use crate::app::App;
 use crate::events::{self, Event};
 
+/// frames actually drawn since the start (a frame that would look the same is skipped and not
+/// counted), for Настройки → Диагностика
+pub static FRAMES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 /// the window's colour before anything is drawn: the app's ground (#06201d)
 pub const GROUND: [u8; 3] = [6, 32, 29];
 
@@ -168,6 +172,9 @@ impl Shell {
         let print = super::soft::frame_print(&prims, size.width, size.height, ppp);
         let same = !self.dirty && !textures_changed && print == self.last_print;
         self.last_print = print;
+        if !same {
+            FRAMES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        }
         match self.painter.as_mut() {
             Some(Painter::Gpu(g)) => {
                 g.set_textures(&out.textures_delta);

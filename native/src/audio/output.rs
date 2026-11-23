@@ -35,6 +35,9 @@ pub enum Cmd {
 }
 
 /// what the main side and the sound card's thread share
+/// time spent making sound (decks, resampling, effects), nanoseconds since the start
+pub static RENDER_NS: AtomicU64 = AtomicU64::new(0);
+
 pub struct Shared {
     /// 0..1, as f32 bits
     pub volume: AtomicU32,
@@ -232,7 +235,14 @@ impl Mixer {
     }
 
     /// fill `out` (interleaved, `channels` per frame) with the next sound
+    /// one block for the sound card; the time it took is counted for Настройки → Диагностика
     pub fn render(&mut self, out: &mut [f32], channels: usize) {
+        let t0 = std::time::Instant::now();
+        self.render_block(out, channels);
+        RENDER_NS.fetch_add(t0.elapsed().as_nanos() as u64, Ordering::Relaxed);
+    }
+
+    fn render_block(&mut self, out: &mut [f32], channels: usize) {
         self.commands();
         let frames = out.len() / channels.max(1);
         if self.mix.len() < frames * 2 {

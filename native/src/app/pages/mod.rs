@@ -38,6 +38,10 @@ pub struct Pages {
     pub data_usage: Option<(std::time::Instant, [u64; 3])>,
     /// the offline menu of a playlist is open
     pub offline_menu: bool,
+    /// clicks on the version in О программе (seven turn the diagnostics on)
+    pub version_clicks: Vec<std::time::Instant>,
+    /// the diagnostics' measurements while their tab is open
+    pub probe: Option<crate::diagnostics::Probe>,
 }
 
 impl App {

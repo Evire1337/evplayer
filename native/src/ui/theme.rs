@@ -228,6 +228,7 @@ pub mod ic {
     pub const QUEUE: &str = "\u{E90B}";
     pub const SYNC: &str = "\u{E895}";
     pub const INFO: &str = "\u{E946}";
+    pub const CHART: &str = "\u{E9D2}";
     pub const OPEN: &str = "\u{E8A7}";
     pub const MINI: &str = "\u{E944}";
     pub const KEYBOARD: &str = "\u{E765}";
