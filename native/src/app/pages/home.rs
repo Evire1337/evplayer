@@ -185,9 +185,10 @@ impl App {
                         let src = crate::ui::images::artwork_of(t);
                         widgets::paint_cover(ui, &mut self.images, src.as_deref(), q, 0);
                     }
-                    let tint = egui::ecolor::Hsva::new(hue / 360.0, 0.7, 0.32, 0.5);
-                    ui.painter().rect_filled(art, 16, egui::Color32::from(tint));
-                    ui.painter().text(art.center(), egui::Align2::CENTER_CENTER, "{E734}", crate::ui::theme::icon(26.0), crate::ui::theme::INK);
+                    // a dark wash in the list's own colour (Hsva is linear light: 0.05 is about a quarter on screen), so the star and the covers' mix read as one card
+                    let [cr, cg, cb] = egui::ecolor::Hsva::new(hue / 360.0, 0.7, 0.05, 1.0).to_srgb();
+                    ui.painter().rect_filled(art, 16, egui::Color32::from_rgba_unmultiplied(cr, cg, cb, 180));
+                    ui.painter().text(art.center(), egui::Align2::CENTER_CENTER, "\u{E734}", crate::ui::theme::icon(26.0), crate::ui::theme::INK);
                     let g = widgets::clipped(ui, &crate::i18n::t(title), theme::medium(14.0), crate::ui::theme::INK, w);
                     ui.painter().galley(egui::pos2(rect.left(), art.bottom() + 8.0), g, crate::ui::theme::INK);
                     ui.painter().text(egui::pos2(rect.left(), art.bottom() + 28.0), egui::Align2::LEFT_TOP, crate::i18n::tracks(tracks.len()), theme::body(13.0), theme::ink2());
