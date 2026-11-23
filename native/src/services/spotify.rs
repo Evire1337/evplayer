@@ -259,6 +259,11 @@ fn save_account(a: Option<&Account>) {
     crate::state::get().set_extra("spotifyAccount", a.map(|a| serde_json::to_value(a).unwrap_or(Value::Null)).unwrap_or(Value::Null));
 }
 
+/// this build carries EvPlayer's own Spotify application
+pub fn builtin_client_id() -> bool {
+    !DEFAULT_CLIENT_ID.is_empty()
+}
+
 pub fn client_id() -> String {
     let s = crate::state::get().settings.read().unwrap().spotify_client_id.trim().to_string();
     if s.is_empty() {

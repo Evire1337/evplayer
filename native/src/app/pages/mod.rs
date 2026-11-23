@@ -10,7 +10,8 @@ pub mod now;
 mod search;
 pub mod services;
 mod settings;
-mod sound;
+pub mod kit;
+pub mod sound;
 
 use egui::{pos2, vec2, Rect, Ui};
 
@@ -51,6 +52,19 @@ pub struct Pages {
     /// a playlist's "…" and its order menu are open
     pub playlist_menu: bool,
     pub sort_menu: bool,
+    /// Настройки → Клавиши: the scope shown, the filter, and the shortcut waiting for a key
+    pub keys_scope: usize,
+    pub keys_query: String,
+    pub keys_listening: Option<&'static str>,
+    /// Настройки → Внешний вид: what each "Не сохранять" item takes, looked at every few seconds
+    pub dont_keep: Option<(std::time::Instant, [u64; 5])>,
+    /// Настройки → Discord: the setup steps are open
+    pub discord_setup: Option<bool>,
+    /// Настройки → Звук: the band chosen on the graph, the preset whose menu is open, and the
+    /// name / code dialog (save, rename, paste)
+    pub eq_band: Option<String>,
+    pub eq_menu: Option<(String, egui::Pos2)>,
+    pub eq_dialog: Option<sound::PresetDialog>,
 }
 
 impl App {

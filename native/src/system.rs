@@ -118,6 +118,13 @@ pub fn set_hotkeys(map: Vec<(String, Action)>) {
     order(Order::Hotkeys(map));
 }
 
+/// the system-wide keys Windows refused last time (another program holds them)
+static TAKEN: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+
+pub fn taken_hotkeys() -> Vec<String> {
+    TAKEN.lock().unwrap().clone()
+}
+
 pub fn quit() {
     order(Order::Quit);
 }
@@ -273,6 +280,7 @@ unsafe fn apply_orders(hwnd: win::HWND) {
                     UnregisterHotKey(hwnd, id as i32);
                 }
                 actions.clear();
+                let mut taken = Vec::new();
                 for (acc, action) in map {
                     let Some((mods, vk)) = parse_accelerator(&acc) else { continue };
                     let id = actions.len();
@@ -280,10 +288,12 @@ unsafe fn apply_orders(hwnd: win::HWND) {
                         actions.push(action);
                     } else {
                         eprintln!("[keys] {acc} is taken by another program");
+                        taken.push(acc.clone());
                         // keep the ids in step with the list
                         actions.push(Action::Noop);
                     }
                 }
+                *TAKEN.lock().unwrap() = taken;
             }
             Order::Quit => {
                 let nid = icon_data(hwnd);

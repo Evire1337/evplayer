@@ -178,7 +178,12 @@ pub fn apply(ctx: &egui::Context) {
     v.text_options.font_hinting = true;
     v.popup_shadow = egui::Shadow::NONE;
     v.window_shadow = egui::Shadow { offset: [0, 8], blur: 24, spread: 0, color: Color32::from_black_alpha(90) };
-    ctx.set_visuals(v);
+    v.text_edit_bg_color = Some(Color32::from_rgba_unmultiplied(238, 247, 244, 18));
+    // always these colours: following Windows' light app mode would switch to egui's light
+    // palette, with white text fields on the dark page
+    ctx.options_mut(|o| o.theme_preference = egui::ThemePreference::Dark);
+    ctx.set_visuals_of(egui::Theme::Dark, v.clone());
+    ctx.set_visuals_of(egui::Theme::Light, v);
     ctx.all_styles_mut(|s| {
         s.spacing.item_spacing = egui::vec2(8.0, 6.0);
         s.spacing.button_padding = egui::vec2(12.0, 6.0);

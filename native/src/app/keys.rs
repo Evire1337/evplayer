@@ -114,6 +114,15 @@ fn key_name(k: egui::Key) -> Option<String> {
     })
 }
 
+/// a new key is being recorded in Настройки → Клавиши: the window's keys stay quiet
+pub static RECORDING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// the shortcut of the same scope that already has this key
+pub fn conflict_for(overrides: &Map<String, Value>, id: &str, acc: &str) -> Option<&'static Shortcut> {
+    let scope = SHORTCUTS.iter().find(|d| d.id == id)?.scope;
+    SHORTCUTS.iter().find(|d| d.id != id && d.scope == scope && binding(overrides, d) == Some(acc))
+}
+
 pub struct Keys;
 
 impl Keys {
@@ -133,7 +142,7 @@ impl Keys {
 
     /// keys pressed in the window (not while typing in a field)
     pub fn window_keys(ctx: &egui::Context, app: &mut App) {
-        if ctx.egui_wants_keyboard_input() || app.dialog.is_some() {
+        if ctx.egui_wants_keyboard_input() || app.dialog.is_some() || RECORDING.load(std::sync::atomic::Ordering::Relaxed) {
             return;
         }
         let pressed: Vec<(egui::Key, egui::Modifiers)> = ctx.input(|i| i.events.iter().filter_map(|e| if let egui::Event::Key { key, pressed: true, modifiers, repeat: _, .. } = e { Some((*key, *modifiers)) } else { None }).collect());

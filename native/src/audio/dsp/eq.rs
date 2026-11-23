@@ -68,8 +68,8 @@ pub fn advanced_bands() -> Vec<Band> {
 pub const PRESETS: [(&str, &str, [f64; 6]); 6] = [
     ("flat", "Ровно", [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
     ("rich", "Насыщенно", [4.0, 1.5, -1.5, 0.0, 2.0, 3.5]),
-    ("bass", "Басы", [6.0, 2.5, 0.0, 0.0, 0.0, 0.0]),
-    ("vocal", "Голос", [-1.0, -2.0, 0.0, 3.0, 2.5, 0.5]),
+    ("bass", "Бас", [6.0, 2.5, 0.0, 0.0, 0.0, 0.0]),
+    ("vocal", "Вокал", [-1.0, -2.0, 0.0, 3.0, 2.5, 0.5]),
     ("warm", "Тепло", [3.0, 1.0, 1.5, 0.0, -1.0, -2.0]),
     ("bright", "Ярко", [0.0, 0.0, -0.5, 1.0, 2.5, 5.0]),
 ];
@@ -248,8 +248,150 @@ impl EqState {
     }
 }
 
+impl EqState {
+    /// "Сохранить текущие настройки сюда"
+    pub fn overwrite_preset(&mut self, id: &str) {
+        let (bands, preamp) = (self.bands.clone(), self.preamp);
+        if let Some(p) = self.custom_presets.iter_mut().find(|p| p.id == id) {
+            p.bands = bands;
+            p.preamp = preamp;
+            self.preset = id.into();
+        }
+    }
+
+    pub fn rename_preset(&mut self, id: &str, name: &str) {
+        let name: String = name.trim().chars().take(32).collect();
+        if let Some(p) = self.custom_presets.iter_mut().find(|p| p.id == id) {
+            if !name.is_empty() {
+                p.name = name;
+            }
+        }
+    }
+
+    pub fn delete_preset(&mut self, id: &str) {
+        self.custom_presets.retain(|p| p.id != id);
+        if self.preset == id {
+            self.preset = "custom".into();
+        }
+    }
+
+    /// a preset one place left or right among this mode's saved presets; the other mode's
+    /// keep their places
+    pub fn move_preset(&mut self, from: usize, to: usize) {
+        let adv = self.advanced();
+        let slots: Vec<usize> = self.custom_presets.iter().enumerate().filter(|(_, p)| (p.bands.len() > 6) == adv).map(|(i, _)| i).collect();
+        let mut own: Vec<CustomPreset> = slots.iter().map(|&i| self.custom_presets[i].clone()).collect();
+        if from >= own.len() {
+            return;
+        }
+        let item = own.remove(from);
+        own.insert(to.min(own.len()), item);
+        for (k, slot) in slots.into_iter().enumerate() {
+            self.custom_presets[slot] = own[k].clone();
+        }
+    }
+
+    /// a preset pasted from a code: kept, and put on (switching the mode with it)
+    pub fn import_preset(&mut self, name: String, bands: Vec<Band>, preamp: f64) -> String {
+        let id = format!("cp_{}", crate::store::state::new_id("x").trim_start_matches("x_"));
+        let adv = bands.len() > 6;
+        if adv != self.advanced() {
+            self.other_bands = std::mem::take(&mut self.bands);
+            self.other_preset = self.preset.clone();
+            self.mode = if adv { "advanced".into() } else { "simple".into() };
+        }
+        self.custom_presets.push(CustomPreset { id: id.clone(), name, bands: bands.clone(), preamp });
+        self.bands = bands;
+        self.preamp = preamp;
+        self.preset = id.clone();
+        self.enabled = true;
+        id
+    }
+
+    /// a band changed by hand: the values kept in their ranges, the preset becomes "custom"
+    pub fn update_band(&mut self, id: &str, f: impl FnOnce(&mut Band)) {
+        if let Some(b) = self.bands.iter_mut().find(|b| b.id == id) {
+            f(b);
+            b.frequency = b.frequency.clamp(MIN_FREQ, MAX_FREQ);
+            b.gain = (b.gain.clamp(-MAX_GAIN, MAX_GAIN) * 10.0).round() / 10.0;
+            b.q = b.q.clamp(MIN_Q, MAX_Q);
+        }
+        self.preset = "custom".into();
+    }
+
+    /// "Сбросить": this mode's bands flat, no preamp
+    pub fn reset(&mut self) {
+        self.bands = if self.advanced() { advanced_bands() } else { default_bands() };
+        self.preset = "flat".into();
+        self.preamp = 0.0;
+    }
+}
+
+const TYPES: [BandType; 3] = [BandType::Lowshelf, BandType::Peaking, BandType::Highshelf];
+
+/// EVQ1.<base64url json>: an equalizer preset that can be pasted to a friend (presetCode.ts)
+pub fn encode_preset_code(name: &str, bands: &[Band], preamp: f64) -> String {
+    use base64::Engine;
+    let b: Vec<serde_json::Value> = bands
+        .iter()
+        .map(|b| serde_json::json!([TYPES.iter().position(|t| *t == b.kind).unwrap_or(1), b.frequency.round() as i64, b.gain, (b.q * 100.0).round() / 100.0, if b.enabled { 1 } else { 0 }]))
+        .collect();
+    let wire = serde_json::json!({ "v": 1, "n": name, "p": preamp, "b": b });
+    format!("EVQ1.{}", base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(wire.to_string()))
+}
+
+/// the preset in a code: its name, bands and preamp
+pub fn decode_preset_code(code: &str) -> Option<(String, Vec<Band>, f64)> {
+    use base64::Engine;
+    let body: String = code.trim().strip_prefix("EVQ1.")?.chars().filter(|c| !c.is_whitespace()).collect();
+    let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(body.trim_end_matches('=')).ok()?;
+    let wire: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
+    if wire["v"].as_i64() != Some(1) {
+        return None;
+    }
+    let rows = wire["b"].as_array()?;
+    let base = if rows.len() > 6 { advanced_bands() } else { default_bands() };
+    let num = |v: &serde_json::Value| v.as_f64().filter(|x| *x != 0.0);
+    let bands = base
+        .into_iter()
+        .enumerate()
+        .map(|(i, mut band)| {
+            if let Some(row) = rows.get(i).and_then(|r| r.as_array()) {
+                if let Some(t) = row.first().and_then(|v| v.as_u64()).and_then(|t| TYPES.get(t as usize)) {
+                    band.kind = *t;
+                }
+                band.frequency = row.get(1).and_then(num).unwrap_or(band.frequency).clamp(MIN_FREQ, MAX_FREQ);
+                band.gain = row.get(2).and_then(num).unwrap_or(0.0).clamp(-MAX_GAIN, MAX_GAIN);
+                band.q = row.get(3).and_then(num).unwrap_or(band.q).clamp(MIN_Q, MAX_Q);
+                band.enabled = row.get(4).and_then(|v| v.as_f64()) != Some(0.0);
+            }
+            band
+        })
+        .collect();
+    let name: String = wire["n"].as_str().filter(|n| !n.is_empty()).unwrap_or("Preset").chars().take(32).collect();
+    let preamp = wire["p"].as_f64().unwrap_or(0.0).clamp(MIN_PREAMP, MAX_PREAMP);
+    Some((name, bands, preamp))
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_preset_code_comes_back_as_it_went() {
+        let mut bands = default_bands();
+        bands[1].gain = 3.5;
+        bands[2].kind = BandType::Highshelf;
+        bands[3].enabled = false;
+        let code = encode_preset_code("Мой", &bands, -2.0);
+        assert!(code.starts_with("EVQ1."));
+        let (name, back, preamp) = decode_preset_code(&code).unwrap();
+        assert_eq!(name, "Мой");
+        assert_eq!(preamp, -2.0);
+        assert_eq!(back[1].gain, 3.5);
+        assert_eq!(back[2].kind, BandType::Highshelf);
+        assert!(!back[3].enabled);
+        assert!(decode_preset_code("hello").is_none());
+    }
+
     use super::*;
 
     #[test]

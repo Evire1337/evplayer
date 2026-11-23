@@ -35,6 +35,12 @@ pub fn status() -> String {
     }
 }
 
+/// the connection to Discord as Настройки → Discord shows it: off, connecting, connected,
+/// no-discord or error, with the account once connected
+pub fn discord_status() -> crate::discord::Status {
+    DISCORD.get().map(|d| d.status()).unwrap_or(crate::discord::Status { status: "off", user: None, error: None })
+}
+
 #[derive(PartialEq, Clone)]
 struct Shown {
     id: String,
