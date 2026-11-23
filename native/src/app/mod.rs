@@ -306,6 +306,10 @@ impl App {
 
     pub fn quit(&mut self) {
         self.quitting = true;
+        // a goodbye, so the others in a session do not wait for the timeout
+        if let Some(j) = crate::jam::engine::get() {
+            j.goodbye();
+        }
         self.player.save_session();
         self.player.shutdown();
         state::get().kv.flush();
@@ -369,8 +373,22 @@ impl App {
         }
     }
 
+    /// an evplayer:// link given to the program: a session to join (a QR code, an invite)
     pub fn open_link(&mut self, link: &str) {
-        self.toast(&format!("Ссылка: {link}"));
+        let code = crate::jam::protocol::normalize_code(link);
+        let Some(jam) = crate::jam::engine::get().cloned() else { return };
+        if code.is_empty() {
+            self.toast(&format!("Ссылка: {link}"));
+            return;
+        }
+        jam.set_open(true);
+        let v = jam.view();
+        if v.status == crate::jam::engine::JamStatus::Idle {
+            // the whole text: an invite from Discord carries the host's pass after the code
+            jam.join(link);
+        } else if v.code != code {
+            self.toast("Чтобы войти в другую сессию, сначала выйдите из этой");
+        }
     }
 
     pub fn wants_hide(&mut self) -> bool {
@@ -400,6 +418,12 @@ impl App {
             "likes" => Page::Playlist("likes".into()),
             "files" => Page::Files,
             "settings" => Page::Settings,
+            "jam" => {
+                if let Some(j) = crate::jam::engine::get() {
+                    j.set_open(true);
+                }
+                Page::Now
+            }
             "sound" => {
                 self.pages.sound_open = true;
                 Page::Library
@@ -572,6 +596,7 @@ impl App {
         }
         self.track_menu(&ctx);
         self.dialogs(&ctx);
+        self.jam_ui(&ctx);
         self.import_pill(ui, screen);
         self.download_pill(ui, screen);
         self.toasts_ui(ui, screen);
@@ -707,7 +732,7 @@ impl App {
         const BTN: f32 = 50.0;
         const GAP: f32 = 6.0;
         let logo_block = 4.0 + 32.0 + 10.0;
-        let h = 10.0 + logo_block + items.len() as f32 * (BTN + GAP) + (10.0 + GAP) + 10.0;
+        let h = 10.0 + logo_block + (items.len() + 1) as f32 * (BTN + GAP) + (10.0 + GAP) + 10.0 - GAP;
         let top = (screen.center().y - h / 2.0).max(screen.top() + 44.0);
         let rail = Rect::from_min_size(pos2(screen.left() + 20.0, top), vec2(BTN + 16.0, h));
         ui.painter().rect_filled(rail, CornerRadius::same(28), theme::glass());
@@ -719,10 +744,39 @@ impl App {
         crate::ui::icons::paint(ui.painter(), "logo", Rect::from_center_size(lr.center(), vec2(lw, lh)), Color32::from_white_alpha(230));
         let mut y = rail.top() + 10.0 + logo_block + GAP;
         let last = items.len() - 1;
+        let jam = crate::jam::engine::get().map(|j| j.view());
         for (i, (icon, tip, page)) in items.into_iter().enumerate() {
             if i == last {
-                // .rail-gap before the settings
+                // .rail-gap, then "Слушать вместе", then the settings
                 y += 10.0 + GAP;
+                let r = Rect::from_min_size(pos2(rail.center().x - BTN / 2.0, y), vec2(BTN, BTN));
+                y += BTN + GAP;
+                let resp = ui.interact(r, ui.scope_id().with("rail-jam"), Sense::click());
+                let live = jam.as_ref().is_some_and(|v| v.status == crate::jam::engine::JamStatus::Live);
+                if resp.hovered() {
+                    ui.painter().rect_filled(r, CornerRadius::same(19), theme::hover());
+                }
+                crate::ui::icons::paint(ui.painter(), "jam", Rect::from_center_size(r.center(), vec2(21.0, 21.0)), if live { theme::ACCENT } else if resp.hovered() { INK } else { theme::ink2() });
+                if live {
+                    // .rail-jam-dot
+                    let c = pos2(r.right() - 9.0 - 4.5, r.top() + 9.0 + 4.5);
+                    ui.painter().circle_filled(c, 7.0, theme::ACCENT.gamma_multiply(0.25));
+                    ui.painter().circle_filled(c, 4.5, theme::ACCENT);
+                }
+                if resp.hovered() {
+                    let n = jam.as_ref().map(|v| v.people.len()).unwrap_or(0);
+                    let text = if live { format!("{}: {n}", crate::i18n::t("Слушаете вместе")) } else { crate::i18n::t("Слушать вместе") };
+                    let painter = ui.ctx().layer_painter(egui::LayerId::new(egui::Order::Tooltip, egui::Id::unique("rail-tip")));
+                    let g = painter.layout_no_wrap(text, theme::medium(12.5), INK);
+                    let tr = Rect::from_min_size(pos2(r.right() + 20.0, r.center().y - g.size().y / 2.0 - 6.0), g.size() + vec2(20.0, 12.0));
+                    painter.rect_filled(tr, CornerRadius::same(10), theme::glass_strong());
+                    painter.galley(tr.min + vec2(10.0, 6.0), g, INK);
+                }
+                if resp.clicked() {
+                    if let Some(j) = crate::jam::engine::get() {
+                        j.set_open(true);
+                    }
+                }
             }
             let r = Rect::from_min_size(pos2(rail.center().x - BTN / 2.0, y), vec2(BTN, BTN));
             y += BTN + GAP;
@@ -836,6 +890,8 @@ impl App {
         }
         let fx = state::get().effects.read().unwrap().clone();
         let tuned = !fx.is_neutral();
+        // "Слушать вместе" (the first of the tools)
+        let live = crate::jam::engine::get().is_some_and(|j| j.view().status == crate::jam::engine::JamStatus::Live);
         let sr = widgets::tool_button(ui, ic::SLIDERS, self.pages.sound_open || tuned, if self.pages.sound_open { "" } else { "Звук, скорость и тон" });
         if sr.clicked() {
             self.pages.sound_open = !self.pages.sound_open;
@@ -848,6 +904,11 @@ impl App {
         self.pages.sound_open = open;
         if changed {
             self.player.apply_sound();
+        }
+        if widgets::tool_button(ui, ic::PEOPLE, live, "Слушать вместе").clicked() {
+            if let Some(j) = crate::jam::engine::get() {
+                j.set_open(true);
+            }
         }
         let mut open = self.pages.volume_open;
         let mut vol = if v.muted { 0.0 } else { v.volume };

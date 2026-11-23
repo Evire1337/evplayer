@@ -98,6 +98,8 @@ fn main() {
     state::init(dir.clone());
     let ctx = egui::Context::default();
     let app = app::App::new(&ctx, dir, started);
+    // "Слушать вместе": nothing of it runs until a session is opened
+    jam::engine::init(app.player.clone());
     if let Some(opts) = ui::snapshot::parse(&args) {
         if let Err(e) = ui::snapshot::run(app, ctx, opts) {
             eprintln!("[snapshot] {e}");

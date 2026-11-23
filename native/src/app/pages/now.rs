@@ -68,6 +68,11 @@ impl App {
         } else if !info.is_empty() {
             lui.label(egui::RichText::new(crate::i18n::t(&info.join(" · "))).font(theme::body(12.5)).color(theme::ink3()));
         }
+        // a session on: who listens along
+        lui.scope(|ui| {
+            ui.set_width(art);
+            self.jam_banner(ui);
+        });
         lui.add_space(10.0);
         // the big progress (7 px), the times under it
         if let Some(f) = widgets::seek_bar_sized(&mut lui, art, (v.position_ms / v.duration_ms.max(1.0)) as f32, v.buffered, 7.0) {

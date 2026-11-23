@@ -4,6 +4,7 @@
 mod artist;
 mod files;
 mod home;
+pub mod jam;
 mod library;
 pub mod now;
 mod search;
@@ -45,6 +46,8 @@ pub struct Pages {
     pub probe: Option<crate::diagnostics::Probe>,
     /// Настройки → Сервисы и импорт
     pub services: services::ServicesState,
+    /// «Слушать вместе»
+    pub jam: jam::JamUi,
 }
 
 impl App {
