@@ -41,6 +41,7 @@ pub mod diagnostics;
 pub mod dialogs;
 pub mod events;
 pub mod i18n;
+pub mod import;
 pub mod model;
 mod nettest;
 pub mod player;

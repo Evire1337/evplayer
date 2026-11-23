@@ -142,6 +142,16 @@ impl App {
         let q = self.pages.search.query.trim().to_string();
         let st = &mut self.pages.search;
         let settled = st.typed_at.is_none_or(|t| t.elapsed().as_millis() as u64 >= TYPE_PAUSE_MS) || resp.lost_focus();
+        // a link, a code or a list of songs pasted into the search: it can become a playlist
+        if crate::import::link_kind(&q).is_some() || (q.contains('\n') && crate::import::looks_like_track_list(&q)) {
+            ui.add_space(20.0);
+            App::muted(ui, "Это ссылка или код плейлиста — его можно сохранить в библиотеку.");
+            ui.add_space(8.0);
+            if widgets::pill_button(ui, Some(ic::DOWNLOAD), "Импортировать", true).clicked() {
+                self.start_import(q.clone(), None);
+            }
+            return;
+        }
         if q.is_empty() {
             self.search_history(ui);
             return;

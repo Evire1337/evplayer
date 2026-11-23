@@ -49,6 +49,9 @@ impl App {
                 if widgets::pill_button(ui, Some(ic::ADD), "Новый плейлист", true).clicked() {
                     self.dialog = Some(Dialog::NewPlaylist { title: String::new(), add: vec![] });
                 }
+                if widgets::pill_button(ui, Some(ic::LINK), "Импорт по ссылке или коду", false).clicked() {
+                    self.dialog = Some(Dialog::Import { text: String::new(), likes: false });
+                }
             });
         });
         ui.add_space(12.0);
@@ -140,6 +143,12 @@ impl App {
                         if widgets::icon_button(ui, ic::EDIT, 34.0, false, "Изменить").clicked() {
                             let d = lib.playlists.iter().find(|p| p.id == id).and_then(|p| p.description.clone()).unwrap_or_default();
                             self.dialog = Some(Dialog::Rename { id: id.to_string(), title: title.clone(), description: d });
+                        }
+                        if widgets::icon_button(ui, ic::LINK, 34.0, false, "Скопировать код плейлиста").clicked() {
+                            let p = lib.playlists.iter().find(|p| p.id == id);
+                            let code = crate::import::encode_code(&crate::import::Shared { title: title.clone(), description: p.and_then(|p| p.description.clone()), icon: p.and_then(|p| p.icon.clone()), tracks: tracks.clone(), likes: false });
+                            ui.ctx().copy_text(code);
+                            self.toast("Код плейлиста скопирован — вставьте его в «Импорт» на другом компьютере");
                         }
                         if widgets::icon_button(ui, ic::DELETE, 34.0, false, "Удалить плейлист").clicked() {
                             self.dialog = Some(Dialog::ConfirmDelete { id: id.to_string(), title: title.clone() });

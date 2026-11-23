@@ -246,6 +246,30 @@ impl App {
                         }
                     });
                 }
+                Dialog::Import { text, likes } => {
+                    ui.label(egui::RichText::new(crate::i18n::t("Импорт по ссылке или коду")).font(theme::heavy(19.0)));
+                    ui.add_space(6.0);
+                    ui.label(egui::RichText::new(crate::i18n::t("Ссылка на плейлист, альбом или трек из SoundCloud, YouTube, Spotify, Deezer или Яндекс Музыки, код плейлиста EvPlayer — или список песен «Исполнитель — Название» (например, скопированный со страницы VK).")).font(theme::body(12.5)).color(theme::ink2()));
+                    ui.add_space(10.0);
+                    let r = ui.add(egui::TextEdit::multiline(text).hint_text("https://… или EVP2.…").desired_rows(4).desired_width(f32::INFINITY));
+                    r.request_focus();
+                    ui.add_space(6.0);
+                    if let Some(v) = widgets::toggle_row(ui, "Добавить в «Понравившиеся»", "Иначе — новый плейлист", *likes, true) {
+                        *likes = v;
+                    }
+                    ui.add_space(10.0);
+                    ui.horizontal(|ui| {
+                        let ready = !text.trim().is_empty();
+                        if widgets::pill_button(ui, Some(ic::DOWNLOAD), "Импортировать", true).clicked() && ready {
+                            let (t, l) = (text.clone(), *likes);
+                            apply = Some(Box::new(move |app: &mut App| app.start_import(t, if l { Some(true) } else { None })));
+                            done = true;
+                        }
+                        if widgets::pill_button(ui, None, "Отмена", false).clicked() {
+                            done = true;
+                        }
+                    });
+                }
                 Dialog::ConfirmDelete { id, title } => {
                     ui.label(egui::RichText::new(crate::i18n::t("Удалить плейлист?")).font(theme::heavy(22.0)));
                     ui.add_space(6.0);

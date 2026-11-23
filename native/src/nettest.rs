@@ -192,6 +192,24 @@ fn net_player_plays_silently_through_the_sound_card() {
 
 #[test]
 #[ignore]
+fn net_imports_read_deezer_and_spotify_and_find_the_songs() {
+    init();
+    for link in ["https://www.deezer.com/album/302127", "https://open.spotify.com/album/2noRn2Aes5aoNVsU6iWThc"] {
+        match crate::import::fetch(link) {
+            Ok(f) => {
+                println!("{link}: «{}», {} names, first {:?}", f.title, f.named.len(), f.named.first().map(|n| (&n.title, &n.artists)));
+                if let Some(first) = f.named.first() {
+                    let found = crate::import::match_one(first);
+                    println!("  found: {:?}", found.map(|t| format!("{} — {} ({})", t.artist_line(), t.title, t.id)));
+                }
+            }
+            Err(e) => println!("{link}: FAILED {e}"),
+        }
+    }
+}
+
+#[test]
+#[ignore]
 fn net_the_resolver_finds_a_copy_and_similar_songs() {
     init();
     let st = crate::state::get();

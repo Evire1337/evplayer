@@ -89,6 +89,15 @@ pub enum Dialog {
     NewPlaylist { title: String, add: Vec<Track> },
     Rename { id: String, title: String, description: String },
     ConfirmDelete { id: String, title: String },
+    /// "Импорт по ссылке или коду": the text pasted, and whether it goes to the likes
+    Import { text: String, likes: bool },
+}
+
+/// an import running (or just finished): its panel at the bottom
+pub struct Importing {
+    pub cancel: Arc<std::sync::atomic::AtomicBool>,
+    pub progress: Arc<std::sync::Mutex<crate::import::Progress>>,
+    pub finished_at: Option<Instant>,
 }
 
 pub struct App {
@@ -103,6 +112,7 @@ pub struct App {
     pub toasts: Vec<Toast>,
     pub menu: Option<Menu>,
     pub dialog: Option<Dialog>,
+    pub importing: Option<Importing>,
     window: Option<Arc<WindowHandle>>,
     hidden_since: Option<Instant>,
     asleep: bool,
@@ -166,6 +176,7 @@ impl App {
             toasts: Vec::new(),
             menu: None,
             dialog: None,
+            importing: None,
             window: None,
             hidden_since: None,
             asleep: false,
@@ -346,6 +357,58 @@ impl App {
         }
     }
 
+    /// read a link, a code or a list of songs into a playlist (or the likes)
+    pub fn start_import(&mut self, text: String, to_likes: Option<bool>) {
+        if let Some(i) = &self.importing {
+            i.cancel.store(true, std::sync::atomic::Ordering::Relaxed);
+        }
+        let cancel = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let progress = Arc::new(std::sync::Mutex::new(crate::import::Progress::default()));
+        let (c, p) = (cancel.clone(), progress.clone());
+        std::thread::spawn(move || crate::import::run(text, to_likes, c, p));
+        self.importing = Some(Importing { cancel, progress, finished_at: None });
+    }
+
+    /// the import's panel (the page's ImportPill): what it does now, cancel; the result a moment
+    fn import_pill(&mut self, ui: &mut Ui, screen: Rect) {
+        let Some(imp) = &mut self.importing else { return };
+        let p = imp.progress.lock().unwrap().clone();
+        if p.done && imp.finished_at.is_none() {
+            imp.finished_at = Some(Instant::now());
+            if p.ok {
+                match p.opened.as_deref() {
+                    Some("library") => self.page = Page::Library,
+                    Some(id) => self.page = Page::Playlist(id.to_string()),
+                    None => {}
+                }
+            }
+        }
+        let Some(imp) = &mut self.importing else { return };
+        if imp.finished_at.is_some_and(|t| t.elapsed() > Duration::from_secs(6)) {
+            self.importing = None;
+            return;
+        }
+        if imp.finished_at.is_some() {
+            ui.ctx().request_repaint_after(Duration::from_secs(6));
+        }
+        let text = if p.text.is_empty() { crate::i18n::t("Читаю…") } else { p.text.clone() };
+        let w = 420.0f32.min(screen.width() - 140.0);
+        let g = widgets::clipped(ui, &text, theme::medium(13.0), INK, w - 60.0);
+        let r = Rect::from_min_size(pos2(screen.right() - w - 24.0, screen.top() + 48.0), vec2(w, 46.0));
+        ui.painter().rect_filled(r, CornerRadius::same(20), Color32::from_rgba_unmultiplied(6, 18, 20, 240));
+        let color = if p.done && !p.ok { theme::DANGER } else { INK };
+        ui.painter().galley(pos2(r.left() + 16.0, r.center().y - g.size().y / 2.0), g, color);
+        let x = Rect::from_center_size(pos2(r.right() - 24.0, r.center().y), vec2(28.0, 28.0));
+        let xr = ui.interact(x, ui.scope_id().with("import-x"), Sense::click());
+        widgets::paint_icon_button(ui, x, &xr, ic::CANCEL, false);
+        if xr.on_hover_text(crate::i18n::t(if p.done { "Закрыть" } else { "Отменить" })).clicked() {
+            if let Some(imp) = &self.importing {
+                imp.cancel.store(true, std::sync::atomic::Ordering::Relaxed);
+            }
+            self.importing = None;
+        }
+    }
+
     pub fn toast(&mut self, text: &str) {
         self.toasts.push(Toast { text: crate::i18n::t(text), until: Instant::now() + Duration::from_millis(3200) });
         crate::events::send(crate::events::Event::Repaint(Duration::from_millis(3300)));
@@ -392,6 +455,7 @@ impl App {
         }
         self.track_menu(&ctx);
         self.dialogs(&ctx);
+        self.import_pill(ui, screen);
         self.toasts_ui(ui, screen);
         self.resize_edges(ui, screen);
     }
