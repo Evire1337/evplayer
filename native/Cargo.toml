@@ -27,7 +27,7 @@ symphonia = { version = "0.6", default-features = false, features = ["mp3", "aac
 opusic-sys = "0.7"
 rtrb = "0.3"
 
-# what the shared modules of src-tauri use (stems, offline, library, discord, services, ...)
+# what the shared modules of src-tauri use (offline, library, discord, services, ...)
 tauri = { path = "shim/tauri" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -46,8 +46,6 @@ chrono = { version = "0.4", default-features = false, features = ["clock", "std"
 rusty-leveldb = "3"
 log = "0.4"
 tiny_http = "0.12"
-ort = { version = "=2.0.0-rc.10", default-features = false, features = ["std", "download-binaries"] }
-realfft = "3"
 flate2 = "1"
 
 [target.'cfg(windows)'.dependencies]

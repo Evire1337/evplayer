@@ -1,9 +1,9 @@
 //! EvPlayer without a browser engine. The same player as the Tauri build (src-tauri + src/),
 //! written as one Rust program: a window drawn by the video card through Direct3D 11 (egui
 //! lays it out), sound decoded and mixed here and played through WASAPI, the music services
-//! asked directly. The parts of src-tauri that never needed the browser (song splitting,
-//! offline copies, local files, Discord, the services' sign-ins) are compiled in from there
-//! unchanged, so both builds keep one copy of them.
+//! asked directly. The parts of src-tauri that never needed the browser (offline copies,
+//! local files, Discord, the services' sign-ins) are compiled in from there unchanged, so
+//! both builds keep one copy of them. "Дорожки" (song splitting) is not part of this build.
 
 // the shared modules of src-tauri, as they are
 #[path = "../../src-tauri/src/discord.rs"]
@@ -29,8 +29,7 @@ pub mod proxy;
 #[path = "../../src-tauri/src/services.rs"]
 #[allow(dead_code)]
 pub mod services;
-#[path = "../../src-tauri/src/stems.rs"]
-#[allow(dead_code, unused_imports)]
+#[path = "stems_stub.rs"]
 pub mod stems;
 #[path = "../../src-tauri/src/userproxy.rs"]
 #[allow(dead_code)]
@@ -39,6 +38,8 @@ pub mod userproxy;
 pub mod app;
 pub mod audio;
 pub mod events;
+pub mod model;
+pub mod store;
 pub mod ui;
 
 use std::path::PathBuf;
