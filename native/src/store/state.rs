@@ -483,7 +483,7 @@ pub struct Effects {
 
 impl Default for Effects {
     fn default() -> Self {
-        Self { keep: false, linked: true, pitch: 0.0, reverb: false, reverb_amount: 0.5, speed: 1.0 }
+        Self { keep: false, linked: false, pitch: 0.0, reverb: false, reverb_amount: 0.5, speed: 1.0 }
     }
 }
 

@@ -17,6 +17,7 @@ use super::source::Spec;
 pub struct Engine {
     pub shared: Arc<Shared>,
     cmds: rtrb::Producer<Cmd>,
+    fx: rtrb::Producer<super::dsp::Params>,
     trash: rtrb::Consumer<DeckIn>,
     mixer: Arc<Mutex<Mixer>>,
     stream: Option<cpal::Stream>,
@@ -31,8 +32,9 @@ impl Engine {
         let shared = Shared::new();
         let (cmds, crx) = rtrb::RingBuffer::new(64);
         let (ttx, trash) = rtrb::RingBuffer::new(16);
-        let mixer = Arc::new(Mutex::new(Mixer::new(crx, ttx, shared.clone(), 48_000)));
-        Self { shared, cmds, trash, mixer, stream: None, running: false, decks: [None, None], device: String::new() }
+        let (fx, fx_rx) = rtrb::RingBuffer::new(32);
+        let mixer = Arc::new(Mutex::new(Mixer::with_fx(crx, ttx, shared.clone(), 48_000, Some(fx_rx))));
+        Self { shared, cmds, fx, trash, mixer, stream: None, running: false, decks: [None, None], device: String::new() }
     }
 
     fn build(&mut self) -> Result<(), String> {
@@ -193,6 +195,11 @@ impl Engine {
 
     pub fn set_volume(&mut self, v: f32) {
         self.shared.volume.store(v.clamp(0.0, 1.0).to_bits(), Ordering::Relaxed);
+    }
+
+    /// the effects and the equalizer, whole
+    pub fn set_fx(&mut self, p: super::dsp::Params) {
+        let _ = self.fx.push(p);
     }
 
     pub fn set_speed(&mut self, s: f32) {

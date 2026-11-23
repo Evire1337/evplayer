@@ -14,6 +14,8 @@ pub const HISTORY: &str = "evplayer.history.v1";
 pub const SESSION: &str = "evplayer.session.v1";
 pub const EFFECTS: &str = "evplayer.effects";
 pub const VOLUME: &str = "evplayer.volume";
+pub const EQUALIZER: &str = "evplayer.equalizer.v1";
+pub const LOUDNESS: &str = "evplayer.loudness.v1";
 
 pub struct State {
     pub data_dir: PathBuf,
@@ -22,6 +24,9 @@ pub struct State {
     pub library: RwLock<Library>,
     pub history: Mutex<History>,
     pub effects: RwLock<Effects>,
+    pub eq: RwLock<crate::audio::dsp::eq::EqState>,
+    /// remembered loudness per song (dB), loaded when levelling first needs it
+    pub loudness: Mutex<Option<serde_json::Map<String, serde_json::Value>>>,
 }
 
 static STATE: OnceLock<Arc<State>> = OnceLock::new();
@@ -54,8 +59,10 @@ pub fn init(data_dir: PathBuf) -> &'static Arc<State> {
         }
         let library: Library = kv::read_state(&kv, LIBRARY).unwrap_or_default();
         let history: History = kv::read_state(&kv, HISTORY).unwrap_or_default();
-        let effects: Effects = kv::read_plain(&kv, EFFECTS).unwrap_or_default();
-        Arc::new(State { data_dir, kv, settings: RwLock::new(settings), library: RwLock::new(library), history: Mutex::new(history), effects: RwLock::new(effects) })
+        // effects are kept for the next start only when "keep" was on (as the page did)
+        let effects: Effects = kv::read_plain::<Effects>(&kv, EFFECTS).filter(|e| e.keep).unwrap_or_default();
+        let eq: crate::audio::dsp::eq::EqState = kv::read_state(&kv, EQUALIZER).unwrap_or_default();
+        Arc::new(State { data_dir, kv, settings: RwLock::new(settings), library: RwLock::new(library), history: Mutex::new(history), effects: RwLock::new(effects), eq: RwLock::new(eq), loudness: Mutex::new(None) })
     })
 }
 
@@ -94,6 +101,41 @@ impl State {
         kv::write_plain(&self.kv, EFFECTS, &*e);
         drop(e);
         crate::events::repaint();
+    }
+
+    pub fn set_eq(&self, f: impl FnOnce(&mut crate::audio::dsp::eq::EqState)) {
+        let mut e = self.eq.write().unwrap();
+        f(&mut e);
+        kv::write_state(&self.kv, EQUALIZER, &*e, 0);
+        drop(e);
+        crate::events::repaint();
+    }
+
+    /// the loudness remembered for a song
+    pub fn remembered_loudness(&self, id: &str) -> Option<f64> {
+        let mut m = self.loudness.lock().unwrap();
+        let map = m.get_or_insert_with(|| kv::read_plain(&self.kv, LOUDNESS).unwrap_or_default());
+        map.get(id).and_then(|v| v.as_f64())
+    }
+
+    pub fn remember_loudness(&self, id: &str, db: f64) {
+        if self.settings.read().unwrap().no_loudness_memory {
+            return;
+        }
+        let mut m = self.loudness.lock().unwrap();
+        let map = m.get_or_insert_with(|| kv::read_plain(&self.kv, LOUDNESS).unwrap_or_default());
+        map.remove(id);
+        map.insert(id.to_string(), serde_json::json!((db * 10.0).round() / 10.0));
+        while map.len() > crate::audio::dsp::loudness::MAX_REMEMBERED {
+            let first = map.keys().next().cloned();
+            match first {
+                Some(k) => {
+                    map.remove(&k);
+                }
+                None => break,
+            }
+        }
+        kv::write_plain(&self.kv, LOUDNESS, &*map);
     }
 
     pub fn session(&self) -> Option<Session> {

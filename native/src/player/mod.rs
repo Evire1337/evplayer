@@ -115,6 +115,10 @@ struct Core {
     first_track: bool,
     last_saved: String,
     last_save: Instant,
+    /// volume levelling of the song playing
+    leveler: crate::audio::dsp::loudness::Leveler,
+    leveler_track: Option<String>,
+    leveler_at: Instant,
 }
 
 pub struct Player {
@@ -158,8 +162,12 @@ impl Player {
             first_track: true,
             last_saved: String::new(),
             last_save: Instant::now(),
+            leveler: Default::default(),
+            leveler_track: None,
+            leveler_at: Instant::now(),
         };
         let me = Arc::new(Self { core: Mutex::new(core), wake: Condvar::new(), resolver, notify: Box::new(notify) });
+        me.apply_sound();
         let watcher = Arc::downgrade(&me);
         let _ = std::thread::Builder::new().name("player".into()).spawn(move || watch(watcher));
         me
@@ -449,8 +457,14 @@ impl Player {
     }
 
     /// "Скорость": the speed of every song now (linked: the pitch moves with it)
-    pub fn apply_speed(&self, speed: f64) {
-        self.core.lock().unwrap().engine.set_speed(speed as f32);
+    pub fn apply_speed(&self, _speed: f64) {
+        self.apply_sound();
+    }
+
+    /// the effects and the equalizer as they are set now, sent to the sound card's thread
+    pub fn apply_sound(&self) {
+        let mut c = self.core.lock().unwrap();
+        c.apply_sound();
     }
 
     /// the effects' processing chain on the sound card's thread
@@ -600,6 +614,7 @@ impl Player {
     /// what happens when a song starts, however it started
     fn begin(self: &Arc<Self>, c: &mut Core, track: &Track) {
         c.finish_listen();
+        c.level_for(&track.id);
         c.heard_ms = 0.0;
         c.last_pos = -1.0;
         c.counted = false;
@@ -608,7 +623,7 @@ impl Player {
             let fx = state::get().effects.read().unwrap().clone();
             if !fx.keep && !fx.is_neutral() {
                 state::get().set_effects(|e| *e = crate::store::state::Effects { keep: false, ..Default::default() });
-                c.engine.set_speed(1.0);
+                c.apply_sound();
             }
         }
         c.first_track = false;
@@ -821,6 +836,7 @@ impl Player {
                 c.refresh_position();
                 let pos = c.view.position_ms;
                 c.heard(pos);
+                c.level_tick();
                 if (pos - before).abs() > 250.0 {
                     changed = true;
                 }
@@ -879,6 +895,68 @@ impl Player {
 }
 
 impl Core {
+    /// the effects and the equalizer as the sound card's thread needs them
+    fn apply_sound(&mut self) {
+        use crate::audio::dsp::{eq, BandParams, Params};
+        let st = state::get();
+        let fx = st.effects.read().unwrap().clone();
+        let e = st.eq.read().unwrap().clone();
+        let mut p = Params::default();
+        if e.enabled {
+            for (slot, b) in p.bands.iter_mut().zip(e.bands.iter()) {
+                *slot = BandParams { kind: b.kind, frequency: b.frequency as f32, gain: if b.enabled { b.gain as f32 } else { 0.0 }, q: b.q as f32 };
+            }
+        }
+        // with clip protection the level comes down by most of the boost; a limiter catches the rest
+        let headroom = if e.enabled { (if e.protect { -eq::peak_boost_db(&e.bands) * 0.75 } else { 0.0 }) + e.preamp } else { 0.0 };
+        p.preamp_db = headroom as f32;
+        p.limiter = e.protect && (e.enabled || e.normalize);
+        p.normalize = e.normalize;
+        // the speed reads the song faster; unlinked, the shifter puts the pitch where it is asked
+        let speed = fx.speed.clamp(0.5, 2.0);
+        p.pitch = if fx.linked { 1.0 } else { (2f64.powf(fx.pitch / 12.0) / speed) as f32 };
+        p.reverb = if fx.reverb { fx.reverb_amount.clamp(0.0, 1.0) as f32 } else { 0.0 };
+        self.engine.set_speed(speed as f32);
+        self.engine.set_fx(p);
+        if !e.normalize {
+            self.engine.shared.level_db.store(0f32.to_bits(), Ordering::Relaxed);
+        }
+    }
+
+    /// a new song: the last one's loudness is remembered, this one starts from its own
+    fn level_for(&mut self, id: &str) {
+        let st = state::get();
+        if let Some(prev) = &self.leveler_track {
+            if self.leveler.settled() {
+                if let Some(db) = self.leveler.loudness_db() {
+                    st.remember_loudness(prev, db);
+                }
+            }
+        }
+        self.leveler = crate::audio::dsp::loudness::Leveler::new(st.remembered_loudness(id));
+        self.leveler_track = Some(id.to_string());
+        self.leveler_at = Instant::now();
+        let g = self.leveler.gain_db(crate::audio::dsp::loudness::TARGET_DB) as f32;
+        self.engine.shared.level_db.store(g.to_bits(), Ordering::Relaxed);
+    }
+
+    /// a look at the level while the song plays (the page did it every 150 ms, then every second)
+    fn level_tick(&mut self) {
+        if !state::get().eq.read().unwrap().normalize {
+            return;
+        }
+        let every = if self.leveler.settled() { Duration::from_secs(1) } else { Duration::from_millis(150) };
+        let dt = self.leveler_at.elapsed();
+        if dt < every {
+            return;
+        }
+        self.leveler_at = Instant::now();
+        let power = f32::from_bits(self.engine.shared.level_power.load(Ordering::Relaxed)) as f64;
+        self.leveler.update(power, dt.as_millis().min(2000) as f64);
+        let g = self.leveler.gain_db(crate::audio::dsp::loudness::TARGET_DB) as f32;
+        self.engine.shared.level_db.store(g.to_bits(), Ordering::Relaxed);
+    }
+
     fn refresh_position(&mut self) {
         if let Some(d) = &self.deck {
             if d.ready.load(Ordering::Relaxed) && matches!(self.view.status, Status::Playing | Status::Paused) {

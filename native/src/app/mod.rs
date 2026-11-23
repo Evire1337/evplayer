@@ -318,6 +318,10 @@ impl App {
             "likes" => Page::Playlist("likes".into()),
             "files" => Page::Files,
             "settings" => Page::Settings,
+            "sound" => {
+                self.pages.sound_open = true;
+                Page::Library
+            }
             _ => Page::Home,
         };
     }

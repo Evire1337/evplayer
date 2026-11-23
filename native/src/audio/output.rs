@@ -53,6 +53,10 @@ pub struct Shared {
     pub peak: AtomicU32,
     /// how far the sound card plays behind what was just made, in microseconds
     pub latency_us: AtomicU32,
+    /// the mean square of the last block before the effects (volume levelling), f32 bits
+    pub level_power: AtomicU32,
+    /// the levelling gain the player decided, dB as f32 bits
+    pub level_db: AtomicU32,
 }
 
 impl Shared {
@@ -67,6 +71,8 @@ impl Shared {
             broken: AtomicBool::new(false),
             peak: AtomicU32::new(0),
             latency_us: AtomicU32::new(0),
+            level_power: AtomicU32::new(0),
+            level_db: AtomicU32::new(0),
         })
     }
 
@@ -155,11 +161,19 @@ fn next_frame(deck: &mut Feed) -> Option<[f32; 2]> {
 
 impl Mixer {
     pub fn new(cmds: rtrb::Consumer<Cmd>, trash: rtrb::Producer<DeckIn>, shared: Arc<Shared>, rate: u32) -> Self {
+        Self::with_fx(cmds, trash, shared, rate, None)
+    }
+
+    pub fn with_fx(cmds: rtrb::Consumer<Cmd>, trash: rtrb::Producer<DeckIn>, shared: Arc<Shared>, rate: u32, fx: Option<rtrb::Consumer<super::dsp::Params>>) -> Self {
+        let mut chain = Chain::new(rate);
+        if let Some(rx) = fx {
+            chain.connect(rx, shared.clone());
+        }
         Self {
             decks: [Deck::new(), Deck::new()],
             cmds,
             trash,
-            chain: Chain::new(rate),
+            chain,
             scratch: vec![0.0; 8192],
             mix: vec![0.0; 8192],
             volume: Shared::f(&shared.volume),
