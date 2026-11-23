@@ -495,7 +495,7 @@ impl App {
         let top = if self.importing.is_some() { screen.top() + 100.0 } else { screen.top() + 48.0 };
         let r = Rect::from_min_size(pos2(screen.right() - w - 24.0, top), vec2(w, 42.0));
         ui.painter().rect_filled(r, CornerRadius::same(20), Color32::from_rgba_unmultiplied(6, 18, 20, 240));
-        ui.painter().text(pos2(r.left() + 16.0, r.center().y), Align2::LEFT_CENTER, ic::DOWNLOAD, theme::icon(13.0), theme::ACCENT);
+        crate::ui::theme::paint_icon(&ui.painter(), pos2(r.left() + 16.0, r.center().y), Align2::LEFT_CENTER, ic::DOWNLOAD, 13.0, theme::ACCENT);
         ui.painter().text(pos2(r.left() + 38.0, r.center().y), Align2::LEFT_CENTER, text, theme::medium(13.0), INK);
         let x = Rect::from_center_size(pos2(r.right() - 22.0, r.center().y), vec2(28.0, 28.0));
         let xr = ui.interact(x, ui.scope_id().with("dl-x"), Sense::click());
@@ -598,6 +598,22 @@ impl App {
     fn backdrop(&mut self, ui: &Ui, rect: Rect) {
         let p = ui.painter();
         p.rect_filled(rect, CornerRadius::ZERO, theme::GROUND);
+        // the video card draws the live background with the page's own shader (ui/backdrop.rs);
+        // the processor (no video card) shows the same picture held still
+        if renderer_name() == "Direct3D 11" {
+            let (animated, saver) = {
+                let s = state::get().settings.read().unwrap();
+                (s.animated_backdrop, s.memory_saver)
+            };
+            let src = self.view.current().and_then(artwork_of);
+            let playing = self.view.status == Status::Playing;
+            let images = &self.images;
+            crate::ui::backdrop::want(src, playing, animated && !saver, || images.loader());
+            p.image(crate::ui::backdrop::TEXTURE, rect, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
+            // .backdrop-shade: a little darker toward the bottom
+            p.add(grid_mesh(rect, 2, |_, v| Color32::from_rgba_unmultiplied(3, 10, 12, ((0.15 + 0.30 * v) * 255.0) as u8)));
+            return;
+        }
         let tex = self.view.current().and_then(artwork_of).and_then(|s| self.images.backdrop(&s));
         match tex {
             Some(id) => {
@@ -661,7 +677,7 @@ impl App {
             if resp.hovered() {
                 ui.painter().rect_filled(r, CornerRadius::ZERO, if i == 2 { Color32::from_rgb(196, 43, 28) } else { theme::hover() });
             }
-            ui.painter().text(r.center(), Align2::CENTER_CENTER, *icon, theme::icon(10.0), INK);
+            crate::ui::theme::paint_icon(&ui.painter(), r.center(), Align2::CENTER_CENTER, *icon, 10.0, INK);
             if resp.on_hover_text(crate::i18n::t(tip)).clicked() {
                 match i {
                     0 => {
@@ -686,31 +702,50 @@ impl App {
             (ic::FOLDER, "Мои файлы", Page::Files),
             (ic::SETTINGS, "Настройки", Page::Settings),
         ];
-        let h = 52.0 + items.len() as f32 * 44.0 + 14.0;
-        let top = (screen.center().y - h / 2.0 - 30.0).max(screen.top() + 48.0);
-        let rail = Rect::from_min_size(pos2(screen.left() + 16.0, top), vec2(56.0, h));
+        // .rail: padding 10 × 8, a gap of 6 between its children, 50 px buttons rounded 19, the
+        // logo 32 px with 4 above and 10 below it, 10 more before "Настройки"; centred on the window
+        const BTN: f32 = 50.0;
+        const GAP: f32 = 6.0;
+        let logo_block = 4.0 + 32.0 + 10.0;
+        let h = 10.0 + logo_block + items.len() as f32 * (BTN + GAP) + (10.0 + GAP) + 10.0;
+        let top = (screen.center().y - h / 2.0).max(screen.top() + 44.0);
+        let rail = Rect::from_min_size(pos2(screen.left() + 20.0, top), vec2(BTN + 16.0, h));
         ui.painter().rect_filled(rail, CornerRadius::same(28), theme::glass());
         ui.painter().rect_stroke(rail, CornerRadius::same(28), egui::Stroke::new(1.0, theme::edge()), egui::StrokeKind::Inside);
-        // the logo
-        let logo = self.logo.get_or_insert_with(|| {
-            let img = image::load_from_memory(include_bytes!("../../../src-tauri/icons/64x64.png")).map(|i| i.into_rgba8()).unwrap_or_default();
-            let (w, h) = img.dimensions();
-            ui.ctx().load_texture("logo", egui::ColorImage::from_rgba_unmultiplied([w as usize, h as usize], img.as_raw()), egui::TextureOptions::LINEAR)
-        });
-        let lr = Rect::from_center_size(pos2(rail.center().x, rail.top() + 28.0), vec2(28.0, 28.0));
-        egui::Image::new(egui::load::SizedTexture::new(logo.id(), lr.size())).paint_at(ui, lr);
+        // the logo: the page's own snail (src/logo.svg), white at 90 %
+        let lr = Rect::from_min_size(pos2(rail.center().x - 16.0, rail.top() + 10.0 + 4.0), vec2(32.0, 32.0));
+        let lw = 32.0;
+        let lh = lw * crate::ui::icon_data::LOGO_VIEW.1 / crate::ui::icon_data::LOGO_VIEW.0;
+        crate::ui::icons::paint(ui.painter(), "logo", Rect::from_center_size(lr.center(), vec2(lw, lh)), Color32::from_white_alpha(230));
+        let mut y = rail.top() + 10.0 + logo_block + GAP;
+        let last = items.len() - 1;
         for (i, (icon, tip, page)) in items.into_iter().enumerate() {
-            let y = rail.top() + 64.0 + i as f32 * 44.0 + if i == items_len() - 1 { 10.0 } else { 0.0 };
-            let r = Rect::from_center_size(pos2(rail.center().x, y), vec2(40.0, 40.0));
+            if i == last {
+                // .rail-gap before the settings
+                y += 10.0 + GAP;
+            }
+            let r = Rect::from_min_size(pos2(rail.center().x - BTN / 2.0, y), vec2(BTN, BTN));
+            y += BTN + GAP;
             let resp = ui.interact(r, ui.scope_id().with(("rail", i)), Sense::click());
             let on = self.page.name() == page.name() || (page == Page::Library && matches!(self.page, Page::Playlist(_)));
             if on {
-                ui.painter().rect_filled(r, CornerRadius::same(13), theme::active());
+                ui.painter().rect_filled(r, CornerRadius::same(19), theme::active());
             } else if resp.hovered() {
-                ui.painter().rect_filled(r, CornerRadius::same(13), theme::hover());
+                ui.painter().rect_filled(r, CornerRadius::same(19), theme::hover());
             }
-            ui.painter().text(r.center(), Align2::CENTER_CENTER, icon, theme::icon(15.0), if on { INK } else { theme::ink2() });
-            if resp.on_hover_text(crate::i18n::t(tip)).clicked() {
+            let color = if on || resp.hovered() { INK } else { theme::ink2() };
+            let name = icon.trim_start_matches('@');
+            crate::ui::icons::paint(ui.painter(), name, Rect::from_center_size(r.center(), vec2(21.0, 21.0)), color);
+            // .rail-tip: to the right of the button
+            if resp.hovered() {
+                let text = crate::i18n::t(tip);
+                let painter = ui.ctx().layer_painter(egui::LayerId::new(egui::Order::Tooltip, egui::Id::unique("rail-tip")));
+                let g = painter.layout_no_wrap(text, theme::medium(12.5), INK);
+                let tr = Rect::from_min_size(pos2(r.right() + 12.0 + 8.0, r.center().y - g.size().y / 2.0 - 6.0), g.size() + vec2(20.0, 12.0));
+                painter.rect_filled(tr, CornerRadius::same(10), theme::glass_strong());
+                painter.galley(tr.min + vec2(10.0, 6.0), g, INK);
+            }
+            if resp.clicked() {
                 self.go(page);
             }
         }
@@ -759,7 +794,7 @@ impl App {
                 self.toggle_like(&t);
             }
             if liked {
-                ui.painter().text(heart.center(), Align2::CENTER_CENTER, ic::HEART_FILL, theme::icon(15.0), theme::ACCENT);
+                crate::ui::theme::paint_icon(&ui.painter(), heart.center(), Align2::CENTER_CENTER, ic::HEART_FILL, 15.0, theme::ACCENT);
             }
         }
 
@@ -801,7 +836,7 @@ impl App {
         }
         let fx = state::get().effects.read().unwrap().clone();
         let tuned = !fx.is_neutral();
-        let sr = widgets::tool_button(ui, ic::EQ, self.pages.sound_open || tuned, if self.pages.sound_open { "" } else { "Звук, скорость и тон" });
+        let sr = widgets::tool_button(ui, ic::SLIDERS, self.pages.sound_open || tuned, if self.pages.sound_open { "" } else { "Звук, скорость и тон" });
         if sr.clicked() {
             self.pages.sound_open = !self.pages.sound_open;
         }
@@ -904,10 +939,6 @@ impl App {
             }
         }
     }
-}
-
-fn items_len() -> usize {
-    6
 }
 
 /// the language of the interface, from the settings

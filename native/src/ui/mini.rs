@@ -518,12 +518,12 @@ fn bar(ui: &mut egui::Ui, app: &App, look: &Look, cover: Option<egui::TextureId>
         }
         None => {
             p.rect_filled(art, CornerRadius::same(10), Color32::from_rgba_unmultiplied(238, 247, 244, 20));
-            p.text(art.center(), Align2::CENTER_CENTER, ic::NOTE, theme::icon(15.0), theme::ink3());
+            crate::ui::theme::paint_icon(&p, art.center(), Align2::CENTER_CENTER, ic::NOTE, 15.0 / 1.4, theme::ink3());
         }
     }
     if r.hovered() {
         p.rect_filled(art, CornerRadius::same(10), Color32::from_black_alpha(128));
-        p.text(art.center(), Align2::CENTER_CENTER, ic::FULLSCREEN, theme::icon(13.0), INK);
+        crate::ui::theme::paint_icon(&p, art.center(), Align2::CENTER_CENTER, ic::FULLSCREEN, 13.0 / 1.4, INK);
     }
     if r.clicked() {
         cmds.push(Cmd::Open);
@@ -540,13 +540,13 @@ fn bar(ui: &mut egui::Ui, app: &App, look: &Look, cover: Option<egui::TextureId>
         let alpha = if has { 1.0 } else { 0.4 };
         if main {
             p.circle_filled(rect.center(), size / 2.0, INK.gamma_multiply(alpha));
-            p.text(rect.center(), Align2::CENTER_CENTER, icon, theme::icon(15.0), theme::GROUND);
+            crate::ui::theme::paint_icon(&p, rect.center(), Align2::CENTER_CENTER, icon, 15.0 / 1.4, theme::GROUND);
         } else {
             if r.hovered() && has {
                 p.circle_filled(rect.center(), size / 2.0, theme::hover());
             }
             let color = if on { ACCENT } else if r.hovered() && has { INK } else { theme::ink2() };
-            p.text(rect.center(), Align2::CENTER_CENTER, icon, theme::icon(15.0), color.gamma_multiply(alpha));
+            crate::ui::theme::paint_icon(&p, rect.center(), Align2::CENTER_CENTER, icon, 15.0 / 1.4, color.gamma_multiply(alpha));
         }
         if r.clicked() {
             cmds.push(Cmd::Action(action));

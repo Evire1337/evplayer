@@ -85,7 +85,7 @@ impl App {
                             let art = Rect::from_min_size(rect.min, vec2(w, w));
                             let (a, b) = if *icon == ic::HEART_FILL { (egui::Color32::from_rgb(92, 214, 172), egui::Color32::from_rgb(40, 120, 140)) } else { (egui::Color32::from_rgb(120, 140, 230), egui::Color32::from_rgb(70, 60, 150)) };
                             gradient(ui, art, a, b);
-                            ui.painter().text(art.center(), Align2::CENTER_CENTER, *icon, theme::icon(34.0), egui::Color32::from_rgb(10, 30, 30));
+                            crate::ui::theme::paint_icon(&ui.painter(), art.center(), Align2::CENTER_CENTER, *icon, 34.0, egui::Color32::from_rgb(10, 30, 30));
                             let g = widgets::clipped(ui, title, theme::medium(13.0), INK, w);
                             ui.painter().galley(pos2(rect.left(), art.bottom() + 8.0), g, INK);
                             let g = widgets::clipped(ui, sub, theme::body(12.0), theme::ink2(), w);
@@ -133,7 +133,7 @@ impl App {
             if id == "likes" {
                 let (rect, _) = ui.allocate_exact_size(vec2(art, art), egui::Sense::hover());
                 gradient(ui, rect, egui::Color32::from_rgb(92, 214, 172), egui::Color32::from_rgb(40, 120, 140));
-                ui.painter().text(rect.center(), Align2::CENTER_CENTER, ic::HEART_FILL, theme::icon(56.0), egui::Color32::from_rgb(10, 30, 30));
+                crate::ui::theme::paint_icon(&ui.painter(), rect.center(), Align2::CENTER_CENTER, ic::HEART_FILL, 56.0, egui::Color32::from_rgb(10, 30, 30));
             } else {
                 widgets::cover(ui, &mut self.images, cover.as_deref(), art, 18);
             }

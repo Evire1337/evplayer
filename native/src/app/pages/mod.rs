@@ -131,7 +131,7 @@ impl App {
                     if r.hovered() {
                         ui.painter().rect_filled(rect, 9, theme::hover());
                     }
-                    ui.painter().text(pos2(rect.left() + 16.0, rect.center().y), egui::Align2::CENTER_CENTER, icon, theme::icon(13.0), theme::ink2());
+                    crate::ui::theme::paint_icon(&ui.painter(), pos2(rect.left() + 16.0, rect.center().y), egui::Align2::CENTER_CENTER, icon, 13.0, theme::ink2());
                     ui.painter().text(pos2(rect.left() + 34.0, rect.center().y), egui::Align2::LEFT_CENTER, crate::i18n::t(text), theme::body(13.5), INK);
                     r.clicked()
                 };

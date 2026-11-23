@@ -32,7 +32,7 @@ pub fn paint_icon_button(ui: &Ui, rect: Rect, r: &Response, icon: &str, on: bool
         p.circle_filled(rect.center(), rect.width() / 2.0, bg);
     }
     let color = if on { ACCENT } else if r.hovered() { INK } else { theme::ink2() };
-    p.text(rect.center(), Align2::CENTER_CENTER, icon, theme::icon(rect.width() * 0.42), color);
+    crate::ui::theme::paint_icon(&p, rect.center(), Align2::CENTER_CENTER, icon, rect.width() * 0.42, color);
 }
 
 /// the big round play button
@@ -41,7 +41,7 @@ pub fn play_button(ui: &mut Ui, playing: bool, size: f32) -> Response {
     let p = ui.painter();
     let fill = if r.hovered() { Color32::from_rgba_unmultiplied(238, 247, 244, 70) } else { Color32::from_rgba_unmultiplied(238, 247, 244, 46) };
     p.circle_filled(rect.center(), size / 2.0, fill);
-    p.text(rect.center(), Align2::CENTER_CENTER, if playing { ic::PAUSE } else { ic::PLAY }, theme::icon(size * 0.36), INK);
+    crate::ui::theme::paint_icon(&p, rect.center(), Align2::CENTER_CENTER, if playing { ic::PAUSE } else { ic::PLAY }, size * 0.36, INK);
     r.on_hover_text(crate::i18n::t(if playing { "Пауза" } else { "Играть" }))
 }
 
@@ -62,7 +62,7 @@ pub fn pill_button(ui: &mut Ui, icon: Option<&str>, text: &str, primary: bool) -
     p.rect_filled(rect, CornerRadius::same(17), fill);
     let mut x = rect.left() + 15.0;
     if let Some(i) = icon {
-        p.text(pos2(x + 7.0, rect.center().y), Align2::CENTER_CENTER, i, theme::icon(13.0), fg);
+        crate::ui::theme::paint_icon(&p, pos2(x + 7.0, rect.center().y), Align2::CENTER_CENTER, i, 13.0, fg);
         x += icon_w;
     }
     p.text(pos2(x, rect.center().y), Align2::LEFT_CENTER, text, font, fg);
@@ -190,7 +190,7 @@ pub fn paint_cover(ui: &Ui, images: &mut Images, src: Option<&str>, rect: Rect, 
         }
         None => {
             p.rect_filled(rect, CornerRadius::same(radius), Color32::from_rgba_unmultiplied(238, 247, 244, 22));
-            p.text(rect.center(), Align2::CENTER_CENTER, ic::NOTE, theme::icon((rect.width() * 0.3).min(40.0)), theme::ink3());
+            crate::ui::theme::paint_icon(&p, rect.center(), Align2::CENTER_CENTER, ic::NOTE, (rect.width() * 0.3).min(40.0), theme::ink3());
         }
     }
 }
@@ -258,12 +258,12 @@ pub fn track_row(ui: &mut Ui, images: &mut Images, t: &crate::model::Track, play
     let heart = Rect::from_center_size(pos2(rect.right() - 92.0, rect.center().y), vec2(28.0, 28.0));
     let hr = ui.interact(heart, r.id.with("like"), Sense::click());
     if liked || hovered || hr.hovered() {
-        ui.painter().text(heart.center(), Align2::CENTER_CENTER, if liked { ic::HEART_FILL } else { ic::HEART }, theme::icon(13.0), if liked { ACCENT } else { theme::ink2() });
+        crate::ui::theme::paint_icon(&ui.painter(), heart.center(), Align2::CENTER_CENTER, if liked { ic::HEART_FILL } else { ic::HEART }, 13.0, if liked { ACCENT } else { theme::ink2() });
     }
     let more = Rect::from_center_size(pos2(rect.right() - 20.0, rect.center().y), vec2(28.0, 28.0));
     let mr = ui.interact(more, r.id.with("more"), Sense::click());
     if hovered || mr.hovered() {
-        ui.painter().text(more.center(), Align2::CENTER_CENTER, ic::MORE, theme::icon(13.0), theme::ink2());
+        crate::ui::theme::paint_icon(&ui.painter(), more.center(), Align2::CENTER_CENTER, ic::MORE, 13.0, theme::ink2());
     } else {
         ui.painter().text(pos2(rect.right() - 20.0, rect.center().y), Align2::CENTER_CENTER, time(t.duration_ms), theme::body(12.5), theme::ink2());
     }
@@ -283,7 +283,7 @@ pub fn card(ui: &mut Ui, images: &mut Images, src: Option<&str>, title: &str, su
         ui.painter().rect_filled(art, CornerRadius::same(if round { (width / 2.0) as u8 } else { theme::R_CARD }), Color32::from_black_alpha(50));
         let b = Rect::from_center_size(art.right_bottom() - vec2(28.0, 28.0), vec2(40.0, 40.0));
         ui.painter().circle_filled(b.center(), 20.0, ACCENT);
-        ui.painter().text(b.center(), Align2::CENTER_CENTER, ic::PLAY, theme::icon(15.0), Color32::from_rgb(0x06, 0x20, 0x1d));
+        crate::ui::theme::paint_icon(&ui.painter(), b.center(), Align2::CENTER_CENTER, ic::PLAY, 15.0, Color32::from_rgb(0x06, 0x20, 0x1d));
     }
     let g = clipped(ui, title, theme::medium(13.0), INK, width);
     ui.painter().galley(pos2(rect.left(), art.bottom() + 8.0), g, INK);
@@ -309,7 +309,8 @@ pub fn search_field(ui: &mut Ui, text: &mut String, hint: &str, width: f32) -> R
     let mut out = None;
     egui::Frame::new().fill(theme::glass_strong()).stroke(Stroke::new(1.0, theme::edge())).corner_radius(CornerRadius::same(18)).inner_margin(egui::Margin::symmetric(14, 8)).show(ui, |ui| {
         ui.horizontal(|ui| {
-            ui.label(egui::RichText::new(ic::SEARCH).font(theme::icon(14.0)).color(theme::ink2()));
+            let (r, _) = ui.allocate_exact_size(vec2(20.0, 20.0), Sense::hover());
+            theme::paint_icon(ui.painter(), r.center(), Align2::CENTER_CENTER, ic::SEARCH, 14.0, theme::ink2());
             out = Some(ui.add(egui::TextEdit::singleline(text).hint_text(crate::i18n::t(hint)).frame(egui::Frame::NONE).desired_width(width - 60.0).font(theme::body(15.0))));
         });
     });
@@ -352,7 +353,7 @@ pub fn round_button(ui: &mut Ui, icon: &str, size: f32, kind: Round, on: bool, t
         Round::Main => size * 0.36,
         _ => (size * 0.4).min(19.0),
     };
-    p.text(c, Align2::CENTER_CENTER, icon, theme::icon(icon_size), fg);
+    crate::ui::theme::paint_icon(&p, c, Align2::CENTER_CENTER, icon, icon_size, fg);
     if tip.is_empty() {
         r
     } else {
@@ -370,7 +371,7 @@ pub fn tool_button(ui: &mut Ui, icon: &str, on: bool, tip: &str) -> Response {
         p.rect_filled(rect, CornerRadius::same(14), theme::hover());
     }
     let fg = if on { ACCENT } else if r.hovered() { INK } else { theme::ink2() };
-    p.text(rect.center(), Align2::CENTER_CENTER, icon, theme::icon(15.0), fg);
+    crate::ui::theme::paint_icon(&p, rect.center(), Align2::CENTER_CENTER, icon, 15.0, fg);
     if tip.is_empty() {
         r
     } else {
@@ -450,7 +451,7 @@ pub fn stepper(ui: &mut Ui, label: &str, value: f64, display: &str, min: f64, ma
     for (i, (b, sign)) in [(minus, "\u{E738}"), (plus, "\u{E710}")].into_iter().enumerate() {
         let br = ui.interact(b, ui.scope_id().with((label, "step", i)), if disabled { Sense::hover() } else { Sense::click() });
         ui.painter().rect_filled(b, CornerRadius::same(9), if br.hovered() && !disabled { Color32::from_rgba_unmultiplied(238, 247, 244, 41) } else { faint });
-        ui.painter().text(b.center(), Align2::CENTER_CENTER, sign, theme::icon(11.0), if disabled { theme::ink3() } else { INK });
+        crate::ui::theme::paint_icon(&ui.painter(), b.center(), Align2::CENTER_CENTER, sign, 11.0, if disabled { theme::ink3() } else { INK });
         if br.clicked() && !disabled {
             let d = if i == 0 { -step * 5.0 } else { step * 5.0 };
             out = Some((value + d).clamp(min, max));

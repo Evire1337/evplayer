@@ -62,6 +62,8 @@ struct Shell {
     placement: Option<Placement>,
     /// the mini player above all windows
     mini: super::mini::Mini,
+    /// when the live background draws its next frame (between the interface's own frames)
+    anim_at: Option<Instant>,
 }
 
 /// after this long out of sight the window lets go of the video card and its pages
@@ -121,6 +123,9 @@ impl Shell {
         }
         self.asleep = true;
         self.painter = None;
+        self.anim_at = None;
+        // the covers on the card went with it: they go up again when the window is back
+        super::backdrop::forget_shown();
         self.app.sleep();
         let ctx = egui::Context::default();
         crate::ui::theme::apply(&ctx);
@@ -208,10 +213,28 @@ impl Shell {
             }
             None => {}
         }
+        self.plan_animation();
         // applied above: egui wants the delta emptied before it goes
         let mut delta = out.textures_delta;
         delta.clear();
         self.dirty = false;
+    }
+
+    /// the live background's next frame, if it moves now (or a new cover fades in)
+    fn plan_animation(&mut self) {
+        self.anim_at = match self.painter.as_ref() {
+            Some(Painter::Gpu(g)) if g.backdrop_used() => super::backdrop::next_frame(g.backdrop_fading()).map(|d| Instant::now() + d),
+            _ => None,
+        };
+    }
+
+    /// a background frame: the video card draws it under the last interface frame
+    fn animate(&mut self) {
+        if let Some(Painter::Gpu(g)) = self.painter.as_mut() {
+            g.animate();
+            FRAMES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        }
+        self.plan_animation();
     }
 
     fn schedule(&mut self, el: &ActiveEventLoop) {
@@ -219,7 +242,8 @@ impl Shell {
         if !visible && self.hidden_since.is_none() {
             self.hidden_since = Some(Instant::now());
         }
-        let main = match (self.next_frame, visible) {
+        let anim = self.anim_at.filter(|_| visible);
+        let main = match (self.next_frame.into_iter().chain(anim).min(), visible) {
             (Some(t), true) => Some(t),
             // out of sight: wake once more to let go of the video card, then sleep
             (_, false) if !self.asleep => Some(self.hidden_since.unwrap_or_else(Instant::now) + sleep_after()),
@@ -426,6 +450,9 @@ impl ApplicationHandler<Event> for Shell {
                 if let Some(w) = &self.window {
                     w.request_redraw();
                 }
+            } else if self.anim_at.is_some_and(|t| t <= now) {
+                // only the background moves: the interface is not laid out again
+                self.animate();
             }
             self.mini.tick(el);
         }
@@ -441,7 +468,7 @@ pub fn run(app: App, ctx: egui::Context, event_loop: EventLoop<Event>) {
     events::install(event_loop.create_proxy());
     // egui asks for frames from any thread (an animation, a picture that arrived)
     ctx.set_request_repaint_callback(|info| events::send(Event::Repaint(info.delay)));
-    let mut shell = Shell { app, ctx, window: None, state: None, painter: None, info: Default::default(), next_frame: None, last_print: 0, dirty: true, hidden_since: None, asleep: false, minimized: false, placement: None, mini: super::mini::Mini::new() };
+    let mut shell = Shell { app, ctx, window: None, state: None, painter: None, info: Default::default(), next_frame: None, last_print: 0, dirty: true, hidden_since: None, asleep: false, minimized: false, placement: None, mini: super::mini::Mini::new(), anim_at: None };
     if let Err(e) = event_loop.run_app(&mut shell) {
         eprintln!("[window] {e}");
     }

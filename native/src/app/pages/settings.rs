@@ -14,7 +14,7 @@ use crate::ui::widgets;
 const DIAGNOSTICS: usize = 9;
 
 const TABS: [(&str, &str, &str); 11] = [
-    ("Музыка", ic::PLAY, "Воспроизведение"),
+    ("Музыка", ic::PLAY_CIRCLE, "Воспроизведение"),
     ("", ic::EQ, "Звук и эквалайзер"),
     ("", ic::SYNC, "Сервисы и импорт"),
     ("Приложение", ic::SPARK, "Внешний вид"),
@@ -22,7 +22,7 @@ const TABS: [(&str, &str, &str); 11] = [
     ("", ic::MINI, "Мини-плеер"),
     ("", ic::MINI, "Окно и трей"),
     ("", ic::DISCORD, "Discord"),
-    ("Другое", ic::FOLDER, "Данные и копия"),
+    ("Другое", ic::DATABASE, "Данные и копия"),
     ("", ic::CHART, "Диагностика"),
     ("", ic::INFO, "О программе"),
 ];
@@ -94,7 +94,7 @@ impl App {
                 sui.painter().rect_filled(rect, 10, theme::hover());
             }
             let fg = if on { egui::Color32::from_rgb(8, 38, 34) } else { theme::ink2() };
-            sui.painter().text(rect.left_center() + vec2(14.0, 0.0), egui::Align2::CENTER_CENTER, *icon, theme::icon(12.0), fg);
+            crate::ui::theme::paint_icon(&sui.painter(), rect.left_center() + vec2(14.0, 0.0), egui::Align2::CENTER_CENTER, *icon, 12.0, fg);
             sui.painter().text(rect.left_center() + vec2(30.0, 0.0), egui::Align2::LEFT_CENTER, crate::i18n::t(name), theme::medium(13.0), if on { egui::Color32::from_rgb(8, 38, 34) } else { INK });
             if r.clicked() {
                 self.pages.settings_tab = i;

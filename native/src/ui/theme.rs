@@ -61,6 +61,21 @@ pub fn icon(size: f32) -> FontId {
     FontId::new(size, icons_family())
 }
 
+/// An icon where a glyph of `size` would stand: one of the page's pictures (a box 1.4 times the
+/// glyph's size, as the page's 21 px icons stand for 15 px glyphs) or a Segoe glyph.
+pub fn paint_icon(p: &egui::Painter, pos: egui::Pos2, align: egui::Align2, glyph: &str, size: f32, color: Color32) {
+    match glyph.strip_prefix('@') {
+        Some(name) => {
+            let b = if name.starts_with("win") { size } else { size * 1.4 };
+            let rect = align.anchor_size(pos, egui::vec2(b, b));
+            super::icons::paint(p, name, rect, color);
+        }
+        None => {
+            p.text(pos, align, glyph, icon(size), color);
+        }
+    }
+}
+
 fn map_font(name: &str) -> Option<Arc<FontData>> {
     let dir = std::env::var_os("WINDIR").map(std::path::PathBuf::from).unwrap_or_else(|| "C:\\Windows".into()).join("Fonts");
     let file = std::fs::File::open(dir.join(name)).ok()?;
@@ -183,58 +198,67 @@ pub fn apply(ctx: &egui::Context) {
     });
 }
 
-/// icon codes of Segoe MDL2 Assets / Segoe Fluent Icons
+/// The icons: "@name" is one of the Tauri build's own (src/ui/components/Icons.tsx, drawn by
+/// ui/icons.rs); the rest are glyphs of Segoe MDL2 Assets for the few the page has no picture of.
 pub mod ic {
-    pub const PLAY: &str = "\u{E768}";
-    pub const PAUSE: &str = "\u{E769}";
-    pub const NEXT: &str = "\u{E893}";
-    pub const PREV: &str = "\u{E892}";
-    pub const SHUFFLE: &str = "\u{E8B1}";
-    pub const REPEAT: &str = "\u{E8EE}";
+    pub const SLIDERS: &str = "@sliders";
+    pub const OFFLINE: &str = "@offline";
+    pub const PLAY_CIRCLE: &str = "@playCircle";
+    pub const PLUG: &str = "@plug";
+    pub const DATABASE: &str = "@database";
+    pub const REFRESH: &str = "@refresh";
+    pub const USER: &str = "@user";
+    pub const COPY: &str = "@copy";
+    pub const PLAY: &str = "@play";
+    pub const PAUSE: &str = "@pause";
+    pub const NEXT: &str = "@next";
+    pub const PREV: &str = "@prev";
+    pub const SHUFFLE: &str = "@shuffle";
+    pub const REPEAT: &str = "@repeat";
     pub const REPEAT_ONE: &str = "\u{E8ED}";
-    pub const VOLUME: &str = "\u{E767}";
-    pub const MUTE: &str = "\u{E74F}";
-    pub const HEART: &str = "\u{EB51}";
-    pub const HEART_FILL: &str = "\u{EB52}";
-    pub const HOME: &str = "\u{E80F}";
-    pub const SEARCH: &str = "\u{E721}";
-    pub const LIBRARY: &str = "\u{E8F1}";
-    pub const FOLDER: &str = "\u{ED25}";
-    pub const SETTINGS: &str = "\u{E713}";
-    pub const PEOPLE: &str = "\u{E716}";
-    pub const EQ: &str = "\u{E9E9}";
-    pub const BACK: &str = "\u{E72B}";
-    pub const CLOSE: &str = "\u{E8BB}";
-    pub const MINIMIZE: &str = "\u{E921}";
-    pub const MAXIMIZE: &str = "\u{E922}";
-    pub const RESTORE: &str = "\u{E923}";
-    pub const MORE: &str = "\u{E712}";
-    pub const ADD: &str = "\u{E710}";
-    pub const DOWNLOAD: &str = "\u{E896}";
-    pub const DELETE: &str = "\u{E74D}";
-    pub const NOTE: &str = "\u{E8D6}";
-    pub const DISC: &str = "\u{E958}";
-    pub const FULLSCREEN: &str = "\u{E740}";
-    pub const LIST: &str = "\u{E8FD}";
-    pub const GRID: &str = "\u{F0E2}";
-    pub const LINK: &str = "\u{E71B}";
-    pub const RADIO: &str = "\u{E93E}";
-    pub const LYRICS: &str = "\u{E8D2}";
-    pub const EDIT: &str = "\u{E70F}";
-    pub const CHECK: &str = "\u{E73E}";
-    pub const CANCEL: &str = "\u{E711}";
+    pub const VOLUME: &str = "@volume";
+    pub const MUTE: &str = "@mute";
+    pub const HEART: &str = "@heart";
+    pub const HEART_FILL: &str = "@heartFill";
+    pub const HOME: &str = "@home";
+    pub const SEARCH: &str = "@search";
+    pub const LIBRARY: &str = "@library";
+    pub const FOLDER: &str = "@folder";
+    pub const SETTINGS: &str = "@settings";
+    pub const PEOPLE: &str = "@jam";
+    pub const EQ: &str = "@eq";
+    pub const BACK: &str = "@back";
+    pub const CLOSE: &str = "@close";
+    pub const MINIMIZE: &str = "@winMin";
+    pub const MAXIMIZE: &str = "@winMax";
+    pub const RESTORE: &str = "@winRestore";
+    pub const MORE: &str = "@more";
+    pub const ADD: &str = "@plus";
+    pub const DOWNLOAD: &str = "@download";
+    pub const DELETE: &str = "@trash";
+    pub const NOTE: &str = "@music";
+    pub const DISC: &str = "@disc";
+    pub const FULLSCREEN: &str = "@expand";
+    pub const LIST: &str = "@listPlus";
+    pub const GRID: &str = "@gridView";
+    pub const LINK: &str = "@link";
+    pub const RADIO: &str = "@radio";
+    pub const LYRICS: &str = "@lyrics";
+    pub const EDIT: &str = "@pencil";
+    pub const CHECK: &str = "@check";
+    pub const CANCEL: &str = "@close";
     pub const CLOCK: &str = "\u{E823}";
-    pub const SORT: &str = "\u{E8CB}";
-    pub const QUEUE: &str = "\u{E90B}";
-    pub const SYNC: &str = "\u{E895}";
-    pub const INFO: &str = "\u{E946}";
-    pub const CHART: &str = "\u{E9D2}";
-    pub const OPEN: &str = "\u{E8A7}";
-    pub const MINI: &str = "\u{E944}";
-    pub const KEYBOARD: &str = "\u{E765}";
-    pub const DISCORD: &str = "\u{E8BD}";
-    pub const STATS: &str = "\u{E9D2}";
-    pub const SPARK: &str = "\u{E945}";
+    pub const SORT: &str = "@sort";
+    pub const QUEUE: &str = "@queue";
+    pub const SYNC: &str = "@plug";
+    pub const INFO: &str = "@info";
+    pub const CHART: &str = "@chart";
+    pub const OPEN: &str = "@folder";
+    pub const MINI: &str = "@pip";
+    pub const KEYBOARD: &str = "@keyboard";
+    pub const DISCORD: &str = "@chat";
+    pub const STATS: &str = "@chart";
+    pub const SPARK: &str = "@palette";
     pub const UP: &str = "\u{E70E}";
     pub const DOWN: &str = "\u{E70D}";
     pub const WARNING: &str = "\u{E7BA}";

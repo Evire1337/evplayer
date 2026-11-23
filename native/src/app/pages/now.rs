@@ -218,7 +218,7 @@ impl App {
                 let x = Rect::from_center_size(pos2(row.right() - 16.0, row.center().y), vec2(24.0, 24.0));
                 let xr = ui.interact(x, r.id.with("rm"), Sense::click());
                 if r.hovered() || xr.hovered() {
-                    ui.painter().text(x.center(), Align2::CENTER_CENTER, ic::CANCEL, theme::icon(10.0), if xr.hovered() { ACCENT } else { theme::ink2() });
+                    crate::ui::theme::paint_icon(&ui.painter(), x.center(), Align2::CENTER_CENTER, ic::CANCEL, 10.0, if xr.hovered() { ACCENT } else { theme::ink2() });
                 }
                 if xr.clicked() {
                     self.player.remove(*i);

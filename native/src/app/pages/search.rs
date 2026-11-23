@@ -238,7 +238,7 @@ impl App {
             if r.hovered() {
                 ui.painter().rect_filled(rect, 10, theme::hover());
             }
-            ui.painter().text(rect.left_center() + egui::vec2(14.0, 0.0), egui::Align2::CENTER_CENTER, ic::CLOCK, theme::icon(12.0), theme::ink3());
+            crate::ui::theme::paint_icon(&ui.painter(), rect.left_center() + egui::vec2(14.0, 0.0), egui::Align2::CENTER_CENTER, ic::CLOCK, 12.0, theme::ink3());
             ui.painter().text(rect.left_center() + egui::vec2(32.0, 0.0), egui::Align2::LEFT_CENTER, q, theme::body(14.0), INK);
             if r.clicked() {
                 self.pages.search.query = q.clone();
