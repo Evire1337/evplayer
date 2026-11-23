@@ -107,6 +107,16 @@ fn discord(view: &crate::player::View) {
     }
     let now = crate::store::state::now_ms();
     let started = now - view.position_ms;
+    // the listening session: its size ("2 из 16") and the "Слушать вместе" button, which takes a
+    // friend in through a page (Discord takes only https links); nothing for a closed session.
+    // Discord's own "Ask to join" is not used: next to it Discord shows no link buttons at all.
+    let (party, join_url) = match crate::jam::engine::get().map(|j| j.view()).filter(|v| v.status == crate::jam::engine::JamStatus::Live) {
+        Some(v) => (
+            Some(crate::discord::Party { id: format!("evp:{}", v.code), size: v.people.len() as u32, max: crate::jam::protocol::MAX_PEOPLE as u32, join: None }),
+            (v.access != crate::jam::engine::Access::Closed).then(|| format!("https://evire1337.github.io/evplayer/join/?code={}", percent_encoding::utf8_percent_encode(&v.code, percent_encoding::NON_ALPHANUMERIC))),
+        ),
+        None => (None, None),
+    };
     let state = crate::discord::PresenceState {
         title: t.title.clone(),
         artist: t.artist_line(),
@@ -122,8 +132,8 @@ fn discord(view: &crate::player::View) {
         }.into()),
         position_ms: Some(view.position_ms),
         duration_ms: Some(view.duration_ms),
-        party: None,
-        join_url: None,
+        party,
+        join_url,
     };
     d.update(Some(state));
 }

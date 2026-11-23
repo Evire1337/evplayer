@@ -243,6 +243,8 @@ impl Jam {
     fn set(&self, f: impl FnOnce(&mut View)) {
         f(&mut self.view.lock().unwrap());
         crate::events::repaint();
+        // the Discord status shows the session's size and its "Слушать вместе" button
+        crate::presence::changed();
     }
 
     fn save(&self) {
