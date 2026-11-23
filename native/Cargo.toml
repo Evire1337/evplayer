@@ -1,0 +1,66 @@
+[package]
+name = "evplayer-native"
+version = "0.7.6"
+description = "EvPlayer without a browser engine: the whole player in Rust, drawn by the processor"
+authors = ["Evire1337"]
+license = "MIT"
+edition = "2021"
+rust-version = "1.85"
+publish = false
+
+[[bin]]
+name = "evplayer-native"
+path = "src/main.rs"
+
+[dependencies]
+# the window and the interface: winit opens it, egui lays it out, softbuffer shows what
+# ui/soft.rs drew (no OpenGL, DirectX or Vulkan: the video driver alone took 100 MB and more)
+winit = { version = "0.30", default-features = false, features = ["rwh_06"] }
+egui = { version = "0.37", default-features = false }
+egui-winit = { version = "0.37", default-features = false, features = ["clipboard", "links"] }
+softbuffer = { version = "0.4", default-features = false }
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
+
+# sound: cpal talks to WASAPI, symphonia decodes, libopus (opusic-sys) decodes Opus
+cpal = "0.18"
+symphonia = { version = "0.6", default-features = false, features = ["mp3", "aac", "isomp4", "flac", "ogg", "vorbis", "wav", "pcm", "mkv", "alac", "opt-simd"] }
+opusic-sys = "0.7"
+rtrb = "0.3"
+
+# what the shared modules of src-tauri use (stems, offline, library, discord, services, ...)
+tauri = { path = "shim/tauri" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+reqwest = { version = "0.12", default-features = false, features = ["cookies", "gzip", "brotli", "deflate", "json", "blocking", "native-tls"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "fs", "io-util", "net"] }
+lofty = "0.22"
+notify = "8"
+sha1_smol = "1"
+sha2 = "0.10"
+base64 = "0.22"
+rand = "0.8"
+regex = "1"
+url = "2"
+percent-encoding = "2"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+rusty-leveldb = "3"
+log = "0.4"
+tiny_http = "0.12"
+ort = { version = "=2.0.0-rc.10", default-features = false, features = ["std", "download-binaries"] }
+realfft = "3"
+flate2 = "1"
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.62", features = ["Win32_Graphics_Direct3D11", "Win32_Graphics_Direct3D", "Win32_Graphics_Dxgi", "Win32_Graphics_Dxgi_Common", "Win32_Foundation", "Media", "Media_Control", "Foundation", "Storage_Streams", "Win32_System_WinRT", "Win32_UI_Shell"] }
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_UI_Shell", "Win32_System_Pipes", "Win32_System_Diagnostics_ToolHelp", "Win32_System_ProcessStatus", "Win32_System_Threading", "Win32_UI_Input_KeyboardAndMouse", "Win32_Graphics_Gdi", "Win32_System_LibraryLoader", "Win32_Security", "Win32_System_Com"] }
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = 3
+panic = "abort"
+strip = true
+
+# the drawing and the sound are slow without optimisation even while developing
+[profile.dev.package."*"]
+opt-level = 2

@@ -1,0 +1,12 @@
+[package]
+name = "tauri"
+version = "2.0.0"
+edition = "2021"
+publish = false
+description = "A stand-in named `tauri` for the native build: it only hands on the `http` crate, which is all that library.rs and proxy.rs take from Tauri, so those files compile unchanged in both builds."
+
+[lib]
+path = "lib.rs"
+
+[dependencies]
+http = "1"
