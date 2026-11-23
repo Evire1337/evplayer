@@ -159,6 +159,9 @@ impl Shell {
         egui_winit::update_viewport_info(&mut self.info, &self.ctx, &window, false);
         let app = &mut self.app;
         let out = self.ctx.run_ui(input, |ui| app.ui(ui));
+        if FRAMES.load(std::sync::atomic::Ordering::Relaxed) == 0 {
+            crate::stage("first frame laid out");
+        }
         state.handle_platform_output_with_event_loop(&window, el, out.platform_output);
         let mut viewport = out.viewport_output;
         let root = viewport.remove(&ViewportId::ROOT);
@@ -188,6 +191,9 @@ impl Shell {
                     g.render(&prims, ppp);
                 }
                 g.free_textures(&out.textures_delta);
+                if FRAMES.load(std::sync::atomic::Ordering::Relaxed) == 1 && !same {
+                    crate::stage("first frame on screen");
+                }
             }
             Some(Painter::Soft { surface, renderer, force }) => {
                 renderer.set_textures(&out.textures_delta);
@@ -295,6 +301,7 @@ impl ApplicationHandler<Event> for Shell {
         if self.window.is_some() {
             return;
         }
+        crate::stage("event loop running");
         let attrs = Window::default_attributes()
             .with_title("EvPlayer")
             .with_inner_size(winit::dpi::LogicalSize::new(1280.0, 800.0))
@@ -310,6 +317,7 @@ impl ApplicationHandler<Event> for Shell {
                 return;
             }
         });
+        crate::stage("window created");
         let state = egui_winit::State::new(self.ctx.clone(), ViewportId::ROOT, &window, Some(window.scale_factor() as f32), window.theme(), Some(8192));
         self.state = Some(state);
         egui_winit::update_viewport_info(&mut self.info, &self.ctx, &window, true);
@@ -320,7 +328,9 @@ impl ApplicationHandler<Event> for Shell {
         if !start_hidden {
             // drawn first, then shown: no white or empty frame flashes up
             self.make_painter(&window);
+            crate::stage("Direct3D ready");
             window.set_visible(true);
+            crate::stage("window shown");
             self.app.window_shown(true);
         } else {
             self.hidden_since = Some(Instant::now());

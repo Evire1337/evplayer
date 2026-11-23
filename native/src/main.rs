@@ -68,8 +68,20 @@ pub fn data_dir() -> PathBuf {
     std::env::var_os("APPDATA").map(PathBuf::from).unwrap_or_else(|| PathBuf::from(".")).join("EvPlayer")
 }
 
+/// When the program started; with EVPLAYER_TRACE set, `stage` prints how long each step of
+/// the start took, to see what keeps the window from showing sooner
+static STARTED: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+
+pub fn stage(name: &str) {
+    if std::env::var_os("EVPLAYER_TRACE").is_some() {
+        if let Some(t) = STARTED.get() {
+            eprintln!("[start] {:>7.1} ms  {name}", t.elapsed().as_secs_f64() * 1000.0);
+        }
+    }
+}
+
 fn main() {
-    let started = std::time::Instant::now();
+    let started = *STARTED.get_or_init(std::time::Instant::now);
     let args: Vec<String> = std::env::args().collect();
     if let Some(i) = args.iter().position(|a| a == "--glyphs") {
         if let Some(out) = args.get(i + 1) {
@@ -85,6 +97,7 @@ fn main() {
     if !snapshot && !system::single_instance() {
         return;
     }
+    stage("one copy checked");
     let dir = data_dir();
     let _ = std::fs::create_dir_all(&dir);
     userproxy::load(&dir);
@@ -96,9 +109,12 @@ fn main() {
             return;
         }
     };
+    stage("event loop");
     state::init(dir.clone());
+    stage("saved data read");
     let ctx = egui::Context::default();
     let app = app::App::new(&ctx, dir, started);
+    stage("app built");
     // "Слушать вместе": nothing of it runs until a session is opened
     jam::engine::init(app.player.clone());
     if let Some(opts) = ui::snapshot::parse(&args) {
