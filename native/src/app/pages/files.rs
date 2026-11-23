@@ -63,6 +63,6 @@ impl App {
             return;
         }
         let source = PlaySource { page: "files".into(), id: None, title: None, cover: None, kind: None };
-        self.track_list(ui, &tracks, Some(source), None, &|_| None);
+        self.track_list(ui, &tracks, Some(source), None, &|_| None, false);
     }
 }

@@ -142,6 +142,12 @@ pub fn clear() {
     VERSION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 }
 
+/// how many times a song was played, all time ("Ваши прослушивания" order)
+pub fn plays_of(id: &str) -> u32 {
+    let today = today();
+    with(|d| d.tracks.get(id).map(|r| sum(r, Range::All, today).n).unwrap_or(0))
+}
+
 /// how big the statistics are on disk (Настройки → Данные)
 pub fn bytes() -> usize {
     crate::state::get().kv.size(KEY)

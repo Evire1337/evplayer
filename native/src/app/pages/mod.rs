@@ -48,21 +48,28 @@ pub struct Pages {
     pub services: services::ServicesState,
     /// «Слушать вместе»
     pub jam: jam::JamUi,
+    /// a playlist's "…" and its order menu are open
+    pub playlist_menu: bool,
+    pub sort_menu: bool,
 }
 
 impl App {
     /// a list of songs; pressing one plays the list from it
-    pub fn track_list(&mut self, ui: &mut Ui, tracks: &[Track], source: Option<PlaySource>, playlist: Option<(&str, &[String])>, extra: &dyn Fn(usize) -> Option<String>) {
+    /// `dated`: the notes are the dates songs were added, in their own column
+    pub fn track_list(&mut self, ui: &mut Ui, tracks: &[Track], source: Option<PlaySource>, playlist: Option<(&str, &[String])>, extra: &dyn Fn(usize) -> Option<String>, dated: bool) {
         let current = self.view.current().map(|t| t.id.clone());
+        // the current row shows pause over its cover while it plays
+        let playing = self.view.status == crate::player::Status::Playing;
+        ui.ctx().data_mut(|d| d.insert_temp(egui::Id::unique("evplayer-playing"), playing));
         let double = state::get().settings.read().unwrap().double_click_to_play;
         let lib_likes: std::collections::HashSet<String> = state::get().library.read().unwrap().likes.iter().map(|l| l.track.id.clone()).collect();
         // only the rows on screen are laid out: a playlist of thousands costs as much as a short one
-        let row_h = 52.0 + ui.spacing().item_spacing.y;
+        let row_h = 62.0 + ui.spacing().item_spacing.y;
         egui::ScrollArea::vertical().id_salt("tracks").auto_shrink([false, false]).show_rows(ui, row_h - ui.spacing().item_spacing.y, tracks.len(), |ui, range| {
             for i in range {
                 let t = &tracks[i];
                 let e = extra(i);
-                let out = widgets::track_row(ui, &mut self.images, t, current.as_deref() == Some(t.id.as_str()), lib_likes.contains(&t.id), e.as_deref(), None);
+                let out = widgets::track_row_full(ui, &mut self.images, t, current.as_deref() == Some(t.id.as_str()), lib_likes.contains(&t.id), e.as_deref(), None, dated);
                 if (out.clicked && !double) || out.double {
                     self.play_list(tracks, i, source.clone());
                 }

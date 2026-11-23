@@ -11,20 +11,37 @@ use crate::ui::images::artwork_of;
 use crate::ui::theme::{self, ic, INK};
 use crate::ui::widgets;
 
-/// "30 мин назад", "2 ч назад", "вчера", "22 нояб."
+/// When a song was added, as the page's formatAddedAt (Intl.RelativeTimeFormat, short):
+/// "сейчас", "5 мин. назад", "3 ч назад", "вчера", "3 дн. назад", "3 нед. назад", then the date
 pub fn ago(iso: &str) -> String {
     let Ok(t) = chrono::DateTime::parse_from_rfc3339(iso) else { return String::new() };
     let secs = (chrono::Utc::now() - t.with_timezone(&chrono::Utc)).num_seconds().max(0);
     let en = crate::i18n::is_english();
+    let (m, h, d) = (secs / 60, secs / 3600, secs / 86_400);
     match secs {
-        0..=59 => (if en { "just now" } else { "только что" }).into(),
-        60..=3599 => if en { format!("{} min ago", secs / 60) } else { format!("{} мин назад", secs / 60) },
-        3600..=86_399 => if en { format!("{} hr ago", secs / 3600) } else { format!("{} ч назад", secs / 3600) },
-        86_400..=172_799 => (if en { "yesterday" } else { "вчера" }).into(),
+        0..=59 => (if en { "now" } else { "сейчас" }).into(),
+        60..=3599 => if en { format!("{m} min. ago") } else { format!("{m} мин. назад") },
+        3600..=86_399 => if en { format!("{h} hr. ago") } else { format!("{h} ч назад") },
+        _ if d < 7 => match d {
+            1 => (if en { "yesterday" } else { "вчера" }).into(),
+            2 if !en => "позавчера".into(),
+            _ => if en { format!("{d} days ago") } else { format!("{d} дн. назад") },
+        },
+        _ if d < 30 => {
+            let w = d / 7;
+            if w == 1 {
+                (if en { "last wk." } else { "на прошлой неделе" }).into()
+            } else if en {
+                format!("{w} wk. ago")
+            } else {
+                format!("{w} нед. назад")
+            }
+        }
         _ => date(iso),
     }
 }
 
+/// "27 окт. 2026 г." / "Oct 27, 2026", as Intl's short date
 pub fn date(iso: &str) -> String {
     let Ok(t) = chrono::DateTime::parse_from_rfc3339(iso) else { return String::new() };
     let t = t.with_timezone(&chrono::Local);
@@ -33,10 +50,88 @@ pub fn date(iso: &str) -> String {
     const EN: [&str; 12] = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
     let m = t.month0() as usize;
     if crate::i18n::is_english() {
-        format!("{} {} {}", t.day(), EN[m], t.year())
+        format!("{} {}, {}", EN[m], t.day(), t.year())
     } else {
-        format!("{} {} {}", t.day(), RU[m], t.year())
+        format!("{} {} {} г.", t.day(), RU[m], t.year())
     }
+}
+
+// ---- sorting (src/library/sort.ts) ----------------------------------------------------------------
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum SortKey {
+    Custom,
+    Added,
+    Title,
+    Artist,
+    Duration,
+    Plays,
+}
+
+const SORT_KEYS: [(SortKey, &str, &str); 6] = [
+    (SortKey::Custom, "custom", "Свой порядок"),
+    (SortKey::Added, "added", "Дата добавления"),
+    (SortKey::Title, "title", "Название"),
+    (SortKey::Artist, "artist", "Исполнитель"),
+    (SortKey::Duration, "duration", "Длительность"),
+    (SortKey::Plays, "plays", "Ваши прослушивания"),
+];
+
+impl SortKey {
+    fn name(self) -> &'static str {
+        SORT_KEYS.iter().find(|k| k.0 == self).map(|k| k.1).unwrap_or("custom")
+    }
+    fn label(self) -> &'static str {
+        SORT_KEYS.iter().find(|k| k.0 == self).map(|k| k.2).unwrap_or("")
+    }
+    /// the direction a key starts with: newest, longest and most played first; names A→Я
+    fn first_asc(self) -> bool {
+        matches!(self, SortKey::Custom | SortKey::Title | SortKey::Artist)
+    }
+}
+
+/// the order chosen for song lists, kept in the settings as the Tauri build does ("trackSort")
+pub fn track_sort() -> (SortKey, bool) {
+    let v = state::get().extra("trackSort").unwrap_or_default();
+    let key = SORT_KEYS.iter().find(|k| Some(k.1) == v["key"].as_str()).map(|k| k.0).unwrap_or(SortKey::Custom);
+    (key, v["dir"].as_str() != Some("desc"))
+}
+
+fn set_track_sort(key: SortKey, asc: bool) {
+    state::get().set_extra("trackSort", serde_json::json!({ "key": key.name(), "dir": if asc { "asc" } else { "desc" } }));
+}
+
+/// pressing a key: the same key turns the direction, another starts with its own
+fn press_sort(key: SortKey) {
+    let (cur, asc) = track_sort();
+    set_track_sort(key, if cur == key { !asc } else { key.first_asc() });
+}
+
+/// rows in the chosen order; ties keep their own order
+pub fn sort_rows<T: Clone>(rows: &[(Track, String, T)], key: SortKey, asc: bool) -> Vec<(Track, String, T)> {
+    if key == SortKey::Custom {
+        let mut v = rows.to_vec();
+        if !asc {
+            v.reverse();
+        }
+        return v;
+    }
+    let plays = |t: &Track| crate::stats::plays_of(&t.id) as f64;
+    let lower = |s: &str| s.to_lowercase();
+    let mut v: Vec<(usize, &(Track, String, T))> = rows.iter().enumerate().collect();
+    v.sort_by(|(ia, a), (ib, b)| {
+        let c = match key {
+            SortKey::Added => a.1.cmp(&b.1),
+            SortKey::Title => lower(&a.0.title).cmp(&lower(&b.0.title)),
+            SortKey::Artist => lower(a.0.artists.first().map(|x| x.name.as_str()).unwrap_or("")).cmp(&lower(b.0.artists.first().map(|x| x.name.as_str()).unwrap_or(""))),
+            SortKey::Duration => a.0.duration_ms.partial_cmp(&b.0.duration_ms).unwrap_or(std::cmp::Ordering::Equal),
+            SortKey::Plays => plays(&a.0).partial_cmp(&plays(&b.0)).unwrap_or(std::cmp::Ordering::Equal),
+            SortKey::Custom => std::cmp::Ordering::Equal,
+        };
+        let c = if asc { c } else { c.reverse() };
+        c.then(ia.cmp(ib))
+    });
+    v.into_iter().map(|(_, r)| r.clone()).collect()
 }
 
 impl App {
@@ -102,106 +197,264 @@ impl App {
         });
     }
 
+    /// A list of songs of yours (PlaylistPage.tsx): the cover, what it is, its name and
+    /// description, how many songs and when it was made, "Слушать", "Вперемешку", downloading
+    /// and "…"; then the filter, the order, and the songs with the date each was added.
     pub fn playlist(&mut self, ui: &mut Ui, id: &str) {
         let lib = state::get().library.read().unwrap().clone();
-        let (title, sub, cover, tracks, items, created): (String, String, Option<String>, Vec<Track>, Vec<String>, String) = if let Some(kind) = id.strip_prefix("smart:") {
+        let smart = id.strip_prefix("smart:");
+        let editable = id != "likes" && id != "offline" && smart.is_none();
+        // (song, added at, its item id)
+        let (title, eyebrow, description, cover, rows): (String, &str, Option<String>, Option<String>, Vec<(Track, String, String)>) = if let Some(kind) = smart {
             let liked: Vec<Track> = lib.likes.iter().map(|l| l.track.clone()).collect();
+            let (t, desc) = crate::stats::SMART.iter().find(|s| s.0 == kind).map(|s| (s.1, s.2)).unwrap_or(("", ""));
             let tracks = crate::stats::smart(kind, &liked, 100);
-            let items = tracks.iter().map(|t| t.id.clone()).collect();
-            let (title, desc) = crate::stats::SMART.iter().find(|s| s.0 == kind).map(|s| (s.1, s.2)).unwrap_or(("", ""));
-            (crate::i18n::t(title), crate::i18n::t(desc), tracks.first().and_then(artwork_of), tracks, items, String::new())
+            (crate::i18n::t(t), "Собрано для вас", Some(crate::i18n::t(desc)), tracks.first().and_then(artwork_of), tracks.into_iter().map(|t| { let id = t.id.clone(); (t, String::new(), id) }).collect())
         } else if id == "offline" {
             let tracks = self.saved_tracks();
-            let items = tracks.iter().map(|t| t.id.clone()).collect();
-            (crate::i18n::t("Скачанное"), crate::i18n::tracks(tracks.len()), None, tracks, items, String::new())
+            (crate::i18n::t("Скачанное"), "Плейлист", None, None, tracks.into_iter().map(|t| { let id = t.id.clone(); (t, String::new(), id) }).collect())
         } else if id == "likes" {
-            let tracks: Vec<Track> = lib.likes.iter().map(|l| l.track.clone()).collect();
-            let items = tracks.iter().map(|t| t.id.clone()).collect();
-            (crate::i18n::t("Любимое"), crate::i18n::tracks(tracks.len()), None, tracks, items, String::new())
+            (crate::i18n::t("Понравившиеся"), "Ваши лайки", None, None, lib.likes.iter().map(|l| (l.track.clone(), l.added_at.clone(), l.track.id.clone())).collect())
         } else if let Some(p) = lib.playlists.iter().find(|p| p.id == id) {
-            let tracks: Vec<Track> = p.items.iter().map(|i| i.track.clone()).collect();
-            let cover = p.icon.clone().or_else(|| p.items.first().and_then(|i| artwork_of(&i.track)));
-            (p.title.clone(), format!("{} · {} {}", crate::i18n::tracks(tracks.len()), crate::i18n::t("создан"), date(&p.created_at)), cover, tracks, p.items.iter().map(|i| i.id.clone()).collect(), p.created_at.clone())
+            let cover = p.icon.clone().filter(|i| !i.is_empty()).or_else(|| p.items.first().and_then(|i| artwork_of(&i.track)));
+            (p.title.clone(), "Плейлист", p.description.clone().filter(|d| !d.is_empty()), cover, p.items.iter().map(|i| (i.track.clone(), i.added_at.clone(), i.id.clone())).collect())
         } else {
-            App::muted(ui, "Плейлист не найден");
+            App::muted(ui, "Плейлист не найден.");
             return;
         };
-        let _ = created;
+        let dated = rows.iter().any(|r| !r.1.is_empty());
+        let created = lib.playlists.iter().find(|p| p.id == id).map(|p| p.created_at.clone());
+        // how much of this list is saved for offline
+        let saved: std::collections::HashSet<String> = if smart.is_none() && id != "offline" { self.downloads.saved().into_iter().map(|e| e.id).collect() } else { Default::default() };
+        let (off_total, off_kept) = if smart.is_none() && id != "offline" { crate::keep::status(id, &saved) } else { (0, 0) };
+
+        // the order and the filter
+        let (key, asc) = track_sort();
+        let filter = self.pages.playlist_filter.clone();
+        let f = crate::player::matching::simplify(&filter);
+        let filtered: Vec<(Track, String, String)> = if f.is_empty() { rows.clone() } else { rows.iter().filter(|(t, _, _)| crate::player::matching::simplify(&format!("{} {}", t.title, t.artist_line())).contains(&f)).cloned().collect() };
+        let shown = sort_rows(&filtered, key, asc);
+        let tracks: Vec<Track> = shown.iter().map(|r| r.0.clone()).collect();
+        let source = PlaySource { page: "playlist".into(), id: Some(id.to_string()), title: None, cover: None, kind: None };
+
+        // .pl-hero: the cover (210), 28 to the text, all at the bottom
         ui.add_space(8.0);
         ui.horizontal(|ui| {
-            let art = 200.0;
+            let art = 210.0;
             if id == "likes" {
                 let (rect, _) = ui.allocate_exact_size(vec2(art, art), egui::Sense::hover());
                 gradient(ui, rect, egui::Color32::from_rgb(92, 214, 172), egui::Color32::from_rgb(40, 120, 140));
-                crate::ui::theme::paint_icon(&ui.painter(), rect.center(), Align2::CENTER_CENTER, ic::HEART_FILL, 56.0, egui::Color32::from_rgb(10, 30, 30));
+                crate::ui::icons::paint(ui.painter(), "heartFill", Rect::from_center_size(rect.center(), vec2(72.0, 72.0)), egui::Color32::from_rgb(10, 30, 30));
             } else {
                 widgets::cover(ui, &mut self.images, cover.as_deref(), art, 18);
             }
-            ui.add_space(14.0);
+            ui.add_space(28.0);
             ui.vertical(|ui| {
-                ui.add_space(28.0);
-                ui.label(egui::RichText::new(crate::i18n::t("ПЛЕЙЛИСТ")).font(theme::medium(11.0)).color(theme::ink3()));
-                ui.label(egui::RichText::new(&title).font(theme::heavy(40.0)).color(INK));
-                App::muted(ui, &sub);
-                ui.add_space(10.0);
+                ui.spacing_mut().item_spacing.y = 8.0;
+                // the text sits at the bottom, by the cover's lower edge
+                let lines = 4.0 + if description.is_some() { 1.0 } else { 0.0 };
+                ui.add_space((art - (lines * 26.0 + 56.0)).max(0.0));
+                ui.label(egui::RichText::new(crate::i18n::t(eyebrow).to_uppercase()).font(theme::medium(12.0)).color(theme::ink3()).extra_letter_spacing(1.0));
+                ui.label(egui::RichText::new(&title).font(theme::heavy(46.0)).color(INK));
+                if let Some(d) = &description {
+                    App::muted(ui, d);
+                }
+                let mut meta = crate::i18n::tracks(rows.len());
+                if let Some(c) = &created {
+                    meta.push_str(&format!(" · {} {}", crate::i18n::t("создан"), date(c)));
+                }
+                if off_kept > 0 {
+                    meta.push_str(&format!(" · {} {off_kept} {} {off_total}", crate::i18n::t("скачано"), crate::i18n::t("из")));
+                }
+                ui.label(egui::RichText::new(meta).font(theme::body(13.0)).color(theme::ink2()));
+                ui.add_space(8.0);
                 ui.horizontal(|ui| {
-                    let source = PlaySource { page: "playlist".into(), id: Some(id.to_string()), title: None, cover: None, kind: None };
-                    if widgets::pill_button(ui, Some(ic::PLAY), "Играть", true).clicked() && !tracks.is_empty() {
+                    ui.spacing_mut().item_spacing.x = 8.0;
+                    if widgets::btn(ui, Some("play"), "Слушать", true).clicked() && !tracks.is_empty() {
                         self.player.play_queue(tracks.clone(), 0, Some(source.clone()));
                     }
-                    if id != "offline" && !id.starts_with("smart:") {
-                        self.offline_menu(ui, id);
-                    }
-                    if widgets::pill_button(ui, Some(ic::SHUFFLE), "Вперемешку", false).clicked() && !tracks.is_empty() {
+                    if widgets::btn(ui, Some("shuffle"), "Вперемешку", false).clicked() && !tracks.is_empty() {
                         let shuffled = crate::player::queue::shuffled(&tracks, None);
-                        self.player.play_queue(shuffled, 0, Some(source));
+                        self.player.play_queue(shuffled, 0, Some(source.clone()));
                     }
-                    if id != "likes" && id != "offline" && !id.starts_with("smart:") {
-                        if widgets::icon_button(ui, ic::EDIT, 34.0, false, "Изменить").clicked() {
-                            let d = lib.playlists.iter().find(|p| p.id == id).and_then(|p| p.description.clone()).unwrap_or_default();
-                            self.dialog = Some(Dialog::Rename { id: id.to_string(), title: title.clone(), description: d });
+                    if off_total > 0 {
+                        let all = off_kept == off_total;
+                        let r = widgets::round_button(ui, if all { "@offline" } else { ic::DOWNLOAD }, 42.0, widgets::Round::Soft, all, if all { "Всё скачано · настроить" } else { "Скачать для офлайн" });
+                        if r.clicked() {
+                            self.dialog = Some(Dialog::Download { picked: vec![id.to_string()], follow: true });
                         }
-                        if widgets::icon_button(ui, ic::LINK, 34.0, false, "Скопировать код плейлиста").clicked() {
-                            let p = lib.playlists.iter().find(|p| p.id == id);
-                            let code = crate::import::encode_code(&crate::import::Shared { title: title.clone(), description: p.and_then(|p| p.description.clone()), icon: p.and_then(|p| p.icon.clone()), tracks: tracks.clone(), likes: false });
-                            ui.ctx().copy_text(code);
-                            self.toast("Код плейлиста скопирован — вставьте его в «Импорт» на другом компьютере");
+                    }
+                    if smart.is_none() && id != "offline" {
+                        let r = widgets::round_button(ui, ic::MORE, 42.0, widgets::Round::Soft, false, "");
+                        if r.clicked() {
+                            self.pages.playlist_menu = !self.pages.playlist_menu;
                         }
-                        if widgets::icon_button(ui, ic::DELETE, 34.0, false, "Удалить плейлист").clicked() {
-                            self.dialog = Some(Dialog::ConfirmDelete { id: id.to_string(), title: title.clone() });
-                        }
+                        self.playlist_more(ui, id, r.rect, &title, &rows, off_kept > 0 || crate::keep::get().lists.iter().any(|l| l == id), off_total > off_kept);
                     }
                 });
             });
         });
-        ui.add_space(14.0);
-        let filter_w = 260.0;
-        let mut filter = std::mem::take(&mut self.pages.playlist_filter);
+        ui.add_space(30.0);
+
+        // .pl-tools: the filter, the order, "Вернуть свой порядок"
+        let mut filter_now = std::mem::take(&mut self.pages.playlist_filter);
+        let mut sort_rect = Rect::NOTHING;
         ui.horizontal(|ui| {
-            ui.add(egui::TextEdit::singleline(&mut filter).hint_text(crate::i18n::t("Поиск в плейлисте")).desired_width(filter_w));
+            ui.spacing_mut().item_spacing.x = 14.0;
+            widgets::filter_input(ui, &mut filter_now, "Найти в плейлисте", 260.0);
+            let label = format!("{}{}", crate::i18n::t(key.label()), if key == SortKey::Custom && asc { String::new() } else if asc { " ↑".into() } else { " ↓".into() });
+            let r = widgets::btn(ui, Some("sort"), &label, false);
+            sort_rect = r.rect;
+            if r.clicked() {
+                self.pages.sort_menu = !self.pages.sort_menu;
+            }
+            if key != SortKey::Custom {
+                let reset = ui.add(egui::Label::new(egui::RichText::new(crate::i18n::t("Вернуть свой порядок")).font(theme::body(12.5)).color(theme::ink3())).sense(egui::Sense::click()));
+                if reset.clicked() {
+                    set_track_sort(SortKey::Custom, true);
+                }
+            }
         });
-        self.pages.playlist_filter = filter.clone();
-        ui.add_space(6.0);
-        if tracks.is_empty() {
-            App::muted(ui, "Здесь пока пусто — добавляйте песни из поиска через «…» или ♥");
+        self.pages.playlist_filter = filter_now;
+        let entries: Vec<widgets::MenuEntry> = SORT_KEYS
+            .iter()
+            .map(|(k, _, label)| {
+                let arrow = if *k == key { if asc { " ↑" } else { " ↓" } } else { "" };
+                widgets::MenuEntry { icon: (*k == key).then_some("check"), label: format!("{}{arrow}", crate::i18n::t(label)), danger: false }
+            })
+            .collect();
+        let mut open = self.pages.sort_menu;
+        if let Some(i) = widgets::drop_menu(ui, "sort-menu", sort_rect, &mut open, &entries) {
+            press_sort(SORT_KEYS[i].0);
+        }
+        self.pages.sort_menu = open;
+        ui.add_space(16.0);
+
+        if rows.is_empty() {
+            App::muted(ui, if id == "likes" { "Нажмите ♥ у любого трека, и он появится здесь." } else { "Пока пусто. Правый клик по треку → «Добавить в плейлист»." });
             return;
         }
-        let f = crate::player::matching::simplify(&filter);
-        let (shown, shown_items): (Vec<Track>, Vec<String>) = if f.is_empty() {
-            (tracks.clone(), items.clone())
-        } else {
-            tracks.iter().zip(items.iter()).filter(|(t, _)| crate::player::matching::simplify(&format!("{} {}", t.title, t.artist_line())).contains(&f)).map(|(t, i)| (t.clone(), i.clone())).unzip()
-        };
-        let added: Vec<String> = if id == "likes" {
-            lib.likes.iter().map(|l| ago(&l.added_at)).collect()
-        } else {
-            lib.playlists.iter().find(|p| p.id == id).map(|p| p.items.iter().map(|i| ago(&i.added_at)).collect()).unwrap_or_default()
-        };
-        let index_of: Vec<usize> = shown_items.iter().map(|s| items.iter().position(|x| x == s).unwrap_or(0)).collect();
-        let source = PlaySource { page: "playlist".into(), id: Some(id.to_string()), title: None, cover: None, kind: None };
-        let extra = move |i: usize| index_of.get(i).and_then(|j| added.get(*j)).cloned();
-        self.track_list(ui, &shown, Some(source), Some((id, &shown_items)), &extra);
+        // .track-head: "Трек", "Добавлен", "Время" (pressing one sorts by it)
+        if dated {
+            let arrow = |k: SortKey| if key == k { if asc { " ↑" } else { " ↓" } } else { "" };
+            let labels = [format!("{}{}", crate::i18n::t("Трек"), arrow(SortKey::Title)), format!("{}{}", crate::i18n::t("Добавлен"), arrow(SortKey::Added)), format!("{}{}", crate::i18n::t("Время"), arrow(SortKey::Duration))];
+            if let Some(i) = widgets::track_head(ui, [labels[0].as_str(), labels[1].as_str(), labels[2].as_str()]) {
+                press_sort([SortKey::Title, SortKey::Added, SortKey::Duration][i]);
+            }
+        }
+        let shown_items: Vec<String> = shown.iter().map(|r| r.2.clone()).collect();
+        let added: Vec<String> = shown.iter().map(|r| ago(&r.1)).collect();
+        let extra = move |i: usize| added.get(i).cloned().filter(|s| !s.is_empty());
+        let menu_items = if editable { Some((id, shown_items.as_slice())) } else { None };
+        self.track_list(ui, &tracks, Some(source), menu_items, &extra, dated);
     }
+
+    /// the playlist's "…" (as the page's menu): share the code, offline, cover, rename, delete
+    #[allow(clippy::too_many_arguments)]
+    fn playlist_more(&mut self, ui: &mut Ui, id: &str, anchor: Rect, title: &str, rows: &[(Track, String, String)], has_offline: bool, can_download: bool) {
+        let is_likes = id == "likes";
+        let lib = state::get().library.read().unwrap().clone();
+        let playlist = lib.playlists.iter().find(|p| p.id == id).cloned();
+        let mut entries: Vec<(widgets::MenuEntry, &str)> = Vec::new();
+        let e = |icon: &'static str, label: &str, danger: bool| widgets::MenuEntry { icon: Some(icon), label: crate::i18n::t(label), danger };
+        if is_likes {
+            if !rows.is_empty() {
+                entries.push((e("share", "Скопировать код", false), "share"));
+            }
+            entries.push((e("plus", "Вставить код или ссылку", false), "paste"));
+        } else {
+            entries.push((e("share", "Поделиться кодом", false), "share"));
+        }
+        if can_download {
+            entries.push((e("download", "Скачать для офлайн", false), "download"));
+        }
+        if has_offline {
+            entries.push((e("trash", "Удалить скачанное", true), "unkeep"));
+        }
+        if let Some(p) = &playlist {
+            entries.push((e("image", "Сменить обложку", false), "cover"));
+            if p.icon.as_deref().is_some_and(|i| !i.is_empty()) {
+                entries.push((widgets::MenuEntry { icon: None, label: crate::i18n::t("Убрать обложку"), danger: false }, "uncover"));
+            }
+            entries.push((e("pencil", "Переименовать", false), "rename"));
+            entries.push((e("trash", "Удалить плейлист", true), "delete"));
+        }
+        let list: Vec<widgets::MenuEntry> = entries.iter().map(|(m, _)| widgets::MenuEntry { icon: m.icon, label: m.label.clone(), danger: m.danger }).collect();
+        let mut open = self.pages.playlist_menu;
+        let chosen = widgets::drop_menu(ui, "playlist-menu", anchor, &mut open, &list).map(|i| entries[i].1);
+        self.pages.playlist_menu = open;
+        let tracks: Vec<Track> = rows.iter().map(|r| r.0.clone()).collect();
+        match chosen {
+            Some("share") => {
+                let code = crate::import::encode_code(&crate::import::Shared {
+                    title: if is_likes { "Понравившиеся".into() } else { title.to_string() },
+                    description: playlist.as_ref().and_then(|p| p.description.clone()),
+                    icon: playlist.as_ref().and_then(|p| p.icon.clone()),
+                    tracks,
+                    likes: is_likes,
+                });
+                ui.ctx().copy_text(code);
+                self.toast(if is_likes { "Код «Понравившихся» скопирован — вставьте его на другом устройстве или отправьте другу" } else { "Код плейлиста скопирован — отправьте его другу" });
+            }
+            Some("paste") => self.dialog = Some(Dialog::Import { text: String::new(), likes: true }),
+            Some("download") => {
+                crate::keep::add(&[id.to_string()]);
+                let n = self.downloads.add(&crate::keep::scope_tracks(id));
+                if n > 0 {
+                    self.toast(&format!("{} {n}", crate::i18n::t("Скачиваю:")));
+                }
+            }
+            Some("unkeep") => {
+                crate::keep::remove(&[id.to_string()]);
+                let saved: std::collections::HashSet<String> = self.downloads.saved().into_iter().map(|e| e.id).collect();
+                // a song that another list still keeps offline stays
+                let others: std::collections::HashSet<String> = crate::keep::tracks_of(&crate::keep::get().lists).into_iter().map(|t| t.id).collect();
+                let ids: Vec<String> = crate::keep::scope_tracks(id).into_iter().filter(|t| saved.contains(&t.id) && !others.contains(&t.id)).map(|t| t.id).collect();
+                self.downloads.remove(&ids);
+                self.toast(&if ids.is_empty() { crate::i18n::t("Эти песни нужны другим спискам, оставил") } else { format!("{} {}", crate::i18n::t("Удалено копий:"), ids.len()) });
+            }
+            Some("cover") => {
+                if let Some(path) = crate::dialogs::open_file("Картинки", "png;*.jpg;*.jpeg;*.webp;*.bmp;*.gif") {
+                    match square_data_url(&path) {
+                        Some(url) => {
+                            let i = id.to_string();
+                            state::get().update_library(|l| {
+                                if let Some(p) = l.playlist_mut(&i) {
+                                    p.icon = Some(url);
+                                }
+                            });
+                        }
+                        None => self.toast("Не получилось открыть картинку"),
+                    }
+                }
+            }
+            Some("uncover") => {
+                let i = id.to_string();
+                state::get().update_library(|l| {
+                    if let Some(p) = l.playlist_mut(&i) {
+                        p.icon = Some(String::new());
+                    }
+                });
+            }
+            Some("rename") => {
+                let d = playlist.as_ref().and_then(|p| p.description.clone()).unwrap_or_default();
+                self.dialog = Some(Dialog::Rename { id: id.to_string(), title: title.to_string(), description: d });
+            }
+            Some("delete") => self.dialog = Some(Dialog::ConfirmDelete { id: id.to_string(), title: title.to_string() }),
+            _ => {}
+        }
+    }
+}
+
+/// a picture as the page makes a playlist's own cover: the middle square, 384 px, JPEG 86 %
+fn square_data_url(path: &std::path::Path) -> Option<String> {
+    let img = image::open(path).ok()?;
+    let side = img.width().min(img.height());
+    let cut = img.crop_imm((img.width() - side) / 2, (img.height() - side) / 2, side, side).resize_exact(384, 384, image::imageops::FilterType::Lanczos3).into_rgb8();
+    let mut out = Vec::new();
+    image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, 86).encode_image(&cut).ok()?;
+    use base64::Engine;
+    Some(format!("data:image/jpeg;base64,{}", base64::engine::general_purpose::STANDARD.encode(out)))
 }
 
 /// a rounded card filled with a diagonal blend of two colours (the "Любимое" and files cards)
@@ -231,57 +484,3 @@ pub fn gradient(ui: &Ui, rect: Rect, a: egui::Color32, b: egui::Color32) {
     ui.painter().add(egui::Shape::mesh(mesh));
 }
 
-impl App {
-    /// The offline entries of a list (src/offline/menu.tsx): download it, download it together
-    /// with other lists, or delete the copies.
-    fn offline_menu(&mut self, ui: &mut Ui, scope: &str) {
-        let saved: std::collections::HashSet<String> = self.downloads.saved().into_iter().map(|e| e.id).collect();
-        let (total, kept) = crate::keep::status(scope, &saved);
-        if total == 0 {
-            return;
-        }
-        let follows = crate::keep::get().lists.iter().any(|l| l == scope);
-        let tip = if kept == total { "Скачано для офлайн" } else { "Скачать для офлайн" };
-        let r = widgets::icon_button(ui, ic::DOWNLOAD, 34.0, kept == total, tip);
-        if r.clicked() {
-            self.pages.offline_menu = !self.pages.offline_menu;
-        }
-        let mut open = self.pages.offline_menu;
-        let mut pick: Option<u8> = None;
-        widgets::popover(ui, "offline-menu", r.rect, 280.0, &mut open, |ui| {
-            if kept < total {
-                let label = if kept > 0 { format!("{} ({})", crate::i18n::t("Докачать остальное"), total - kept) } else { crate::i18n::t("Скачать для офлайн") };
-                if widgets::pill_button(ui, Some(ic::DOWNLOAD), &label, true).clicked() {
-                    pick = Some(0);
-                }
-            }
-            if widgets::pill_button(ui, Some(ic::ADD), "Скачать вместе с другими…", false).clicked() {
-                pick = Some(1);
-            }
-            if (kept > 0 || follows) && widgets::pill_button(ui, Some(ic::DELETE), "Удалить скачанное", false).clicked() {
-                pick = Some(2);
-            }
-        });
-        self.pages.offline_menu = open && pick.is_none();
-        let scope_list = vec![scope.to_string()];
-        match pick {
-            Some(0) => {
-                crate::keep::add(&scope_list);
-                let n = self.downloads.add(&crate::keep::scope_tracks(scope));
-                if n > 0 {
-                    self.toast(&format!("{} {}", crate::i18n::t("Скачиваю:"), n));
-                }
-            }
-            Some(1) => self.dialog = Some(Dialog::Download { picked: scope_list, follow: true }),
-            Some(2) => {
-                crate::keep::remove(&scope_list);
-                // a song that another list still keeps offline stays
-                let others: std::collections::HashSet<String> = crate::keep::tracks_of(&crate::keep::get().lists).into_iter().map(|t| t.id).collect();
-                let ids: Vec<String> = crate::keep::scope_tracks(scope).into_iter().filter(|t| saved.contains(&t.id) && !others.contains(&t.id)).map(|t| t.id).collect();
-                self.downloads.remove(&ids);
-                self.toast(&if ids.is_empty() { crate::i18n::t("Эти песни нужны другим спискам, оставил") } else { format!("{} {}", crate::i18n::t("Удалено копий:"), ids.len()) });
-            }
-            _ => {}
-        }
-    }
-}

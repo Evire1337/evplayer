@@ -2,16 +2,26 @@
 # memory of the program and every process it started (WebView2 runs as a tree of processes),
 # and how much processor time the whole tree used while it sat idle.
 #
-#   powershell -File native\tools\measure.ps1 -Exe path\to\program.exe [-Arguments "--hidden"] [-Settle 10] [-Idle 10]
+#   powershell -File native\tools\measure.ps1 -Exe path\to\program.exe [-Arguments "--hidden"] [-Settle 10] [-Idle 10] [-Minimize 15]
 #
-# Nothing is played: the program is started, left alone, and closed.
+# "window" is when the program has a visible top-level window. With -Minimize N the window is
+# then minimized and the memory measured again N seconds later: a player mostly lives
+# minimized or in the tray. Nothing is played: the program is started, left alone, and closed
+# (only the processes it started are closed).
 param(
   [Parameter(Mandatory = $true)][string]$Exe,
   [string]$Arguments = "",
   [int]$Settle = 10,
   [int]$Idle = 10,
-  [string]$Label = ""
+  [string]$Label = "",
+  [int]$Minimize = 0
 )
+
+Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+public static class Win { [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int c); }
+"@
 
 function Tree([int]$root) {
   $all = Get-CimInstance Win32_Process | Select-Object ProcessId, ParentProcessId
@@ -51,5 +61,13 @@ Start-Sleep -Seconds $Idle
 $ids = Tree $proc.Id
 $b = Sample $ids
 $name = if ($Label) { $Label } else { [IO.Path]::GetFileName($Exe) }
-"{0}: processes={1} threads={2} WS={3:N1} MB private={4:N1} MB start-cpu={8:N2} s idle-cpu={5:N3} s per {6} s window={7}" -f $name, $b.n, $b.threads, ($b.ws / 1MB), ($b.priv / 1MB), ($b.cpu - $a.cpu), $Idle, $(if ($shown) { "{0:N0} ms" -f $shown } else { "hidden" }), $a.cpu
+$line = "{0}: processes={1} threads={2} WS={3:N1} MB private={4:N1} MB start-cpu={8:N2} s idle-cpu={5:N3} s per {6} s window={7}" -f $name, $b.n, $b.threads, ($b.ws / 1MB), ($b.priv / 1MB), ($b.cpu - $a.cpu), $Idle, $(if ($shown) { "{0:N0} ms" -f $shown } else { "hidden" }), $a.cpu
+if ($Minimize -gt 0 -and $proc.MainWindowHandle -ne 0) {
+  [void][Win]::ShowWindow($proc.MainWindowHandle, 6)
+  Start-Sleep -Seconds $Minimize
+  $ids = Tree $proc.Id
+  $c = Sample $ids
+  $line += " | minimized {0} s: processes={1} WS={2:N1} MB private={3:N1} MB" -f $Minimize, $c.n, ($c.ws / 1MB), ($c.priv / 1MB)
+}
+$line
 foreach ($id in $ids) { Stop-Process -Id $id -Force -ErrorAction SilentlyContinue }

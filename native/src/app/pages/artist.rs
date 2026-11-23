@@ -178,6 +178,6 @@ impl App {
         });
         ui.add_space(12.0);
         let _ = vec2(0.0, 0.0);
-        self.track_list(ui, &c.tracks, Some(source), None, &|_| None);
+        self.track_list(ui, &c.tracks, Some(source), None, &|_| None, false);
     }
 }

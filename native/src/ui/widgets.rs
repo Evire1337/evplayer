@@ -69,6 +69,95 @@ pub fn pill_button(ui: &mut Ui, icon: Option<&str>, text: &str, primary: bool) -
     r
 }
 
+/// .btn: 40 high, rounded fully, padding 16, a 16 px icon and 8 before the text, 14 px semibold;
+/// primary is light with dark text, ghost a faint disc
+pub fn btn(ui: &mut Ui, icon: Option<&str>, text: &str, primary: bool) -> Response {
+    let text = crate::i18n::t(text);
+    let font = theme::medium(14.0);
+    // laid out without a colour: it is painted in the button's own
+    let galley = ui.painter().layout_no_wrap(text, font, Color32::PLACEHOLDER);
+    let icon_w = if icon.is_some() { 16.0 + 8.0 } else { 0.0 };
+    let (rect, r) = ui.allocate_exact_size(vec2(galley.size().x + icon_w + 32.0, 40.0), Sense::click());
+    let p = ui.painter();
+    let (fill, fg) = if primary {
+        (if r.hovered() { Color32::WHITE } else { INK }, theme::GROUND)
+    } else {
+        (Color32::from_rgba_unmultiplied(238, 247, 244, if r.hovered() { 46 } else { 26 }), INK)
+    };
+    let rect_drawn = if r.is_pointer_button_down_on() { rect.shrink2(rect.size() * 0.015) } else { rect };
+    p.rect_filled(rect_drawn, CornerRadius::same(20), fill);
+    let mut x = rect.left() + 16.0;
+    if let Some(i) = icon {
+        crate::ui::icons::paint(p, i.trim_start_matches('@'), Rect::from_center_size(pos2(x + 8.0, rect.center().y), vec2(16.0, 16.0)), fg);
+        x += icon_w;
+    }
+    p.galley(pos2(x, rect.center().y - galley.size().y / 2.0), galley, fg);
+    r
+}
+
+/// one entry of a drop-down menu: icon, label, red for danger, a check when chosen
+pub struct MenuEntry<'a> {
+    pub icon: Option<&'a str>,
+    pub label: String,
+    pub danger: bool,
+}
+
+/// A menu that opens under `anchor` (.menu: glass, rounded 16, entries 13.5 px with icons);
+/// closes on a press outside or Escape. Returns the entry chosen.
+pub fn drop_menu(ui: &mut Ui, id: &str, anchor: Rect, open: &mut bool, entries: &[MenuEntry]) -> Option<usize> {
+    if !*open {
+        return None;
+    }
+    let mut chosen = None;
+    let area = egui::Area::new(egui::Id::unique(id)).order(egui::Order::Foreground).fixed_pos(pos2(anchor.left(), anchor.bottom() + 6.0)).constrain(true);
+    let r = area.show(ui.ctx(), |ui| {
+        egui::Frame::new()
+            .fill(Color32::from_rgba_unmultiplied(6, 18, 20, 235))
+            .stroke(Stroke::new(1.0, theme::edge()))
+            .corner_radius(CornerRadius::same(16))
+            .inner_margin(egui::Margin::same(6))
+            .shadow(egui::Shadow { offset: [0, 18], blur: 50, spread: 0, color: Color32::from_black_alpha(128) })
+            .show(ui, |ui| {
+                ui.set_min_width(220.0);
+                ui.spacing_mut().item_spacing.y = 0.0;
+                for (i, e) in entries.iter().enumerate() {
+                    let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width().max(220.0), 38.0), Sense::click());
+                    if resp.hovered() {
+                        ui.painter().rect_filled(rect, CornerRadius::same(10), theme::hover());
+                    }
+                    let color = if e.danger { Color32::from_rgb(0xff, 0x9b, 0x9b) } else { INK };
+                    let mut x = rect.left() + 10.0;
+                    if let Some(icon) = e.icon {
+                        crate::ui::icons::paint(ui.painter(), icon.trim_start_matches('@'), Rect::from_center_size(pos2(x + 8.0, rect.center().y), vec2(16.0, 16.0)), if e.danger { color } else { theme::ink2() });
+                        x += 26.0;
+                    }
+                    ui.painter().text(pos2(x, rect.center().y), Align2::LEFT_CENTER, &e.label, theme::body(13.5), color);
+                    if resp.clicked() {
+                        chosen = Some(i);
+                    }
+                }
+            });
+    });
+    let pressed = ui.ctx().input(|i| if i.pointer.any_pressed() { i.pointer.interact_pos() } else { None });
+    if chosen.is_some() || pressed.is_some_and(|p| !r.response.rect.contains(p) && !anchor.contains(p)) || ui.ctx().input(|i| i.key_pressed(egui::Key::Escape)) {
+        *open = false;
+    }
+    chosen
+}
+
+/// .filter-input: a dark field 38 high, rounded 12, with a faint edge
+pub fn filter_input(ui: &mut Ui, text: &mut String, hint: &str, width: f32) -> Response {
+    let mut out = None;
+    egui::Frame::new().fill(Color32::from_rgba_unmultiplied(5, 16, 18, 77)).stroke(Stroke::new(1.0, theme::edge())).corner_radius(CornerRadius::same(12)).inner_margin(egui::Margin::symmetric(12, 0)).show(ui, |ui| {
+        ui.set_height(38.0);
+        ui.set_width(width - 24.0);
+        ui.centered_and_justified(|ui| {
+            out = Some(ui.add(egui::TextEdit::singleline(text).hint_text(crate::i18n::t(hint)).frame(egui::Frame::NONE).font(theme::medium(14.0)).text_color(INK).desired_width(width - 24.0).align(egui::Align2::LEFT_CENTER)));
+        });
+    });
+    out.unwrap()
+}
+
 /// a tab in a row of tabs ("Везде", "SoundCloud", ...)
 pub fn tab(ui: &mut Ui, text: &str, selected: bool) -> Response {
     let text = crate::i18n::t(text);
@@ -225,49 +314,118 @@ pub struct RowOut {
 
 /// a song in a list: cover, title and artist, extra text (the date added), like, length
 pub fn track_row(ui: &mut Ui, images: &mut Images, t: &crate::model::Track, playing: bool, liked: bool, extra: Option<&str>, number: Option<usize>) -> RowOut {
+    track_row_full(ui, images, t, playing, liked, extra, number, false)
+}
+
+/// where a song row's columns sit from its right edge (.track-row: padding 8, gap 12; the
+/// "…" 34, the time 44, the like 34, the date 130)
+pub mod row_cols {
+    pub const MORE: f32 = 8.0 + 17.0;
+    /// the time is right-aligned to this
+    pub const TIME_RIGHT: f32 = 8.0 + 34.0 + 12.0;
+    pub const TIME_LEFT: f32 = TIME_RIGHT + 44.0;
+    pub const LIKE: f32 = TIME_LEFT + 12.0 + 17.0;
+    /// the date column's left edge (it is 130 wide)
+    pub const DATE_LEFT: f32 = TIME_LEFT + 12.0 + 34.0 + 12.0 + 130.0;
+    /// where the title and artist start from the left: padding, the 48 px cover, a gap
+    pub const TEXT: f32 = 8.0 + 48.0 + 12.0;
+}
+
+/// A song in a list (TrackRow.tsx): cover (with play or pause over it on hover and while it is
+/// the current one), title and artist, the date it was added (`dated`) or a note, the like, the
+/// length, the "…". Rows are 62 high, rounded 16.
+#[allow(clippy::too_many_arguments)]
+pub fn track_row_full(ui: &mut Ui, images: &mut Images, t: &crate::model::Track, playing: bool, liked: bool, extra: Option<&str>, number: Option<usize>, dated: bool) -> RowOut {
+    use row_cols::*;
     let width = ui.available_width();
-    let (rect, r) = ui.allocate_exact_size(vec2(width, 52.0), Sense::click());
+    let (rect, r) = ui.allocate_exact_size(vec2(width, 62.0), Sense::click());
     let hovered = r.hovered();
-    if hovered || playing {
-        ui.painter().rect_filled(rect, CornerRadius::same(12), if hovered { theme::hover() } else { Color32::from_rgba_unmultiplied(238, 247, 244, 12) });
+    if playing {
+        ui.painter().rect_filled(rect, CornerRadius::same(16), theme::active());
+    } else if hovered {
+        ui.painter().rect_filled(rect, CornerRadius::same(16), theme::hover());
     }
-    let mut x = rect.left() + 10.0;
+    let mut x = rect.left() + 8.0;
     if let Some(n) = number {
-        ui.painter().text(pos2(x + 10.0, rect.center().y), Align2::CENTER_CENTER, n.to_string(), theme::body(12.5), theme::ink3());
-        x += 28.0;
+        ui.painter().text(pos2(x + 10.0, rect.center().y), Align2::CENTER_CENTER, n.to_string(), theme::heavy(13.0), theme::ink3());
+        x += 32.0;
     }
-    let art = Rect::from_min_size(pos2(x, rect.center().y - 19.0), vec2(38.0, 38.0));
+    let art = Rect::from_min_size(pos2(x, rect.center().y - 24.0), vec2(48.0, 48.0));
     let src = super::images::artwork_of(t);
-    paint_cover(ui, images, src.as_deref(), art, 8);
-    x += 50.0;
-    let right_w = 150.0 + if extra.is_some() { 130.0 } else { 0.0 };
+    paint_cover(ui, images, src.as_deref(), art, 13);
+    if hovered || playing {
+        ui.painter().rect_filled(art, CornerRadius::same(13), Color32::from_black_alpha(115));
+        let now_playing = playing && ui.ctx().data(|d| d.get_temp::<bool>(egui::Id::unique("evplayer-playing"))).unwrap_or(false);
+        crate::ui::icons::paint(ui.painter(), if now_playing { "pause" } else { "play" }, Rect::from_center_size(art.center(), vec2(16.0, 16.0)), INK);
+    }
+    x = art.right() + 12.0;
+    let right_w = if dated { DATE_LEFT + 12.0 } else if extra.is_some() { LIKE + 17.0 + 12.0 + 140.0 } else { LIKE + 17.0 + 12.0 };
     let text_w = (rect.right() - x - right_w).max(60.0);
     let title_color = if playing { ACCENT } else { INK };
-    let g = clipped(ui, &t.title, theme::medium(13.5), title_color, text_w);
-    ui.painter().galley(pos2(x, rect.center().y - 17.0), g, title_color);
+    let g = clipped(ui, &t.title, theme::medium(14.5), title_color, text_w);
+    ui.painter().galley(pos2(x, rect.center().y - 19.0), g, title_color);
     let mut sub = t.artist_line();
     if t.explicit {
         sub = format!("🅴 {sub}");
     }
-    let g = clipped(ui, &sub, theme::body(12.5), theme::ink2(), text_w);
-    ui.painter().galley(pos2(x, rect.center().y + 1.0), g, theme::ink2());
+    let g = clipped(ui, &sub, theme::body(13.0), theme::ink2(), text_w);
+    ui.painter().galley(pos2(x, rect.center().y + 2.0), g, theme::ink2());
     if let Some(e) = extra {
-        ui.painter().text(pos2(rect.right() - 270.0, rect.center().y), Align2::LEFT_CENTER, e, theme::body(12.5), theme::ink2());
+        if dated {
+            let g = clipped(ui, e, theme::body(13.0), theme::ink3(), 130.0);
+            ui.painter().galley(pos2(rect.right() - DATE_LEFT, rect.center().y - g.size().y / 2.0), g, theme::ink3());
+        } else {
+            let g = clipped(ui, e, theme::body(13.0), theme::ink3(), 220.0);
+            let w = g.size().x;
+            ui.painter().galley(pos2(rect.right() - LIKE - 17.0 - 12.0 - w, rect.center().y - g.size().y / 2.0), g, theme::ink3());
+        }
     }
-    // the like, then the length
-    let heart = Rect::from_center_size(pos2(rect.right() - 92.0, rect.center().y), vec2(28.0, 28.0));
+    // the like (shown while hovered, and always when liked)
+    let heart = Rect::from_center_size(pos2(rect.right() - LIKE, rect.center().y), vec2(34.0, 34.0));
     let hr = ui.interact(heart, r.id.with("like"), Sense::click());
-    if liked || hovered || hr.hovered() {
-        crate::ui::theme::paint_icon(&ui.painter(), heart.center(), Align2::CENTER_CENTER, if liked { ic::HEART_FILL } else { ic::HEART }, 13.0, if liked { ACCENT } else { theme::ink2() });
+    if hr.hovered() {
+        ui.painter().rect_filled(heart, CornerRadius::same(11), theme::hover());
     }
-    let more = Rect::from_center_size(pos2(rect.right() - 20.0, rect.center().y), vec2(28.0, 28.0));
+    if liked || hovered || hr.hovered() {
+        let color = if liked { ACCENT } else if hr.hovered() { INK } else { theme::ink3() };
+        crate::ui::icons::paint(ui.painter(), if liked { "heartFill" } else { "heart" }, Rect::from_center_size(heart.center(), vec2(17.0, 17.0)), color);
+    }
+    // the length, right-aligned in its column
+    if t.duration_ms > 0.0 {
+        ui.painter().text(pos2(rect.right() - TIME_RIGHT, rect.center().y), Align2::RIGHT_CENTER, time(t.duration_ms), theme::body(13.0), theme::ink3());
+    }
+    // the "…"
+    let more = Rect::from_center_size(pos2(rect.right() - MORE, rect.center().y), vec2(34.0, 34.0));
     let mr = ui.interact(more, r.id.with("more"), Sense::click());
+    if mr.hovered() {
+        ui.painter().rect_filled(more, CornerRadius::same(11), theme::hover());
+    }
     if hovered || mr.hovered() {
-        crate::ui::theme::paint_icon(&ui.painter(), more.center(), Align2::CENTER_CENTER, ic::MORE, 13.0, theme::ink2());
-    } else {
-        ui.painter().text(pos2(rect.right() - 20.0, rect.center().y), Align2::CENTER_CENTER, time(t.duration_ms), theme::body(12.5), theme::ink2());
+        crate::ui::icons::paint(ui.painter(), "more", Rect::from_center_size(more.center(), vec2(18.0, 18.0)), if mr.hovered() { INK } else { theme::ink3() });
     }
     RowOut { clicked: r.clicked(), double: r.double_clicked(), like: hr.clicked(), menu: mr.clicked() || r.secondary_clicked(), response: r }
+}
+
+/// the head of a song list with dates (.track-head): "Трек", "Добавлен", "Время", each sorting
+/// the list when pressed; returns the column pressed (0, 1, 2)
+pub fn track_head(ui: &mut Ui, labels: [&str; 3]) -> Option<usize> {
+    use row_cols::*;
+    let width = ui.available_width();
+    let (rect, _) = ui.allocate_exact_size(vec2(width, 26.0), Sense::hover());
+    ui.painter().hline(rect.x_range(), rect.bottom(), Stroke::new(1.0, theme::edge()));
+    let mut pressed = None;
+    let spots = [(rect.left() + TEXT, Align2::LEFT_TOP), (rect.right() - DATE_LEFT, Align2::LEFT_TOP), (rect.right() - TIME_RIGHT, Align2::RIGHT_TOP)];
+    for (i, ((x, align), label)) in spots.into_iter().zip(labels).enumerate() {
+        let g = ui.painter().layout_no_wrap(label.to_string(), theme::body(12.0), theme::ink3());
+        let r = align.anchor_size(pos2(x, rect.top()), g.size());
+        let resp = ui.interact(r.expand(4.0), ui.scope_id().with(("head", i)), Sense::click());
+        ui.painter().galley(r.min, g, if resp.hovered() { INK } else { theme::ink3() });
+        if resp.clicked() {
+            pressed = Some(i);
+        }
+    }
+    ui.add_space(6.0);
+    pressed
 }
 
 /// a card: a big cover, a title, a line under it

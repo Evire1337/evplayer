@@ -411,6 +411,13 @@ impl App {
             self.page = Page::Settings;
             return;
         }
+        // "playlist:first" opens the first of your playlists
+        if name == "playlist:first" {
+            if let Some(p) = state::get().library.read().unwrap().playlists.first() {
+                self.page = Page::Playlist(p.id.clone());
+                return;
+            }
+        }
         self.page = match name {
             "now" => Page::Now,
             "search" => Page::Search,
