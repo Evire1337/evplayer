@@ -176,16 +176,7 @@ impl App {
                             widgets::card(ui, &mut self.images, cover.as_deref(), title, sub, w, false)
                         } else {
                             // likes and files: a coloured card with a sign
-                            let (rect, r) = ui.allocate_exact_size(vec2(w, w + 46.0), egui::Sense::click());
-                            let art = Rect::from_min_size(rect.min, vec2(w, w));
-                            let (a, b) = if *icon == ic::HEART_FILL { (egui::Color32::from_rgb(92, 214, 172), egui::Color32::from_rgb(40, 120, 140)) } else { (egui::Color32::from_rgb(120, 140, 230), egui::Color32::from_rgb(70, 60, 150)) };
-                            gradient(ui, art, a, b);
-                            crate::ui::theme::paint_icon(&ui.painter(), art.center(), Align2::CENTER_CENTER, *icon, 34.0, egui::Color32::from_rgb(10, 30, 30));
-                            let g = widgets::clipped(ui, title, theme::medium(13.0), INK, w);
-                            ui.painter().galley(pos2(rect.left(), art.bottom() + 8.0), g, INK);
-                            let g = widgets::clipped(ui, sub, theme::body(12.0), theme::ink2(), w);
-                            ui.painter().galley(pos2(rect.left(), art.bottom() + 26.0), g, theme::ink2());
-                            r
+                            colour_card(ui, w, icon, *icon == ic::HEART_FILL, title, sub)
                         };
                         if r.clicked() {
                             self.go(page.clone());
@@ -235,7 +226,10 @@ impl App {
         let filtered: Vec<(Track, String, String)> = if f.is_empty() { rows.clone() } else { rows.iter().filter(|(t, _, _)| crate::player::matching::simplify(&format!("{} {}", t.title, t.artist_line())).contains(&f)).cloned().collect() };
         let shown = sort_rows(&filtered, key, asc);
         let tracks: Vec<Track> = shown.iter().map(|r| r.0.clone()).collect();
-        let source = PlaySource { page: "playlist".into(), id: Some(id.to_string()), title: None, cover: None, kind: None };
+        let source = match smart {
+            Some(kind) => PlaySource { page: "smart".into(), id: Some(kind.to_string()), title: None, cover: None, kind: None },
+            None => PlaySource { page: "playlist".into(), id: Some(id.to_string()), title: None, cover: None, kind: None },
+        };
 
         // .pl-hero: the cover (210), 28 to the text, all at the bottom
         ui.add_space(8.0);
@@ -461,11 +455,17 @@ pub fn square_data_url(path: &std::path::Path, size: u32) -> Option<String> {
 /// a rounded card filled with a diagonal blend of two colours (the "Понравившиеся" and files cards)
 pub fn gradient(ui: &Ui, rect: Rect, a: egui::Color32, b: egui::Color32) {
     let r = (theme::R_CARD as f32).min(rect.width() / 2.0);
-    let color_at = |p: egui::Pos2| {
+    ui.painter().add(rounded_mesh(rect, r, |p| {
         let t = (((p.x - rect.left()) / rect.width() + (p.y - rect.top()) / rect.height()) / 2.0).clamp(0.0, 1.0);
         let l = |x: u8, y: u8| (x as f32 + (y as f32 - x as f32) * t) as u8;
-        egui::Color32::from_rgb(l(a.r(), b.r()), l(a.g(), b.g()), l(a.b(), b.b()))
-    };
+        egui::Color32::from_rgba_unmultiplied(l(a.r(), b.r()), l(a.g(), b.g()), l(a.b(), b.b()), l(a.a(), b.a()))
+    }));
+}
+
+/// a rounded rectangle as one mesh, coloured point by point (a gradient that follows the
+/// rounding, which a plain rectangle with a texture cannot do)
+pub fn rounded_mesh(rect: Rect, r: f32, color_at: impl Fn(egui::Pos2) -> egui::Color32) -> egui::Shape {
+    let r = r.min(rect.width() / 2.0).min(rect.height() / 2.0);
     let mut mesh = egui::Mesh::default();
     mesh.colored_vertex(rect.center(), color_at(rect.center()));
     // the outline: four quarter circles
@@ -482,6 +482,19 @@ pub fn gradient(ui: &Ui, rect: Rect, a: egui::Color32, b: egui::Color32) {
         let next = if i + 1 < n { i + 1 } else { 1 };
         mesh.add_triangle(0, i, next);
     }
-    ui.painter().add(egui::Shape::mesh(mesh));
+    egui::Shape::mesh(mesh)
 }
 
+/// the "Понравившиеся" (`likes`) or "Мои файлы" card: its own colours and sign, the name and a line
+pub fn colour_card(ui: &mut Ui, w: f32, icon: &str, likes: bool, title: &str, sub: &str) -> egui::Response {
+    let (rect, r) = ui.allocate_exact_size(vec2(w, w + 46.0), egui::Sense::click());
+    let art = Rect::from_min_size(rect.min, vec2(w, w));
+    let (a, b) = if likes { (egui::Color32::from_rgb(92, 214, 172), egui::Color32::from_rgb(40, 120, 140)) } else { (egui::Color32::from_rgb(120, 140, 230), egui::Color32::from_rgb(70, 60, 150)) };
+    gradient(ui, art, a, b);
+    crate::ui::theme::paint_icon(&ui.painter(), art.center(), Align2::CENTER_CENTER, icon, 34.0, egui::Color32::from_rgb(10, 30, 30));
+    let g = widgets::clipped(ui, title, theme::medium(13.0), INK, w);
+    ui.painter().galley(pos2(rect.left(), art.bottom() + 8.0), g, INK);
+    let g = widgets::clipped(ui, sub, theme::body(12.0), theme::ink2(), w);
+    ui.painter().galley(pos2(rect.left(), art.bottom() + 26.0), g, theme::ink2());
+    r
+}

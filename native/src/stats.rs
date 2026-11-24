@@ -59,6 +59,7 @@ static DATA: Mutex<Option<Data>> = Mutex::new(None);
 struct Memo {
     version: u64,
     tops: std::collections::HashMap<u8, Vec<(Track, u32, f64)>>,
+    artists: std::collections::HashMap<u8, Vec<TopArtist>>,
     smart: std::collections::HashMap<String, Vec<Track>>,
     today: Option<f64>,
 }
@@ -245,6 +246,56 @@ fn top_tracks_now(range: Range, limit: usize) -> Vec<(Track, u32, f64)> {
         v.truncate(limit);
         v
     })
+}
+
+/// an artist of "Ваши топ-исполнители": plays and time summed over their songs, the cover of
+/// the first song met (getTopArtists)
+#[derive(Clone, Debug, PartialEq)]
+pub struct TopArtist {
+    pub id: String,
+    pub name: String,
+    pub plays: u32,
+    pub ms: f64,
+    pub cover: Option<String>,
+}
+
+pub fn top_artists(range: Range, limit: usize) -> Vec<TopArtist> {
+    let key = range as u8 * 100 + limit.min(99) as u8;
+    if let Some(v) = memo(|m| m.artists.get(&key).cloned()) {
+        return v;
+    }
+    let now = today();
+    let v = with(|d| top_artists_in(d.tracks.values().map(|r| (&r.track, sum(r, range, now))), limit));
+    memo(|m| m.artists.insert(key, v.clone()));
+    v
+}
+
+fn top_artists_in<'a>(rows: impl Iterator<Item = (&'a Track, Row)>, limit: usize) -> Vec<TopArtist> {
+    let mut by: std::collections::HashMap<String, TopArtist> = std::collections::HashMap::new();
+    // the order artists were first met, so ties keep the page's order
+    let mut order: Vec<String> = Vec::new();
+    for (t, total) in rows {
+        if total.n == 0 {
+            continue;
+        }
+        for a in &t.artists {
+            let name = a.name.trim();
+            if name.is_empty() || name == "Unknown Artist" {
+                continue;
+            }
+            let key = if !a.id.is_empty() && a.id != "unknown" { a.id.clone() } else { format!("name:{}", name.to_lowercase()) };
+            let row = by.entry(key.clone()).or_insert_with(|| {
+                order.push(key);
+                TopArtist { id: a.id.clone(), name: name.to_string(), plays: 0, ms: 0.0, cover: t.artwork.clone() }
+            });
+            row.plays += total.n;
+            row.ms += total.ms;
+        }
+    }
+    let mut v: Vec<TopArtist> = order.into_iter().filter_map(|k| by.remove(&k)).collect();
+    v.sort_by(|a, b| b.plays.cmp(&a.plays).then(b.ms.partial_cmp(&a.ms).unwrap_or(std::cmp::Ordering::Equal)));
+    v.truncate(limit);
+    v
 }
 
 /// how long you listened today, all songs together
