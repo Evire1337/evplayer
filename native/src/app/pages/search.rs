@@ -64,15 +64,21 @@ fn history() -> History {
     kv::read_state(&state::get().kv, HISTORY_KEY).unwrap_or_default()
 }
 
+/// recent queries kept (HISTORY_LIMIT)
+const HISTORY_LIMIT: usize = 20;
+
+/// As searchState.ts: two letters at least, not kept at all with "Не сохранять историю", and
+/// the same query in other letter case ("Кино", "кино") stays one entry
 fn remember(q: &str) {
     let q = q.trim();
-    if q.is_empty() {
+    if q.chars().count() < 2 || state::get().settings.read().unwrap().no_history {
         return;
     }
     let mut h = history();
-    h.queries.retain(|x| !x.eq_ignore_ascii_case(q));
+    let lower = q.to_lowercase();
+    h.queries.retain(|x| x.to_lowercase() != lower);
     h.queries.insert(0, q.to_string());
-    h.queries.truncate(12);
+    h.queries.truncate(HISTORY_LIMIT);
     kv::write_state(&state::get().kv, HISTORY_KEY, &h, 0);
 }
 

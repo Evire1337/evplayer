@@ -2,7 +2,6 @@
 //! the rules of src/services/lyrics/lrclib.ts and lrc.ts: a record is trusted for its times
 //! only when its length is within 3 seconds of the song's (other versions run ahead or behind).
 
-use std::collections::HashMap;
 use std::sync::Mutex;
 
 use serde_json::Value;
@@ -129,7 +128,10 @@ pub fn active_line(lines: &[Line], pos: f64) -> Option<usize> {
     i.checked_sub(1)
 }
 
-static CACHE: Mutex<Option<HashMap<String, Option<Lyrics>>>> = Mutex::new(None);
+/// the lyrics looked up last, oldest first, as many as the page keeps (CACHE_LIMIT in useLyrics.ts):
+/// the program lives in the tray for hours, so this must not grow without end
+static CACHE: Mutex<Vec<(String, Option<Lyrics>)>> = Mutex::new(Vec::new());
+const CACHE_LIMIT: usize = 40;
 
 fn search(params: &[(&str, &str)]) -> Vec<Value> {
     let mut url = url::Url::parse(&format!("{API}/search")).unwrap();
@@ -138,7 +140,7 @@ fn search(params: &[(&str, &str)]) -> Vec<Value> {
 }
 
 pub fn find(track: &Track) -> Option<Lyrics> {
-    if let Some(hit) = CACHE.lock().unwrap().as_ref().and_then(|c| c.get(&track.id)).cloned() {
+    if let Some(hit) = CACHE.lock().unwrap().iter().find(|c| c.0 == track.id).map(|c| c.1.clone()) {
         return hit;
     }
     let mut candidates = Vec::new();
@@ -173,7 +175,15 @@ pub fn find(track: &Track) -> Option<Lyrics> {
         let words = r.get("plainLyrics").and_then(Value::as_str).map(str::to_string).filter(|s| !s.trim().is_empty()).or_else(|| r.get("syncedLyrics").and_then(Value::as_str).map(|s| parse_lrc(s).lines.iter().map(|l| l.text.clone()).collect::<Vec<_>>().join("\n")))?;
         Some(Lyrics { synced: false, lines: words.lines().map(str::trim).filter(|l| !l.is_empty()).map(|l| Line { time_ms: -1.0, text: l.to_string() }).collect() })
     });
-    CACHE.lock().unwrap().get_or_insert_with(HashMap::new).insert(track.id.clone(), found.clone());
+    // kept unless "Ответы сервисов" are not to be kept
+    if !crate::state::get().settings.read().unwrap().no_service_cache {
+        let mut c = CACHE.lock().unwrap();
+        c.retain(|x| x.0 != track.id);
+        c.push((track.id.clone(), found.clone()));
+        if c.len() > CACHE_LIMIT {
+            c.remove(0);
+        }
+    }
     found
 }
 
