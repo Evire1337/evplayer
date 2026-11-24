@@ -92,7 +92,7 @@ impl Resolver {
 
     /// The uncensored version of a YouTube Music song that is not marked as one. Songs saved by
     /// older versions carry no mark, and the censored version is often listed first.
-    fn uncensored_twin(&self, track: &Track) -> Option<Track> {
+    pub(crate) fn uncensored_twin(&self, track: &Track) -> Option<Track> {
         if track.explicit || track.source != Source::Youtube {
             return None;
         }
@@ -103,7 +103,9 @@ impl Resolver {
         let t = track.clone();
         std::thread::spawn(move || {
             let found = youtube::search(&search_query_for(&t)).ok().map(|list| {
-                let mut c: Vec<Track> = list.into_iter().filter(|x| x.explicit && x.id != t.id && is_original(&t, x) && (x.duration_ms - t.duration_ms).abs() <= 4000.0).collect();
+                // a length of 0 (songs from artist pages and the queue come without one) is not compared
+                let close = |x: &Track| t.duration_ms <= 0.0 || x.duration_ms <= 0.0 || (x.duration_ms - t.duration_ms).abs() <= 4000.0;
+                let mut c: Vec<Track> = list.into_iter().filter(|x| x.explicit && x.id != t.id && is_original(&t, x) && close(x)).collect();
                 c.sort_by(|a, b| match_score(&t, b).partial_cmp(&match_score(&t, a)).unwrap_or(std::cmp::Ordering::Equal));
                 c.into_iter().next()
             });
@@ -204,7 +206,8 @@ impl Resolve for Resolver {
                 steps.push_back(Box::new(move |out| {
                     // the full recording from YouTube Music, with the SoundCloud cover and names
                     match me.youtube_match(&t) {
-                        Some(copy) => match youtube::video_id_of(&copy.id).map(str::to_string) {
+                        // the copy itself may be the censored version: its uncensored twin plays instead
+                        Some(copy) => match youtube::video_id_of(&me.uncensored_twin(&copy).map(|x| x.id).unwrap_or_else(|| copy.id.clone())).map(str::to_string) {
                             Some(vid) => out.push(me.youtube_candidate(&vid, Some(copy)).map_err(|e| format!("копия с YouTube Music не включилась: {e}"))),
                             None => out.push(Err("на YouTube Music эта песня не нашлась".into())),
                         },

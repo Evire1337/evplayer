@@ -90,9 +90,10 @@ fn is_views(t: &str) -> bool {
     t.chars().any(|c| c.is_ascii_digit()) && ["просм", "views", "прослуш", "plays", "воспр"].iter().any(|w| l.contains(w))
 }
 
-/// the "E" mark YouTube Music puts on the uncensored version of a song
+/// the "E" mark YouTube Music puts on the uncensored version of a song: in "badges" on list
+/// rows and the queue, in "subtitleBadges" on the cards of artist pages
 pub fn is_explicit(item: &Value) -> bool {
-    item.get("badges").and_then(Value::as_array).is_some_and(|b| b.iter().any(|x| x.pointer("/musicInlineBadgeRenderer/icon/iconType").and_then(Value::as_str) == Some("MUSIC_EXPLICIT_BADGE")))
+    ["badges", "subtitleBadges"].iter().any(|k| item.get(*k).and_then(Value::as_array).is_some_and(|b| b.iter().any(|x| x.pointer("/musicInlineBadgeRenderer/icon/iconType").and_then(Value::as_str) == Some("MUSIC_EXPLICIT_BADGE"))))
 }
 
 pub fn parse_list_item(item: &Value) -> Option<Track> {
@@ -305,7 +306,7 @@ pub fn parse_two_row_item(item: &Value) -> Option<Track> {
         plays: views.and_then(parse_count),
         permalink: Some(format!("https://music.youtube.com/watch?v={video_id}")),
         preview: false,
-        explicit: false,
+        explicit: is_explicit(item),
     })
 }
 
@@ -374,7 +375,7 @@ pub fn parse_panel_item(item: &Value) -> Option<Track> {
         plays: views.and_then(parse_count),
         permalink: Some(format!("https://music.youtube.com/watch?v={video_id}")),
         preview: false,
-        explicit: false,
+        explicit: is_explicit(item),
     })
 }
 

@@ -531,3 +531,22 @@ fn net_youtube_copy_for_each_upload() {
         println!("SC «{}» — {} ({:.0} s)\n   -> {}", t.title, t.artist_line(), t.duration_ms / 1000.0, found.map(|y| format!("{} — {} ({:.0} s) {}", y.artist_line(), y.title, y.duration_ms / 1000.0, y.id)).unwrap_or_else(|| "nothing".into()));
     }
 }
+
+/// An artist page (EVP_Q names the artist): which songs carry the "E" mark, and the
+/// uncensored twin found for each one that does not — a censored song plays bleeped
+#[test]
+#[ignore]
+fn net_artist_page_plays_uncensored() {
+    init();
+    let q = std::env::var("EVP_Q").unwrap_or_else(|_| "Kendrick Lamar".into());
+    let found = youtube::search(&q).expect("search");
+    let id = found.iter().flat_map(|t| t.artists.iter()).find(|a| a.id.starts_with("yta:UC")).map(|a| a.id.clone()).expect("artist");
+    let a = youtube::artist(&id).expect("artist page");
+    let st = crate::state::get();
+    let r = crate::player::resolve::Resolver::new(crate::library::Library::new(st.data_dir.clone()), crate::offline::Offline::new(&st.data_dir));
+    println!("{} ({id}): {} songs", a.name, a.tracks.len());
+    for t in a.tracks.iter().take(12) {
+        let twin = if t.explicit { None } else { r.uncensored_twin(t) };
+        println!("   {} {} ({:.0} s){}", if t.explicit { "E" } else { " " }, t.title, t.duration_ms / 1000.0, twin.map(|x| format!("  -> uncensored {} ({:.0} s)", x.id, x.duration_ms / 1000.0)).unwrap_or_default());
+    }
+}
