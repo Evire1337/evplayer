@@ -65,6 +65,9 @@ pub struct Pages {
     pub eq_band: Option<String>,
     pub eq_menu: Option<(String, egui::Pos2)>,
     pub eq_dialog: Option<sound::PresetDialog>,
+    /// «Сейчас играет»: when the lyrics were last scrolled by hand, and where they are scrolled
+    pub lyrics_hand: Option<std::time::Instant>,
+    pub lyrics_y: f32,
 }
 
 impl App {
@@ -93,7 +96,7 @@ impl App {
                 if out.menu {
                     let at = ui.ctx().pointer_latest_pos().unwrap_or(out.response.rect.center());
                     let item = playlist.and_then(|(pid, items)| items.get(i).map(|item| (pid.to_string(), item.clone())));
-                    self.menu = Some(Menu { track: t.clone(), at, playlist_item: item });
+                    self.menu = Some(Menu { track: t.clone(), at, playlist_item: item, queue_index: None, sub: false });
                 }
             }
         });
@@ -112,7 +115,7 @@ impl App {
                         self.play_list(tracks, i, None);
                     }
                     if r.secondary_clicked() {
-                        self.menu = Some(Menu { track: t.clone(), at: ui.ctx().pointer_latest_pos().unwrap_or(r.rect.center()), playlist_item: None });
+                        self.menu = Some(Menu { track: t.clone(), at: ui.ctx().pointer_latest_pos().unwrap_or(r.rect.center()), playlist_item: None, queue_index: None, sub: false });
                     }
                 }
             });
@@ -140,101 +143,228 @@ impl App {
         ui.add_space(8.0);
     }
 
-    /// the menu of a song: play next, add to the queue, to a playlist, like, radio, the artist
+    /// The menu of a song (trackMenu.tsx and ContextMenu.tsx): the same entries in the same
+    /// order, "Добавить в плейлист" opening its list at the side, kept on screen, scrolling
+    /// when longer than 70% of the window. Closes on a press outside, Escape or leaving the window.
     pub fn track_menu(&mut self, ctx: &egui::Context) {
         let Some(m) = &self.menu else { return };
         let track = m.track.clone();
         let at = m.at;
         let item = m.playlist_item.clone();
-        let mut close = false;
-        let res = egui::Area::new(egui::Id::unique("track-menu")).order(egui::Order::Foreground).fixed_pos(at).constrain(true).show(ctx, |ui| {
-            egui::Frame::new().fill(egui::Color32::from_rgb(0x0f, 0x31, 0x2d)).stroke(egui::Stroke::new(1.0, theme::edge())).corner_radius(14).inner_margin(6).show(ui, |ui| {
-                ui.set_min_width(230.0);
-                let entry = |ui: &mut Ui, icon: &str, text: &str| -> bool {
-                    let (rect, r) = ui.allocate_exact_size(vec2(ui.available_width().max(230.0), 32.0), egui::Sense::click());
-                    if r.hovered() {
-                        ui.painter().rect_filled(rect, 9, theme::hover());
-                    }
-                    crate::ui::theme::paint_icon(&ui.painter(), pos2(rect.left() + 16.0, rect.center().y), egui::Align2::CENTER_CENTER, icon, 13.0, theme::ink2());
-                    ui.painter().text(pos2(rect.left() + 34.0, rect.center().y), egui::Align2::LEFT_CENTER, crate::i18n::t(text), theme::body(13.5), INK);
-                    r.clicked()
-                };
-                if entry(ui, ic::PLAY, "Играть") {
-                    self.player.play_queue(vec![track.clone()], 0, None);
-                    close = true;
-                }
-                if entry(ui, ic::NEXT, "Играть следующим") {
-                    self.player.add(track.clone(), true);
-                    self.toast("Будет следующим");
-                    close = true;
-                }
-                if entry(ui, ic::QUEUE, "В очередь") {
-                    self.player.add(track.clone(), false);
-                    self.toast("Добавлено в очередь");
-                    close = true;
-                }
-                if entry(ui, ic::RADIO, "Радио по треку") {
-                    self.player.start_radio(track.clone());
-                    close = true;
-                }
-                let liked = self.is_liked(&track.id);
-                if entry(ui, if liked { ic::HEART_FILL } else { ic::HEART }, if liked { "Убрать из «Любимого»" } else { "Нравится" }) {
-                    self.toggle_like(&track);
-                    close = true;
-                }
-                ui.separator();
-                ui.label(egui::RichText::new(crate::i18n::t("Добавить в плейлист")).font(theme::body(12.0)).color(theme::ink3()));
-                let lists: Vec<(String, String)> = state::get().library.read().unwrap().playlists.iter().map(|p| (p.id.clone(), p.title.clone())).collect();
-                for (id, title) in lists.iter().take(8) {
-                    if entry(ui, ic::ADD, title) {
-                        let n = state::get().update_library(|l| l.add_to_playlist(id, std::slice::from_ref(&track)));
-                        self.toast(&if n > 0 { format!("Добавлено в «{title}»") } else { format!("Уже есть в «{title}»") });
-                        close = true;
-                    }
-                }
-                if entry(ui, ic::ADD, "Новый плейлист…") {
-                    self.dialog = Some(Dialog::NewPlaylist { title: String::new(), add: vec![track.clone()] });
-                    close = true;
-                }
-                if let Some((pid, item_id)) = &item {
-                    ui.separator();
-                    if entry(ui, ic::DELETE, "Убрать из плейлиста") {
-                        if pid == "likes" {
-                            self.toggle_like(&track);
-                        } else {
-                            state::get().update_library(|l| l.remove_from_playlist(pid, item_id));
+        let queue_index = m.queue_index;
+        let mut sub_open = m.sub;
+        #[derive(Clone, Copy, PartialEq)]
+        enum A {
+            Next,
+            Queue,
+            Radio,
+            Like,
+            AddTo,
+            Stats,
+            Artist,
+            Download,
+            Forget,
+            Copy,
+            Open,
+            Reveal,
+            Unqueue,
+            Unlist,
+        }
+        let together = crate::jam::engine::get().is_some_and(|j| j.view().status == crate::jam::engine::JamStatus::Live);
+        let liked = self.is_liked(&track.id);
+        let mut items: Vec<(&str, String, bool, A)> = vec![
+            ("next", crate::i18n::t("Играть следующим"), false, A::Next),
+            (if together { "jam" } else { "queue" }, crate::i18n::t(if together { "В общую очередь" } else { "Добавить в очередь" }), false, A::Queue),
+            ("radio", crate::i18n::t("Радио по треку"), false, A::Radio),
+            (if liked { "heartFill" } else { "heart" }, crate::i18n::t(if liked { "Убрать из понравившихся" } else { "Нравится" }), false, A::Like),
+            ("listPlus", crate::i18n::t("Добавить в плейлист"), false, A::AddTo),
+            ("chart", crate::i18n::t("Статистика прослушиваний"), false, A::Stats),
+        ];
+        let artist = track.artists.first().filter(|a| a.id.starts_with("scu:") || a.id.starts_with("yta:")).cloned();
+        if let Some(a) = &artist {
+            items.push(("user", format!("{}: {}", crate::i18n::t("Исполнитель"), a.name), false, A::Artist));
+        }
+        if track.source != crate::model::Source::Local {
+            if self.downloads.is_saved(&track.id) {
+                items.push(("trash", crate::i18n::t("Удалить скачанное"), false, A::Forget));
+            } else {
+                items.push(("download", crate::i18n::t("Скачать для офлайн"), false, A::Download));
+            }
+        }
+        if track.permalink.is_some() {
+            items.push(("link", crate::i18n::t("Скопировать ссылку"), false, A::Copy));
+            items.push(("disc", crate::i18n::t(if track.source == crate::model::Source::Youtube { "Открыть на YouTube" } else { "Открыть на SoundCloud" }), false, A::Open));
+        }
+        if track.source == crate::model::Source::Local {
+            items.push(("folder", crate::i18n::t("Показать в папке"), false, A::Reveal));
+        }
+        if queue_index.is_some() {
+            items.push(("trash", crate::i18n::t("Убрать из очереди"), true, A::Unqueue));
+        }
+        if item.is_some() {
+            items.push(("trash", crate::i18n::t("Убрать из этого плейлиста"), true, A::Unlist));
+        }
+        let lists: Vec<(String, String)> = state::get().library.read().unwrap().playlists.iter().map(|p| (p.id.clone(), p.title.clone())).collect();
+
+        // .menu: 220 to 300 wide, padding 6, rounded 16, entries 13.5 px with 16 px icons
+        let screen = ctx.content_rect();
+        let width_of = |labels: &mut dyn Iterator<Item = String>, icons: bool, more: bool| -> f32 {
+            let widest = ctx.fonts_mut(|f| labels.map(|l| f.layout_no_wrap(l, egui::FontId::new(13.5, theme::medium500()), INK).size().x).fold(0.0, f32::max));
+            (widest + 20.0 + if icons { 26.0 } else { 0.0 } + if more { 20.0 } else { 0.0 } + 12.0).clamp(220.0, 300.0)
+        };
+        let main_w = width_of(&mut items.iter().map(|i| i.1.clone()), true, true);
+        let max_h = screen.height() * 0.7;
+        let row_h = 36.0;
+        let menu_frame = egui::Frame::new()
+            .fill(egui::Color32::from_rgba_unmultiplied(6, 18, 20, 235))
+            .stroke(egui::Stroke::new(1.0, theme::edge()))
+            .corner_radius(16)
+            .inner_margin(6)
+            .shadow(egui::Shadow { offset: [0, 18], blur: 50, spread: 0, color: egui::Color32::from_black_alpha(128) });
+        // one entry; true when pressed; the row's rect comes back for the side list
+        let entry = |ui: &mut Ui, icon: Option<&str>, text: &str, danger: bool, open: bool, more: bool, w: f32| -> (bool, bool, Rect) {
+            let (rect, r) = ui.allocate_exact_size(vec2(w, row_h), egui::Sense::click());
+            if r.hovered() || open {
+                ui.painter().rect_filled(rect, 10, theme::hover());
+            }
+            let color = if danger { theme::DANGER } else { INK };
+            let mut x = rect.left() + 10.0;
+            if let Some(i) = icon {
+                crate::ui::icons::paint(ui.painter(), i, Rect::from_center_size(pos2(x + 8.0, rect.center().y), vec2(16.0, 16.0)), if danger { theme::DANGER } else { theme::ink2() });
+                x += 26.0;
+            }
+            let tw = rect.right() - 10.0 - x - if more { 16.0 } else { 0.0 };
+            let g = widgets::clipped(ui, text, egui::FontId::new(13.5, theme::medium500()), color, tw);
+            ui.painter().galley(pos2(x, rect.center().y - g.size().y / 2.0), g, color);
+            if more {
+                ui.painter().text(pos2(rect.right() - 10.0, rect.center().y), egui::Align2::RIGHT_CENTER, "›", theme::body(15.0), theme::ink3());
+            }
+            (r.clicked(), r.hovered(), rect)
+        };
+        let mut chosen: Option<A> = None;
+        let mut add_row: Option<Rect> = None;
+        let main = egui::Area::new(egui::Id::unique("track-menu")).order(egui::Order::Foreground).fixed_pos(at).constrain_to(screen.shrink(10.0)).show(ctx, |ui| {
+            menu_frame.show(ui, |ui| {
+                ui.spacing_mut().item_spacing.y = 0.0;
+                egui::ScrollArea::vertical().id_salt("track-menu-scroll").max_height(max_h).show(ui, |ui| {
+                    for (icon, label, danger, a) in &items {
+                        let more = *a == A::AddTo;
+                        let (pressed, hovered, rect) = entry(ui, Some(icon), label, *danger, more && sub_open, more, main_w - 12.0);
+                        if more {
+                            add_row = Some(rect);
+                            if hovered || pressed {
+                                sub_open = true;
+                            }
+                        } else if hovered {
+                            sub_open = false;
                         }
-                        close = true;
+                        if pressed && !more {
+                            chosen = Some(*a);
+                        }
                     }
-                }
-                if let Some(a) = track.artists.first().filter(|a| a.id.starts_with("scu:") || a.id.starts_with("yta:")) {
-                    ui.separator();
-                    if entry(ui, ic::PEOPLE, &format!("Исполнитель · {}", a.name)) {
-                        self.go(Page::Artist(a.id.clone()));
-                        close = true;
-                    }
-                }
-                if self.downloads.is_saved(&track.id) {
-                    if entry(ui, ic::DELETE, "Удалить скачанное") {
-                        self.downloads.remove(std::slice::from_ref(&track.id));
-                        close = true;
-                    }
-                } else if track.source != crate::model::Source::Local && entry(ui, ic::DOWNLOAD, "Скачать для офлайн") {
-                    self.download(std::slice::from_ref(&track));
-                    close = true;
-                }
-                if let Some(link) = &track.permalink {
-                    if entry(ui, ic::LINK, "Копировать ссылку") {
-                        ui.ctx().copy_text(link.clone());
-                        self.toast("Ссылка скопирована");
-                        close = true;
-                    }
-                }
+                });
             });
         });
-        let clicked_away = ctx.input(|i| i.pointer.any_pressed()) && !res.response.contains_pointer();
-        if close || clicked_away || ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+        // the playlists at the side of "Добавить в плейлист": right of it, or left when there is no room
+        let mut sub_rect = None;
+        let mut add_to: Option<Option<(String, String)>> = None;
+        if let (true, Some(row)) = (sub_open, add_row) {
+            let sub_w = width_of(&mut std::iter::once(crate::i18n::t("Новый плейлист…")).chain(lists.iter().map(|l| l.1.clone())), true, false);
+            let x = if row.right() + 4.0 + sub_w <= screen.right() - 10.0 { row.right() + 4.0 } else { (row.left() - 4.0 - sub_w).max(10.0) };
+            let r = egui::Area::new(egui::Id::unique("track-menu-sub")).order(egui::Order::Foreground).fixed_pos(pos2(x, row.top() - 6.0)).constrain_to(screen.shrink(10.0)).show(ctx, |ui| {
+                menu_frame.show(ui, |ui| {
+                    ui.spacing_mut().item_spacing.y = 0.0;
+                    egui::ScrollArea::vertical().id_salt("track-menu-sub-scroll").max_height(max_h).show(ui, |ui| {
+                        if entry(ui, Some("plus"), &crate::i18n::t("Новый плейлист…"), false, false, false, sub_w - 12.0).0 {
+                            add_to = Some(None);
+                        }
+                        for (id, title) in &lists {
+                            if entry(ui, None, title, false, false, false, sub_w - 12.0).0 {
+                                add_to = Some(Some((id.clone(), title.clone())));
+                            }
+                        }
+                    });
+                });
+            });
+            sub_rect = Some(r.response.rect);
+        }
+        let mut close = chosen.is_some() || add_to.is_some();
+        match add_to {
+            Some(None) => self.dialog = Some(Dialog::NewPlaylist { title: String::new(), add: vec![track.clone()] }),
+            Some(Some((id, title))) => {
+                let n = state::get().update_library(|l| l.add_to_playlist(&id, std::slice::from_ref(&track)));
+                self.toast(&if n > 0 { format!("{} «{title}»", crate::i18n::t("Добавлено в")) } else { format!("{} «{title}»", crate::i18n::t("Уже есть в")) });
+            }
+            None => {}
+        }
+        match chosen {
+            Some(A::Next) => {
+                self.player.add(track.clone(), true);
+                self.toast("Будет следующим");
+            }
+            Some(A::Queue) => {
+                self.player.add(track.clone(), false);
+                self.toast("Добавлено в очередь");
+            }
+            Some(A::Radio) => self.player.start_radio(track.clone()),
+            Some(A::Like) => self.toggle_like(&track),
+            Some(A::Stats) => self.dialog = Some(Dialog::TrackStats { track: track.clone(), range: 1 }),
+            Some(A::Artist) => {
+                if let Some(a) = &artist {
+                    self.go(Page::Artist(a.id.clone()));
+                }
+            }
+            Some(A::Download) => {
+                self.download(std::slice::from_ref(&track));
+                self.toast("Скачиваю для офлайн");
+            }
+            Some(A::Forget) => {
+                self.downloads.remove(std::slice::from_ref(&track.id));
+                self.toast("Копия для офлайн удалена");
+            }
+            Some(A::Copy) => {
+                if let Some(link) = &track.permalink {
+                    ctx.copy_text(link.clone());
+                    self.toast("Ссылка скопирована");
+                }
+            }
+            Some(A::Open) => {
+                if let Some(link) = &track.permalink {
+                    crate::dialogs::open_path(std::path::Path::new(link));
+                }
+            }
+            Some(A::Reveal) => {
+                if let Some(rec) = self.library.get(&track.id) {
+                    crate::dialogs::reveal(std::path::Path::new(&rec.path));
+                }
+            }
+            Some(A::Unqueue) => {
+                if let Some(i) = queue_index {
+                    self.player.remove(i);
+                }
+            }
+            Some(A::Unlist) => {
+                if let Some((pid, item_id)) = &item {
+                    if pid == "likes" {
+                        self.toggle_like(&track);
+                    } else {
+                        state::get().update_library(|l| l.remove_from_playlist(pid, item_id));
+                    }
+                }
+            }
+            Some(A::AddTo) | None => {}
+        }
+        let pointer = ctx.input(|i| i.pointer.interact_pos());
+        let inside = pointer.is_some_and(|p| main.response.rect.contains(p) || sub_rect.is_some_and(|r| r.contains(p)));
+        let pressed_away = ctx.input(|i| i.pointer.any_pressed()) && !inside;
+        let left_window = ctx.input(|i| !i.focused);
+        if pressed_away || left_window || ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+            close = true;
+        }
+        if close {
             self.menu = None;
+        } else if let Some(m) = self.menu.as_mut() {
+            m.sub = sub_open;
         }
     }
 
@@ -418,6 +548,76 @@ impl App {
                         }
                     });
                 }
+                Dialog::TrackStats { track, range } => {
+                    // TrackStatsDialog.tsx: the song, three counts, a chart and some facts
+                    ui.set_width(596.0);
+                    ui.spacing_mut().item_spacing.y = 16.0;
+                    ui.label(egui::RichText::new(crate::i18n::t("Статистика трека")).font(theme::heavy(19.0)).color(INK));
+                    let s = crate::stats::track_summary(&track.id);
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = 12.0;
+                        let (r, _) = ui.allocate_exact_size(vec2(56.0, 56.0), egui::Sense::hover());
+                        let src = crate::ui::images::artwork_of(track);
+                        widgets::paint_cover(ui, &mut self.images, src.as_deref(), r, 14);
+                        ui.vertical(|ui| {
+                            ui.add_space(8.0);
+                            ui.spacing_mut().item_spacing.y = 3.0;
+                            ui.label(widgets::clipped(ui, &track.title, theme::medium(14.0), INK, 500.0));
+                            ui.label(widgets::clipped(ui, &track.artist_line(), theme::body(13.0), theme::ink2(), 500.0));
+                        });
+                    });
+                    let tile_w = (596.0 - 16.0) / 3.0;
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = 8.0;
+                        for (label, row) in [("За неделю", s.week), ("За месяц", s.month), ("За всё время", s.all)] {
+                            let (r, _) = ui.allocate_exact_size(vec2(tile_w, 76.0), egui::Sense::hover());
+                            ui.painter().rect_filled(r, 16, egui::Color32::from_rgba_unmultiplied(238, 247, 244, 15));
+                            ui.painter().text(r.min + vec2(14.0, 12.0), egui::Align2::LEFT_TOP, crate::i18n::t(label), theme::body(11.5), theme::ink3());
+                            ui.painter().text(r.min + vec2(14.0, 27.0), egui::Align2::LEFT_TOP, row.n.to_string(), theme::heavy(24.0), INK);
+                            ui.painter().text(r.min + vec2(14.0, 56.0), egui::Align2::LEFT_TOP, crate::i18n::t(&crate::stats::format_time(row.ms)), theme::body(11.5), theme::ink2());
+                        }
+                    });
+                    if let Some(i) = kit::segmented(ui, &["Неделя", "30 дней", "Год"], *range) {
+                        *range = i;
+                    }
+                    if s.all.n == 0 {
+                        ui.vertical_centered(|ui| {
+                            ui.label(egui::RichText::new(crate::i18n::t("Этот трек ещё не слушали — статистика появится после первых 5 секунд.")).font(theme::body(14.0)).color(theme::ink3()));
+                        });
+                    } else {
+                        stats_bars(ui, &s, *range);
+                    }
+                    // .stats-facts: two columns of name and value
+                    let mut facts = vec![
+                        ("Первое прослушивание".to_string(), long_date(s.first.as_deref())),
+                        ("Последнее".to_string(), long_date(s.last.as_deref())),
+                        ("В среднем в день (месяц)".to_string(), format!("{:.1}", s.month.n as f64 / 30.0)),
+                        ("Среднее прослушивание".to_string(), if s.all.n > 0 { crate::i18n::t(&crate::stats::format_time(s.all.ms / s.all.n as f64)) } else { "—".into() }),
+                    ];
+                    if let Some(p) = track.plays {
+                        let on = if track.source == crate::model::Source::Youtube { "YouTube" } else { "SoundCloud" };
+                        facts.push((format!("{} {on}", crate::i18n::t("Прослушиваний на")), widgets::count(p)));
+                    }
+                    let col = (596.0 - 20.0) / 2.0;
+                    ui.vertical(|ui| {
+                        ui.spacing_mut().item_spacing.y = 6.0;
+                        for pair in facts.chunks(2) {
+                            ui.horizontal(|ui| {
+                                ui.spacing_mut().item_spacing.x = 20.0;
+                                for (k, v) in pair {
+                                    let (r, _) = ui.allocate_exact_size(vec2(col, 18.0), egui::Sense::hover());
+                                    ui.painter().text(r.left_center(), egui::Align2::LEFT_CENTER, crate::i18n::t(k), theme::body(12.5), theme::ink3());
+                                    ui.painter().text(r.right_center(), egui::Align2::RIGHT_CENTER, v, theme::medium(12.5), INK);
+                                }
+                            });
+                        }
+                    });
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if widgets::btn(ui, None, "Закрыть", false).clicked() {
+                            done = true;
+                        }
+                    });
+                }
                 Dialog::SpotifyExport { lists, chosen, error } => {
                     ui.label(egui::RichText::new(crate::i18n::t("Импорт из Spotify")).font(theme::heavy(22.0)));
                     ui.add_space(6.0);
@@ -551,3 +751,68 @@ impl<T: Send + 'static> Loaded<T> {
 
 #[allow(dead_code)]
 fn _unused(_: Rect) {}
+
+/// "27 октября 2026 г." / "October 27, 2026" from a saved ISO time
+fn long_date(iso: Option<&str>) -> String {
+    use chrono::Datelike;
+    let Some(d) = iso.and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok()).map(|d| d.with_timezone(&chrono::Local).date_naive()) else { return "—".into() };
+    const RU: [&str; 12] = ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря"];
+    const EN: [&str; 12] = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+    let m = d.month0() as usize;
+    if crate::i18n::is_english() {
+        format!("{} {}, {}", EN[m], d.day(), d.year())
+    } else {
+        format!("{} {} {} г.", d.day(), RU[m], d.year())
+    }
+}
+
+/// Bars (TrackStatsDialog.tsx): listens per day (a week, 30 days) or per month (a year); a
+/// bar under the pointer shows its count
+fn stats_bars(ui: &mut Ui, s: &crate::stats::TrackSummary, range: usize) {
+    use chrono::Datelike;
+    let english = crate::i18n::is_english();
+    let (values, labels): (Vec<u32>, Vec<String>) = match range {
+        2 => {
+            const RU: [&str; 12] = ["янв", "февр", "мар", "апр", "мая", "июн", "июл", "авг", "сент", "окт", "нояб", "дек"];
+            const EN: [&str; 12] = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+            s.monthly.iter().map(|(d, r)| (r.n, (if english { EN } else { RU })[d.month0() as usize].to_string())).unzip()
+        }
+        0 => {
+            const RU: [&str; 7] = ["пн", "вт", "ср", "чт", "пт", "сб", "вс"];
+            const EN: [&str; 7] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+            s.daily[s.daily.len().saturating_sub(7)..].iter().map(|(d, r)| (r.n, (if english { EN } else { RU })[d.weekday().num_days_from_monday() as usize].to_string())).unzip()
+        }
+        _ => {
+            let n = s.daily.len();
+            s.daily.iter().enumerate().map(|(i, (d, r))| (r.n, if i % 5 == 4 || i == n - 1 { d.day().to_string() } else { String::new() })).unzip()
+        }
+    };
+    let w = ui.available_width();
+    let h = 150.0;
+    let (rect, resp) = ui.allocate_exact_size(vec2(w, h + 18.0), egui::Sense::hover());
+    let p = ui.painter();
+    for f in [0.25, 0.5, 0.75, 1.0] {
+        p.hline(rect.x_range(), rect.top() + h - h * f, egui::Stroke::new(1.0, egui::Color32::from_rgba_unmultiplied(238, 247, 244, 20)));
+    }
+    let max = values.iter().copied().max().unwrap_or(1).max(1) as f32;
+    let gap = if values.len() > 14 { 3.0 } else { 8.0 };
+    let bar = (w - gap * (values.len() as f32 - 1.0)) / values.len() as f32;
+    let hover = resp.hover_pos().map(|p| ((p.x - rect.left()) / (bar + gap)) as usize).filter(|i| *i < values.len());
+    for (i, v) in values.iter().enumerate() {
+        let x = rect.left() + i as f32 * (bar + gap);
+        let bh = if *v == 0 { 2.0 } else { ((*v as f32 / max) * (h - 8.0)).max(4.0) };
+        let r = Rect::from_min_size(pos2(x, rect.top() + h - bh), vec2(bar, bh));
+        let fill = if *v == 0 { egui::Color32::from_rgba_unmultiplied(238, 247, 244, 26) } else if hover == Some(i) { theme::ACCENT } else { egui::Color32::from_rgba_unmultiplied(111, 240, 196, 178) };
+        p.rect_filled(r, (bar / 2.0).min(4.0) as u8, fill);
+        if !labels[i].is_empty() {
+            p.text(pos2(x + bar / 2.0, rect.top() + h + 14.0), egui::Align2::CENTER_BOTTOM, &labels[i], egui::FontId::new(10.0, theme::medium500()), theme::ink3());
+        }
+    }
+    if let Some(i) = hover {
+        let x = rect.left() + i as f32 * (bar + gap) + bar / 2.0;
+        let g = p.layout_no_wrap(values[i].to_string(), theme::heavy(11.5), theme::GROUND);
+        let tip = Rect::from_center_size(pos2(x, rect.top() - 8.0), g.size() + vec2(16.0, 6.0));
+        p.rect_filled(tip, 8, INK);
+        p.galley(tip.center() - g.size() / 2.0, g, theme::GROUND);
+    }
+}

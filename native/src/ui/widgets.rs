@@ -227,9 +227,23 @@ pub fn seek_bar_sized(ui: &mut Ui, width: f32, frac: f32, buffered: f32, thick: 
         p.rect_filled(b, round, Color32::from_rgba_unmultiplied(238, 247, 244, 30));
     }
     let mut f = frac.clamp(0.0, 1.0);
-    let at = r.interact_pointer_pos().filter(|_| r.dragged() || r.clicked()).map(|p| ((p.x - line.left()) / line.width()).clamp(0.0, 1.0));
+    // where the pointer holds the bar; kept, because on the frame the button is let go the bar
+    // no longer counts as dragged (the seek then went to where the song already was, so a drag
+    // to the start did nothing)
+    let held_id = r.id.with("held");
+    let pointer = r.interact_pointer_pos().map(|p| ((p.x - line.left()) / line.width()).clamp(0.0, 1.0));
+    if r.dragged() || r.is_pointer_button_down_on() {
+        if let Some(p) = pointer {
+            ui.data_mut(|d| d.insert_temp(held_id, p));
+        }
+    }
+    let held: Option<f32> = ui.data(|d| d.get_temp(held_id));
+    let at = if r.dragged() || r.is_pointer_button_down_on() { pointer.or(held) } else if r.drag_stopped() || r.clicked() { held.or(pointer) } else { None };
     if let Some(a) = at {
         f = a;
+    }
+    if r.drag_stopped() || r.clicked() {
+        ui.data_mut(|d| d.remove::<f32>(held_id));
     }
     let done = Rect::from_min_max(line.min, pos2(line.left() + line.width() * f, line.max.y));
     p.rect_filled(done, round, INK);

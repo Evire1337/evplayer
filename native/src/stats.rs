@@ -148,6 +148,53 @@ pub fn plays_of(id: &str) -> u32 {
     with(|d| d.tracks.get(id).map(|r| sum(r, Range::All, today).n).unwrap_or(0))
 }
 
+/// One song's statistics (getTrackStats in listeningStats.ts): the week, the month and all
+/// time, the first and last listen, plays per day for 30 days and per month for 12 months,
+/// oldest first.
+#[derive(Clone, Debug, Default)]
+pub struct TrackSummary {
+    pub week: Row,
+    pub month: Row,
+    pub all: Row,
+    pub first: Option<String>,
+    pub last: Option<String>,
+    pub daily: Vec<(NaiveDate, Row)>,
+    pub monthly: Vec<(NaiveDate, Row)>,
+}
+
+pub fn track_summary_in(d: &Data, id: &str, now: NaiveDate) -> TrackSummary {
+    let r = d.tracks.get(id);
+    let daily: Vec<(NaiveDate, Row)> = (0..30).rev().map(|i| {
+        let day = now - Days::days(i);
+        (day, r.and_then(|r| r.days.get(&day_key(day)).copied()).unwrap_or_default())
+    }).collect();
+    let monthly: Vec<(NaiveDate, Row)> = (0..12).rev().map(|i| {
+        let total = now.year() * 12 + now.month0() as i32 - i;
+        let first = NaiveDate::from_ymd_opt(total.div_euclid(12), total.rem_euclid(12) as u32 + 1, 1).unwrap_or(now);
+        let prefix = day_key(first)[..7].to_string();
+        let mut row = Row::default();
+        if let Some(r) = r {
+            for (day, x) in r.days.range(prefix.clone()..) {
+                if !day.starts_with(&prefix) {
+                    break;
+                }
+                row.n += x.n;
+                row.ms += x.ms;
+            }
+        }
+        (first, row)
+    }).collect();
+    match r {
+        Some(r) => TrackSummary { week: sum(r, Range::Week, now), month: sum(r, Range::Month, now), all: sum(r, Range::All, now), first: Some(r.first.clone()), last: Some(r.last.clone()), daily, monthly },
+        None => TrackSummary { daily, monthly, ..Default::default() },
+    }
+}
+
+pub fn track_summary(id: &str) -> TrackSummary {
+    let now = today();
+    with(|d| track_summary_in(d, id, now))
+}
+
 /// how big the statistics are on disk (Настройки → Данные)
 pub fn bytes() -> usize {
     crate::state::get().kv.size(KEY)
@@ -295,5 +342,28 @@ mod tests {
         assert!(!r.days.contains_key("2020-01-01"));
         assert_eq!(serde_json::to_value(&d).unwrap()["seeded"], true);
         assert_eq!(format_time(3_725_000.0), "1 ч 2 мин");
+    }
+
+    #[test]
+    fn a_song_s_summary_has_its_days_and_months() {
+        let mut d = Data::default();
+        let t = Track { id: "yt:1".into(), ..Default::default() };
+        let now = Local::now();
+        let today = now.date_naive();
+        record_in(&mut d, &t, "a", 60_000.0, now);
+        record_in(&mut d, &t, "b", 30_000.0, now - Days::days(10));
+        let s = track_summary_in(&d, "yt:1", today);
+        assert_eq!(s.daily.len(), 30);
+        assert_eq!(s.daily.last().unwrap().0, today);
+        assert_eq!(s.daily.last().unwrap().1.n, 1);
+        assert_eq!(s.week.n, 1);
+        assert_eq!(s.month.n, 2);
+        assert_eq!(s.all.ms, 90_000.0);
+        assert_eq!(s.monthly.len(), 12);
+        assert_eq!(s.monthly.iter().map(|m| m.1.n).sum::<u32>(), 2);
+        assert_eq!(s.monthly.last().unwrap().0.month(), today.month());
+        let none = track_summary_in(&d, "yt:2", today);
+        assert_eq!(none.all.n, 0);
+        assert!(none.first.is_none());
     }
 }

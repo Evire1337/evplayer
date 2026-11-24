@@ -236,7 +236,7 @@ impl App {
                 self.toggle_like(t);
             }
             if out.menu {
-                self.menu = Some(crate::app::Menu { track: t.clone(), at: ui.ctx().pointer_latest_pos().unwrap_or(out.response.rect.center()), playlist_item: None });
+                self.menu = Some(crate::app::Menu { track: t.clone(), at: ui.ctx().pointer_latest_pos().unwrap_or(out.response.rect.center()), playlist_item: None, queue_index: None, sub: false });
             }
         }
     }

@@ -148,6 +148,22 @@ pub fn open_path(p: &Path) {
     }
 }
 
+/// "Показать в папке": Explorer opens the file's folder with the file selected
+#[cfg(windows)]
+pub fn reveal(p: &Path) {
+    use windows_sys::Win32::UI::Shell::ShellExecuteW;
+    use windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+    let op = wide("open");
+    let exe = wide("explorer.exe");
+    let args = wide(&format!("/select,\"{}\"", p.to_string_lossy()));
+    // SAFETY: NUL-terminated strings alive through the call
+    unsafe {
+        ShellExecuteW(std::ptr::null_mut(), op.as_ptr(), exe.as_ptr(), args.as_ptr(), std::ptr::null(), SW_SHOWNORMAL);
+    }
+}
+#[cfg(not(windows))]
+pub fn reveal(_p: &Path) {}
+
 #[cfg(not(windows))]
 pub fn pick_files() -> Vec<PathBuf> {
     vec![]

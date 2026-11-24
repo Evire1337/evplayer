@@ -84,6 +84,10 @@ pub struct Menu {
     pub at: egui::Pos2,
     /// the playlist it is in (to offer "remove from the playlist")
     pub playlist_item: Option<(String, String)>,
+    /// its place in the queue, when the menu is opened from "Далее"
+    pub queue_index: Option<usize>,
+    /// "Добавить в плейлист" has its list open at the side
+    pub sub: bool,
 }
 
 /// toasts from other threads (a copy-out that finished), shown on the next frame
@@ -135,6 +139,8 @@ pub enum Dialog {
     ResetStats,
     /// "Включить полную синхронизацию?" with SoundCloud
     FullSync,
+    /// "Статистика трека": the song, and the chart's range (0 week, 1 30 days, 2 year)
+    TrackStats { track: Track, range: usize },
     /// Spotify's data archive: the lists found in it and which are ticked
     SpotifyExport { lists: Vec<crate::spotify_export::List>, chosen: Vec<bool>, error: String },
 }
@@ -420,6 +426,19 @@ impl App {
                 state::get().settings.write().unwrap().dev_tools = true;
             }
             self.page = Page::Settings;
+            return;
+        }
+        // "menu" and "trackstats": the likes with a song's menu (its playlists open) or its statistics
+        if name == "menu" || name == "trackstats" {
+            let first = state::get().library.read().unwrap().likes.first().map(|l| l.track.clone());
+            self.page = Page::Playlist("likes".into());
+            if let Some(t) = first {
+                if name == "menu" {
+                    self.menu = Some(Menu { track: t, at: pos2(700.0, 260.0), playlist_item: None, queue_index: None, sub: true });
+                } else {
+                    self.dialog = Some(Dialog::TrackStats { track: t, range: 1 });
+                }
+            }
             return;
         }
         // "search:<words>" opens the search with that query

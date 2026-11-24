@@ -12,6 +12,40 @@ use crate::ui::images::artwork_of;
 use crate::ui::theme::{self, ic, ACCENT, INK};
 use crate::ui::widgets;
 
+/// a line shows a moment before it is sung, so it is read as the singer starts it
+const LEAD_MS: f64 = 120.0;
+/// after scrolling the lyrics by hand, they follow the song again this much later
+const HAND_SCROLL_PAUSE: std::time::Duration = std::time::Duration::from_secs(4);
+/// a press of "−" or "+" moves the text this much; the most it can be moved
+const OFFSET_STEP_MS: f64 = 250.0;
+const MAX_OFFSET_MS: f64 = 10_000.0;
+/// the shifts of this many songs are remembered
+const REMEMBERED: usize = 300;
+/// the shifts as src/ui/lyricsTiming.ts keeps them: per song, + shows the text earlier
+const OFFSETS_KEY: &str = "evplayer.lyricsOffset.v1";
+
+#[derive(serde::Serialize, serde::Deserialize, Default)]
+struct LyricsOffsets {
+    #[serde(rename = "byTrack", default)]
+    by_track: serde_json::Map<String, serde_json::Value>,
+}
+
+/// the shift of a song's lyrics, ms
+fn lyrics_offset(id: &str) -> f64 {
+    crate::store::kv::read_state::<LyricsOffsets>(&state::get().kv, OFFSETS_KEY).and_then(|o| o.by_track.get(id).and_then(serde_json::Value::as_f64)).unwrap_or(0.0)
+}
+
+/// "+0,25 с", "−1,5 с"
+fn shift_text(ms: f64) -> String {
+    let mut v = format!("{:.2}", (ms / 1000.0).abs());
+    if v.ends_with('0') {
+        v.pop();
+    }
+    let sign = if ms > 0.0 { "+" } else if ms < 0.0 { "−" } else { "" };
+    let sep = if crate::i18n::is_english() { "." } else { "," };
+    format!("{sign}{} {}", v.replace('.', sep), crate::i18n::t("с"))
+}
+
 thread_local! {
     static LYRICS: std::cell::RefCell<Loaded<Option<Lyrics>>> = std::cell::RefCell::new(Loaded::default());
 }
@@ -133,57 +167,182 @@ impl App {
         }
     }
 
+    /// Lyrics.tsx: the lines light up as they are sung and the current one is kept in the
+    /// middle; a click jumps there. Scrolled by hand, the text stays where it was put for a few
+    /// seconds, then glides back to the line being sung. The text can be shifted for a slightly
+    /// different version of the song.
     fn lyrics_view(&mut self, ui: &mut Ui, rect: Rect, cur: Option<&crate::model::Track>) {
+        let empty = |ui: &mut Ui, text: &str| {
+            ui.painter().text(rect.center(), Align2::CENTER_CENTER, crate::i18n::t(text), theme::body(15.0), theme::ink3());
+        };
         let Some(track) = cur.cloned() else {
-            ui.painter().text(rect.center(), Align2::CENTER_CENTER, crate::i18n::t("Включите песню — здесь появится её текст."), theme::body(14.0), theme::ink3());
+            empty(ui, "Включите трек, и здесь появится его текст.");
             return;
         };
         let key = track.id.clone();
-        let found = LYRICS.with(|l| l.borrow_mut().get(&key, move || lyrics::find(&track)).cloned());
+        let t2 = track.clone();
+        let found = LYRICS.with(|l| l.borrow_mut().get(&key, move || lyrics::find(&t2)).cloned());
         let Some(found) = found else {
-            ui.painter().text(rect.center(), Align2::CENTER_CENTER, crate::i18n::t("Ищу текст…"), theme::body(14.0), theme::ink3());
+            empty(ui, "Ищем текст…");
             return;
         };
         let Some(lyr) = found else {
-            ui.painter().text(rect.center(), Align2::CENTER_CENTER, crate::i18n::t("Текст этой песни не нашёлся"), theme::body(14.0), theme::ink3());
+            empty(ui, "Текста для этого трека пока нет.");
             return;
         };
-        let size = match state::get().settings.read().unwrap().lyrics_size {
-            crate::store::state::LyricsSize::S => 20.0,
-            crate::store::state::LyricsSize::M => 24.0,
-            crate::store::state::LyricsSize::L => 30.0,
+        let (mult, saver) = {
+            let s = state::get().settings.read().unwrap();
+            (
+                match s.lyrics_size {
+                    crate::store::state::LyricsSize::S => 0.8,
+                    crate::store::state::LyricsSize::M => 1.0,
+                    crate::store::state::LyricsSize::L => 1.25,
+                },
+                s.memory_saver,
+            )
         };
-        // the sound heard is a little behind the position: so are the lines
-        let pos = self.view.position_ms - self.player.latency_ms();
-        let active = if lyr.synced { lyrics::active_line(&lyr.lines, pos) } else { None };
-        let line_h = size * 1.75;
-        let mut sui = ui.new_child(egui::UiBuilder::new().max_rect(rect));
-        let id = egui::Id::unique("lyrics-scroll");
-        let mut area = egui::ScrollArea::vertical().id_salt(id).auto_shrink([false, false]).scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden);
-        if let Some(a) = active {
-            // the line being sung stays at a third of the height
-            let target = (a as f32 * line_h - rect.height() / 3.0).max(0.0);
-            area = area.vertical_scroll_offset(target);
+        let w = rect.width();
+        let synced = lyr.synced;
+        // the text grows with the column it gets (.now-lyrics: --lyric-scale 5.4cqi)
+        let size = if synced { (w * 0.054).clamp(24.0, 64.0) } else { (w * 0.054 * 0.75).clamp(20.0, 44.0) } * mult;
+        let gap = (w * 0.017).clamp(12.0, 26.0);
+        let wrap = (w * 0.94).min(size * 20.0);
+        let offset = lyrics_offset(&track.id);
+        // the sound heard is a little behind the position; a line shows a moment before it is sung
+        let pos = self.view.position_ms - self.player.latency_ms() + LEAD_MS + offset;
+        let active = if synced { lyrics::active_line(&lyr.lines, pos) } else { None };
+
+        // a turn of the wheel over the text: it stops following the song for a while
+        let over = ui.rect_contains_pointer(rect);
+        let wheel = ui.input(|i| i.events.iter().any(|e| matches!(e, egui::Event::MouseWheel { .. })));
+        if over && wheel {
+            self.pages.lyrics_hand = Some(std::time::Instant::now());
         }
-        area.show(&mut sui, |ui| {
-            ui.add_space(rect.height() / 3.0);
+        let by_hand = self.pages.lyrics_hand.is_some_and(|t| t.elapsed() < HAND_SCROLL_PAUSE);
+        if let Some(t) = self.pages.lyrics_hand.filter(|_| by_hand) {
+            ui.ctx().request_repaint_after(HAND_SCROLL_PAUSE.saturating_sub(t.elapsed()) + std::time::Duration::from_millis(20));
+        }
+        // where the line being sung was laid out last frame: the text glides to centre it
+        let lines_id = egui::Id::unique(("lyrics-lines", &track.id));
+        let laid: Option<Vec<(f32, f32)>> = ui.ctx().data(|d| d.get_temp(lines_id));
+        let mut area = egui::ScrollArea::vertical().id_salt("lyrics-scroll").auto_shrink([false, false]).scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden);
+        if let (false, Some(a), Some(laid)) = (by_hand, active, laid.as_ref()) {
+            if let Some((top, h)) = laid.get(a) {
+                let target = (top + h / 2.0 - rect.height() / 2.0).max(0.0);
+                let now = self.pages.lyrics_y;
+                let next = if saver || (target - now).abs() > rect.height() * 3.0 { target } else { now + (target - now) * 0.22 };
+                if (target - next).abs() > 0.5 {
+                    ui.ctx().request_repaint();
+                }
+                area = area.vertical_scroll_offset(next);
+            }
+        }
+        let mut sui = ui.new_child(egui::UiBuilder::new().max_rect(rect));
+        let mut seek_to = None;
+        let mut positions = Vec::with_capacity(lyr.lines.len());
+        let out = area.show(&mut sui, |ui| {
+            ui.spacing_mut().item_spacing.y = 0.0;
+            let pad = rect.height() * 0.35;
+            ui.add_space(pad);
+            let content_top = ui.min_rect().top();
             for (i, line) in lyr.lines.iter().enumerate() {
-                let color = match active {
-                    Some(a) if a == i => INK,
-                    Some(a) if i < a => Color32::from_rgba_unmultiplied(238, 247, 244, 90),
-                    _ if !lyr.synced => theme::ink2(),
-                    _ => Color32::from_rgba_unmultiplied(238, 247, 244, 70),
+                if i > 0 {
+                    ui.add_space(gap);
+                }
+                let text = if line.text.trim().is_empty() && synced { "♪".to_string() } else { line.text.clone() };
+                let is_active = active == Some(i);
+                let fs = if is_active { size * 1.06 } else { size };
+                let font = if synced { theme::heavy(fs) } else { theme::heavy(fs) };
+                let mut job = egui::text::LayoutJob::single_section(text, egui::TextFormat { font_id: font, color: Color32::PLACEHOLDER, line_height: Some(fs * 1.16), ..Default::default() });
+                job.wrap.max_width = if is_active { wrap * 1.06 } else { wrap };
+                let g = ui.painter().layout_job(job);
+                let (r, resp) = ui.allocate_exact_size(vec2(w, g.size().y), if synced { Sense::click() } else { Sense::hover() });
+                positions.push((r.top() - content_top + pad, r.height()));
+                // .lyric-line colours: sung white, the next ones brighter than the far ones,
+                // the sung ones faint; plain text in ink
+                let distance = active.map(|a| (i as i64 - a as i64).unsigned_abs()).unwrap_or(3);
+                let mut alpha = if !synced {
+                    1.0
+                } else if is_active {
+                    1.0
+                } else if active.is_some_and(|a| i < a) {
+                    0.28
+                } else if distance == 1 {
+                    0.55
+                } else {
+                    0.42
                 };
-                let r = ui.add(egui::Label::new(egui::RichText::new(&line.text).font(theme::heavy(size)).color(color)).wrap().sense(Sense::click()));
-                ui.add_space(line_h - size * 1.3);
-                if lyr.synced && r.clicked() {
-                    self.player.seek(line.time_ms);
+                if synced && !is_active && resp.hovered() {
+                    alpha = 0.7;
+                }
+                // the mask of the page: lines fade out at the top and bottom 18% of the box
+                let y = r.center().y;
+                let edge = rect.height() * 0.18;
+                let fade = ((y - rect.top()) / edge).min((rect.bottom() - y) / edge).clamp(0.0, 1.0);
+                let color = Color32::from_rgba_unmultiplied(if is_active { 255 } else { 238 }, if is_active { 255 } else { 247 }, if is_active { 255 } else { 244 }, (alpha * fade * 255.0) as u8);
+                ui.painter().galley(r.min, g, color);
+                if synced && resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+                    seek_to = Some((line.time_ms - offset).max(0.0));
                 }
             }
-            ui.add_space(rect.height() / 2.0);
+            ui.add_space(pad);
+            ui.label(egui::RichText::new(format!("{} LRCLIB", crate::i18n::t("Текст:"))).font(theme::body(11.5)).color(theme::ink3()));
+            ui.add_space(12.0);
         });
+        self.pages.lyrics_y = out.state.clamped_offset().y;
+        ui.ctx().data_mut(|d| d.insert_temp(lines_id, positions));
+        if let Some(ms) = seek_to {
+            self.player.seek(ms);
+            self.pages.lyrics_hand = None;
+        }
         if active.is_some() {
             ui.ctx().request_repaint_after(std::time::Duration::from_millis(120));
+        }
+        // .lyrics-shift: "−", the shift, "+" at the bottom right, on hover or once used
+        if synced && (over || offset != 0.0) {
+            self.lyrics_shift(ui, rect, &track.id, offset);
+        }
+    }
+
+    fn lyrics_shift(&mut self, ui: &mut Ui, rect: Rect, id: &str, offset: f64) {
+        let value = if offset != 0.0 { format!("{} {}", crate::i18n::t("сдвиг"), shift_text(offset)) } else { crate::i18n::t("синхронно") };
+        let g = ui.painter().layout_no_wrap(value, theme::body(12.0), Color32::PLACEHOLDER);
+        let w = 3.0 + 28.0 + 2.0 + g.size().x + 20.0 + 2.0 + 28.0 + 3.0;
+        let pill = Rect::from_min_size(pos2(rect.right() - 4.0 - w, rect.bottom() - 10.0 - 34.0), vec2(w, 34.0));
+        ui.painter().rect(pill, 17, theme::glass_strong(), egui::Stroke::new(1.0, theme::edge()), egui::StrokeKind::Inside);
+        let minus = Rect::from_min_size(pill.min + vec2(3.0, 3.0), vec2(28.0, 28.0));
+        let mid = Rect::from_min_size(pos2(minus.right() + 2.0, pill.top() + 3.0), vec2(g.size().x + 20.0, 28.0));
+        let plus = Rect::from_min_size(pos2(mid.right() + 2.0, pill.top() + 3.0), vec2(28.0, 28.0));
+        let mut nudge = 0.0;
+        for (r, text, tip, d) in [(minus, "−", "Текст позже", -OFFSET_STEP_MS), (plus, "+", "Текст раньше", OFFSET_STEP_MS)] {
+            let resp = ui.interact(r, ui.scope_id().with(("lyrics-shift", text)), Sense::click());
+            if resp.hovered() {
+                ui.painter().circle_filled(r.center(), 14.0, theme::hover());
+            }
+            ui.painter().text(r.center(), Align2::CENTER_CENTER, text, theme::heavy(17.0), if resp.hovered() { INK } else { theme::ink2() });
+            if resp.on_hover_text(crate::i18n::t(tip)).clicked() {
+                nudge = d;
+            }
+        }
+        let resp = ui.interact(mid, ui.scope_id().with("lyrics-shift-value"), Sense::click());
+        if resp.hovered() {
+            ui.painter().rect_filled(mid, 14, theme::hover());
+        }
+        let color = if offset != 0.0 { ACCENT } else if resp.hovered() { INK } else { theme::ink3() };
+        ui.painter().galley(mid.center() - g.size() / 2.0, g, color);
+        let reset = resp.on_hover_text(crate::i18n::t(if offset != 0.0 { "Сбросить сдвиг" } else { "Текст отстаёт или спешит? Сдвиньте его" })).clicked();
+        if nudge != 0.0 || reset {
+            let mut o: LyricsOffsets = crate::store::kv::read_state(&state::get().kv, OFFSETS_KEY).unwrap_or_default();
+            let value = if reset { 0.0 } else { (o.by_track.get(id).and_then(serde_json::Value::as_f64).unwrap_or(0.0) + nudge).clamp(-MAX_OFFSET_MS, MAX_OFFSET_MS) };
+            o.by_track.remove(id);
+            while o.by_track.len() >= REMEMBERED {
+                let Some(k) = o.by_track.keys().next().cloned() else { break };
+                o.by_track.remove(&k);
+            }
+            if value != 0.0 {
+                o.by_track.insert(id.to_string(), serde_json::Value::from(value));
+            }
+            crate::store::kv::write_state(&state::get().kv, OFFSETS_KEY, &o, 0);
         }
     }
 
@@ -233,7 +392,7 @@ impl App {
                     self.player.play_index(*i);
                 }
                 if r.secondary_clicked() {
-                    self.menu = Some(crate::app::Menu { track: t.clone(), at: ui.ctx().pointer_latest_pos().unwrap_or(row.center()), playlist_item: None });
+                    self.menu = Some(crate::app::Menu { track: t.clone(), at: ui.ctx().pointer_latest_pos().unwrap_or(row.center()), playlist_item: None, queue_index: Some(*i), sub: false });
                 }
             }
         });
@@ -250,7 +409,7 @@ pub fn sung_line(track: &crate::model::Track, pos_ms: f64) -> Option<String> {
         if !lyr.synced {
             return None;
         }
-        let i = lyrics::active_line(&lyr.lines, pos_ms)?;
+        let i = lyrics::active_line(&lyr.lines, pos_ms + LEAD_MS + lyrics_offset(&track.id))?;
         Some(lyr.lines[i].text.trim().to_string()).filter(|s| !s.is_empty())
     })
 }
