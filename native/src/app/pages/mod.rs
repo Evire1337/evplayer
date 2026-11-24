@@ -388,7 +388,7 @@ impl App {
         }
         let mut close = chosen.is_some() || add_to.is_some();
         match add_to {
-            Some(None) => self.dialog = Some(Dialog::NewPlaylist { title: String::new(), add: vec![track.clone()] }),
+            Some(None) => self.dialog = Some(Dialog::NewPlaylist { title: String::new(), description: String::new(), add: vec![track.clone()] }),
             Some(Some((id, title))) => {
                 let n = state::get().update_library(|l| l.add_to_playlist(&id, std::slice::from_ref(&track)));
                 self.toast(&if n > 0 { format!("{} «{title}»", crate::i18n::t("Добавлено в")) } else { format!("{} «{title}»", crate::i18n::t("Уже есть в")) });
@@ -478,24 +478,36 @@ impl App {
         let r = egui::Modal::new(egui::Id::unique("dialog")).frame(frame).backdrop_color(egui::Color32::from_black_alpha(140)).show(ctx, |ui| {
             ui.set_width(380.0);
             match d {
-                Dialog::NewPlaylist { title, add } => {
+                Dialog::NewPlaylist { title, description, add } => {
                     ui.label(egui::RichText::new(crate::i18n::t("Новый плейлист")).font(theme::heavy(22.0)));
-                    ui.add_space(10.0);
-                    let r = ui.add(egui::TextEdit::singleline(title).hint_text(crate::i18n::t("Название")).desired_width(f32::INFINITY));
-                    r.request_focus();
+                    ui.add_space(12.0);
+                    ui.label(egui::RichText::new(crate::i18n::t("Название")).font(theme::body(12.5)).color(theme::ink2()));
+                    let r = ui.add(egui::TextEdit::singleline(title).char_limit(60).hint_text(crate::i18n::t("Например, «Ночная поездка»")).desired_width(f32::INFINITY));
+                    if ui.memory(|m| m.focused().is_none()) {
+                        r.request_focus();
+                    }
+                    ui.add_space(8.0);
+                    ui.label(egui::RichText::new(crate::i18n::t("Описание (необязательно)")).font(theme::body(12.5)).color(theme::ink2()));
+                    ui.add(egui::TextEdit::multiline(description).char_limit(300).desired_rows(2).desired_width(f32::INFINITY));
                     ui.add_space(14.0);
-                    ui.horizontal(|ui| {
-                        let enter = r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                    let enter = r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if widgets::pill_button(ui, None, "Создать", true).clicked() || enter {
-                            let (t, a) = (title.clone(), std::mem::take(add));
+                            let (t, d, a) = (title.trim().to_string(), description.trim().to_string(), std::mem::take(add));
                             apply = Some(Box::new(move |app: &mut App| {
+                                let t = if t.is_empty() { crate::i18n::t("Новый плейлист") } else { t };
+                                let with_songs = !a.is_empty();
                                 let id = state::get().update_library(|l| {
-                                    let id = l.create_playlist(&t, None, None);
+                                    let id = l.create_playlist(&t, (!d.is_empty()).then_some(d.as_str()), None);
                                     l.add_to_playlist(&id, &a);
                                     id
                                 });
                                 let name = state::get().library.read().unwrap().playlists.iter().find(|p| p.id == id).map(|p| p.title.clone()).unwrap_or_default();
                                 app.toast(&format!("Плейлист «{name}» создан"));
+                                // an empty one is opened, to fill it
+                                if !with_songs {
+                                    app.go(Page::Playlist(id));
+                                }
                             }));
                             done = true;
                         }
@@ -522,24 +534,49 @@ impl App {
                         }
                     });
                 }
-                Dialog::Import { text, likes } => {
-                    ui.label(egui::RichText::new(crate::i18n::t("Импорт по ссылке или коду")).font(theme::heavy(19.0)));
-                    ui.add_space(6.0);
-                    ui.label(egui::RichText::new(crate::i18n::t("Ссылка на плейлист, альбом или трек из SoundCloud, YouTube, Spotify, Deezer или Яндекс Музыки, код плейлиста EvPlayer — или список песен «Исполнитель — Название» (например, скопированный со страницы VK).")).font(theme::body(12.5)).color(theme::ink2()));
+                Dialog::Import { text, likes, error } => {
+                    ui.set_width(440.0);
+                    ui.label(egui::RichText::new(crate::i18n::t(if *likes { "Добавить в понравившиеся" } else { "Импорт плейлиста" })).font(theme::heavy(22.0)));
+                    ui.add_space(8.0);
+                    let about = if *likes {
+                        "Вставьте код EvPlayer (строка с EVP) — например, скопированный из чьих-то «Понравившихся», — или ссылку на плейлист. Треки добавятся к вашим лайкам, повторы пропускаются."
+                    } else {
+                        "Вставьте ссылку на плейлист, альбом или трек из Spotify, Яндекс Музыки, YouTube / YouTube Music, SoundCloud или Deezer, код EvPlayer (строка с EVP) — или просто список песен, по одной на строку: «Исполнитель — Название». Из ВКонтакте: откройте плейлист или «Мою музыку» на vk.com, выделите треки мышью, скопируйте и вставьте сюда."
+                    };
+                    ui.label(egui::RichText::new(crate::i18n::t(about)).font(theme::body(12.5)).color(theme::ink3()));
                     ui.add_space(10.0);
-                    let r = ui.add(egui::TextEdit::multiline(text).hint_text("https://… или EVP2.…").desired_rows(4).desired_width(f32::INFINITY));
-                    r.request_focus();
-                    ui.add_space(6.0);
-                    if let Some(v) = widgets::toggle_row(ui, "Добавить в «Понравившиеся»", "Иначе — новый плейлист", *likes, true) {
-                        *likes = v;
+                    ui.label(egui::RichText::new(crate::i18n::t("Ссылка, код или список песен")).font(theme::body(12.5)).color(theme::ink2()));
+                    let r = ui.add(egui::TextEdit::multiline(text).hint_text("https://open.spotify.com/playlist/…, EVP2.… или\nИсполнитель — Название\nИсполнитель — Название").desired_rows(6).desired_width(f32::INFINITY));
+                    if ui.memory(|m| m.focused().is_none()) {
+                        r.request_focus();
                     }
-                    ui.add_space(10.0);
-                    ui.horizontal(|ui| {
-                        let ready = !text.trim().is_empty();
-                        if widgets::pill_button(ui, Some(ic::DOWNLOAD), "Импортировать", true).clicked() && ready {
-                            let (t, l) = (text.clone(), *likes);
-                            apply = Some(Box::new(move |app: &mut App| app.start_import(t, if l { Some(true) } else { None })));
-                            done = true;
+                    if r.changed() {
+                        error.clear();
+                    }
+                    let value = text.trim().to_string();
+                    let kind = crate::import::link_kind(&value);
+                    if kind.is_none() && crate::import::looks_like_track_list(text) {
+                        ui.add_space(4.0);
+                        let n = crate::import::parse_track_list(text).len();
+                        ui.label(egui::RichText::new(format!("{} {n}. {}", crate::i18n::t("В списке песен:"), crate::i18n::t("Их найдём на YouTube Music и SoundCloud — сколько нашлось, будет видно в окошке загрузки."))).font(theme::body(12.5)).color(theme::ink3()));
+                    }
+                    if !error.is_empty() {
+                        ui.add_space(4.0);
+                        ui.label(egui::RichText::new(crate::i18n::t(error)).font(theme::body(12.5)).color(theme::DANGER));
+                    }
+                    ui.add_space(14.0);
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if widgets::pill_button(ui, None, if *likes { "Добавить" } else { "Импортировать" }, true).clicked() && !value.is_empty() {
+                            if kind.is_none() && !crate::import::looks_like_track_list(&value) {
+                                *error = "Не похоже ни на ссылку, ни на код EvPlayer (он начинается с EVP), ни на список песен «Исполнитель — Название».".into();
+                            } else if kind == Some(crate::import::Kind::Code) && !crate::import::extract_codes(&value).iter().any(|c| crate::import::decode_code(c).is_ok()) {
+                                // a broken code is told here, before the dialog closes
+                                *error = "Код повреждён или неполный. Скопируйте его целиком, начиная с EVP.".into();
+                            } else {
+                                let l = *likes;
+                                apply = Some(Box::new(move |app: &mut App| app.start_import(value, if l { Some(true) } else { None })));
+                                done = true;
+                            }
                         }
                         if widgets::pill_button(ui, None, "Отмена", false).clicked() {
                             done = true;

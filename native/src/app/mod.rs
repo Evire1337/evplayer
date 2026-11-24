@@ -128,11 +128,12 @@ pub fn toast_later(text: impl Into<String>) {
 }
 
 pub enum Dialog {
-    NewPlaylist { title: String, add: Vec<Track> },
+    NewPlaylist { title: String, description: String, add: Vec<Track> },
     Rename { id: String, title: String, description: String },
     ConfirmDelete { id: String, title: String },
-    /// "Импорт по ссылке или коду": the text pasted, and whether it goes to the likes
-    Import { text: String, likes: bool },
+    /// "Импорт плейлиста" (or "Добавить в понравившиеся" from the likes' menu): the text pasted,
+    /// where it goes, and what was wrong with it
+    Import { text: String, likes: bool, error: String },
     /// "Скачать для офлайн": the lists ticked, and whether they keep themselves complete
     Download { picked: Vec<String>, follow: bool },
     /// "Восстановить из копии?"

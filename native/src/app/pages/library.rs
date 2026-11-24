@@ -159,10 +159,10 @@ impl App {
                     self.dialog = Some(Dialog::SpotifyExport { lists: vec![], chosen: vec![], error: String::new() });
                 }
                 if widgets::btn(ui, Some("code"), "Импорт по ссылке или коду", false).clicked() {
-                    self.dialog = Some(Dialog::Import { text: String::new(), likes: false });
+                    self.dialog = Some(Dialog::Import { text: String::new(), likes: false, error: String::new() });
                 }
                 if widgets::btn(ui, Some("plus"), "Новый плейлист", true).clicked() {
-                    self.dialog = Some(Dialog::NewPlaylist { title: String::new(), add: vec![] });
+                    self.dialog = Some(Dialog::NewPlaylist { title: String::new(), description: String::new(), add: vec![] });
                 }
             });
         });
@@ -256,7 +256,7 @@ impl App {
                         self.player.play_queue(tracks.clone(), start, Some(source.clone()));
                     }
                     if widgets::btn(ui, None, "Сохранить как плейлист", false).clicked() && !tracks.is_empty() {
-                        self.dialog = Some(Dialog::NewPlaylist { title: String::new(), add: tracks.clone() });
+                        self.dialog = Some(Dialog::NewPlaylist { title: String::new(), description: String::new(), add: tracks.clone() });
                     }
                 });
             });
@@ -490,7 +490,7 @@ impl App {
                 ui.ctx().copy_text(code);
                 self.toast(if is_likes { "Код «Понравившихся» скопирован — вставьте его на другом устройстве или отправьте другу" } else { "Код плейлиста скопирован — отправьте его другу" });
             }
-            Some("paste") => self.dialog = Some(Dialog::Import { text: String::new(), likes: true }),
+            Some("paste") => self.dialog = Some(Dialog::Import { text: String::new(), likes: true, error: String::new() }),
             Some("download") => {
                 crate::keep::add(&[id.to_string()]);
                 let n = self.downloads.add(&crate::keep::scope_tracks(id));
