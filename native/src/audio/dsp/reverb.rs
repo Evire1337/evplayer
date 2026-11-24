@@ -12,6 +12,18 @@ const FEEDBACK: f32 = 0.86;
 const DAMP: f32 = 0.35;
 const INPUT_GAIN: f32 = 0.015;
 
+/// A fading tail must not sink into subnormal numbers: x86 processors handle those up to a
+/// hundred times slower, and the sound thread, falling behind, crackled during quiet parts.
+/// Anything this small is silence anyway.
+#[inline(always)]
+fn flush(x: f32) -> f32 {
+    if x.abs() < 1e-15 {
+        0.0
+    } else {
+        x
+    }
+}
+
 struct Comb {
     buf: Vec<f32>,
     i: usize,
@@ -25,9 +37,12 @@ impl Comb {
     #[inline(always)]
     fn run(&mut self, x: f32) -> f32 {
         let y = self.buf[self.i];
-        self.store = y * (1.0 - DAMP) + self.store * DAMP;
-        self.buf[self.i] = x + self.store * FEEDBACK;
-        self.i = (self.i + 1) % self.buf.len();
+        self.store = flush(y * (1.0 - DAMP) + self.store * DAMP);
+        self.buf[self.i] = flush(x + self.store * FEEDBACK);
+        self.i += 1;
+        if self.i == self.buf.len() {
+            self.i = 0;
+        }
         y
     }
 }
@@ -44,8 +59,11 @@ impl AllPass {
     #[inline(always)]
     fn run(&mut self, x: f32) -> f32 {
         let b = self.buf[self.i];
-        self.buf[self.i] = x + b * 0.5;
-        self.i = (self.i + 1) % self.buf.len();
+        self.buf[self.i] = flush(x + b * 0.5);
+        self.i += 1;
+        if self.i == self.buf.len() {
+            self.i = 0;
+        }
         b - x
     }
 }
@@ -90,7 +108,7 @@ impl Reverb {
                 let x = buf[2 * f + side];
                 // high-pass: the input minus its low part
                 let (ref mut lp, _) = self.hp[side];
-                *lp = x + (*lp - x) * self.hp_k;
+                *lp = flush(x + (*lp - x) * self.hp_k);
                 let hi = x - *lp;
                 let input = hi * INPUT_GAIN;
                 let mut out = 0.0;
@@ -124,5 +142,24 @@ mod tests {
         assert!(early > 0.0 && late > 0.0, "a tail");
         assert!(late < early, "it fades: {early} → {late}");
         assert!(buf.iter().all(|s| s.is_finite() && s.abs() < 2.0));
+    }
+
+    #[test]
+    fn a_tail_fades_to_silence_not_to_subnormal_numbers() {
+        let mut r = Reverb::new(48_000);
+        let mut wet = 1.0;
+        let mut buf = vec![0f32; 4800 * 2];
+        buf[0] = 1.0;
+        buf[1] = 1.0;
+        r.process(&mut buf, &mut wet, 1.0, 4800);
+        // a minute of silence after the sound
+        for _ in 0..600 {
+            let mut quiet = vec![0f32; 4800 * 2];
+            r.process(&mut quiet, &mut wet, 1.0, 4800);
+            assert!(quiet.iter().all(|s| *s == 0.0 || s.is_normal()));
+        }
+        let fine = |v: f32| v == 0.0 || v.is_normal();
+        let state_ok = r.combs.iter().flatten().all(|c| fine(c.store) && c.buf.iter().all(|v| fine(*v))) && r.alls.iter().flatten().all(|a| a.buf.iter().all(|v| fine(*v)));
+        assert!(state_ok, "a subnormal number left in the hall");
     }
 }

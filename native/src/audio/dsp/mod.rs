@@ -72,32 +72,63 @@ impl Biquad {
         let y = c.b0 * x + z[0];
         z[0] = c.b1 * x - c.a1 * y + z[1];
         z[1] = c.b2 * x - c.a2 * y;
+        // a band ringing out after the sound stops does not sink into subnormal numbers
+        if z[0].abs() < 1e-30 {
+            z[0] = 0.0;
+        }
+        if z[1].abs() < 1e-30 {
+            z[1] = 0.0;
+        }
         y
     }
 }
 
-/// a peak limiter: -1 dBFS, fast attack, 120 ms release (the page's DynamicsCompressor)
+/// The page's DynamicsCompressor as "Защита от хрипа" set it: threshold 0 dBFS, ratio 20, hard
+/// knee, attack 3 ms, release 120 ms, and the browser's 6 ms look-ahead. The gain moves
+/// smoothly and is put on the sound 6 ms late, so a peak is turned down before it arrives.
+/// (It used to cut each sample over the line at once: that is clipping, and with a bass boost
+/// it rasped.)
 struct Limiter {
-    env: f32,
+    /// the gain reduction now, dB (0: none)
+    reduction: f32,
     attack: f32,
     release: f32,
+    delay: Vec<[f32; 2]>,
+    at: usize,
 }
 
 impl Limiter {
+    const RATIO: f32 = 20.0;
+    const LOOKAHEAD_MS: f32 = 6.0;
+
     fn new(rate: u32) -> Self {
-        let k = |ms: f32| (-1.0 / (ms * 0.001 * rate as f32)).exp();
-        Self { env: 1.0, attack: k(3.0), release: k(120.0) }
+        let k = |ms: f32| 1.0 - (-1.0 / (ms * 0.001 * rate as f32)).exp();
+        let n = ((Self::LOOKAHEAD_MS * 0.001 * rate as f32) as usize).max(1);
+        Self { reduction: 0.0, attack: k(3.0), release: k(120.0), delay: vec![[0.0; 2]; n], at: 0 }
     }
 
+    /// one frame in, the frame of 6 ms ago out, turned down as much as the peaks now need
     #[inline(always)]
-    fn run(&mut self, l: f32, r: f32) -> f32 {
-        const THRESHOLD: f32 = 0.891; // -1 dBFS
+    fn run(&mut self, l: f32, r: f32) -> (f32, f32) {
         let peak = l.abs().max(r.abs());
-        let want = if peak > THRESHOLD { THRESHOLD / peak } else { 1.0 };
-        let k = if want < self.env { self.attack } else { self.release };
-        self.env = want + (self.env - want) * k;
-        // a peak over the line is caught at once; the gain comes back slowly
-        self.env.min(want)
+        // dB over the threshold (0 dBFS), and the reduction a 20:1 ratio asks for
+        let over = if peak > 1.0 { 20.0 * peak.log10() } else { 0.0 };
+        let want = over * (1.0 - 1.0 / Self::RATIO);
+        let k = if want > self.reduction { self.attack } else { self.release };
+        self.reduction += (want - self.reduction) * k;
+        if self.reduction < 1e-6 {
+            self.reduction = 0.0;
+        }
+        let [dl, dr] = std::mem::replace(&mut self.delay[self.at], [l, r]);
+        self.at += 1;
+        if self.at == self.delay.len() {
+            self.at = 0;
+        }
+        if self.reduction == 0.0 {
+            return (dl, dr);
+        }
+        let g = 10f32.powf(-self.reduction / 20.0);
+        (dl * g, dr * g)
     }
 }
 
@@ -238,9 +269,7 @@ impl Chain {
             }
             let (mut l, mut r) = (l as f32, r as f32);
             if p.limiter {
-                let k = self.limiter.run(l, r);
-                l *= k;
-                r *= k;
+                (l, r) = self.limiter.run(l, r);
             }
             buf[2 * i] = l;
             buf[2 * i + 1] = r;
@@ -292,18 +321,50 @@ mod tests {
         assert!((db - 6.0).abs() < 0.3, "{db}");
     }
 
+    /// `cargo test --release chain_cost -- --ignored --nocapture`: the processor time of a
+    /// second of sound through ten bands, the reverb and the limiter
     #[test]
-    fn the_limiter_keeps_peaks_under_minus_one_db() {
+    #[ignore]
+    fn chain_cost() {
         let mut c = Chain::new(48_000);
         let (mut tx, rx) = rtrb::RingBuffer::new(4);
         c.connect(rx, Shared::new());
-        tx.push(Params { limiter: true, preamp_db: 12.0, ..Params::default() }).unwrap();
-        let mut peak = 0f32;
-        for _ in 0..50 {
+        let mut p = Params { limiter: true, reverb: 0.5, preamp_db: 3.0, ..Params::default() };
+        for (i, b) in p.bands.iter_mut().enumerate() {
+            *b = BandParams { kind: BandType::Peaking, frequency: 31.0 * 2f32.powi(i as i32), gain: 6.0, q: 1.4 };
+        }
+        tx.push(p).unwrap();
+        let t = std::time::Instant::now();
+        for _ in 0..100 {
             let mut b = tone(200.0, 48_000, 480, 0.8);
             c.process(&mut b, 48_000);
-            peak = b.iter().fold(0.0, |m: f32, s| m.max(s.abs()));
         }
-        assert!(peak < 0.95, "{peak}");
+        // and a second of silence after it (the reverb's tail fading out)
+        for _ in 0..100 {
+            let mut b = vec![0f32; 960];
+            c.process(&mut b, 48_000);
+        }
+        println!("two seconds of sound in {:?}", t.elapsed());
+    }
+
+    #[test]
+    fn the_limiter_turns_loud_sound_down_without_clipping_it() {
+        let mut c = Chain::new(48_000);
+        let (mut tx, rx) = rtrb::RingBuffer::new(4);
+        c.connect(rx, Shared::new());
+        // a 200 Hz tone 10 dB over full scale
+        tx.push(Params { limiter: true, preamp_db: 12.0, ..Params::default() }).unwrap();
+        let mut out = Vec::new();
+        for _ in 0..100 {
+            let mut b = tone(200.0, 48_000, 480, 0.8);
+            c.process(&mut b, 48_000);
+            out = b;
+        }
+        let peak = out.iter().fold(0.0, |m: f32, s| m.max(s.abs()));
+        // 20:1 above 0 dBFS: about a dB over, as the page's compressor leaves it
+        assert!(peak > 0.9 && peak < 1.2, "{peak}");
+        // the gain is steady, so the wave keeps its shape: a sine still, not a clipped one
+        let rms = (out.iter().map(|s| s * s).sum::<f32>() / out.len() as f32).sqrt();
+        assert!((peak / rms - std::f32::consts::SQRT_2).abs() < 0.03, "crest {}", peak / rms);
     }
 }

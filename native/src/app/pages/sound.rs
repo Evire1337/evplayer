@@ -311,6 +311,40 @@ impl App {
         let alpha = if e.enabled { 1.0 } else { 0.6 };
         let p = ui.painter().with_clip_rect(rect);
         p.rect(rect, CornerRadius::same(18), Color32::from_rgba_unmultiplied(0, 0, 0, 140), Stroke::new(1.0, theme::edge()), egui::StrokeKind::Inside);
+        // the live spectrum of what plays, behind the curves (not with the memory saver on, and
+        // only while the equalizer is on and the music plays)
+        let saver = state::get().settings.read().unwrap().memory_saver;
+        if e.enabled && !saver && self.view.status == crate::player::Status::Playing {
+            crate::audio::spectrum::want();
+            let data = crate::audio::spectrum::bytes();
+            let nyquist = crate::audio::spectrum::rate() as f64 / 2.0;
+            let mut mesh = egui::Mesh::default();
+            let shade = |y: f32| -> Color32 {
+                // linear-gradient: rgba(255,255,255,.20) at the top to .02 at the bottom
+                let k = ((y - rect.top()) / HEIGHT).clamp(0.0, 1.0);
+                Color32::from_white_alpha(((0.20 * (1.0 - k) + 0.02 * k) * 255.0 * alpha) as u8)
+            };
+            let mut x = 0.0f32;
+            let mut n = 0u32;
+            while x <= w {
+                let f = eq::x_to_freq(x as f64, w as f64);
+                let bin = (((f / nyquist) * data.len() as f64).round() as usize).min(data.len().saturating_sub(1));
+                let v = data.get(bin).copied().unwrap_or(0) as f32 / 255.0;
+                let y = rect.bottom() - v * (HEIGHT - PAD_Y) * 0.9;
+                mesh.colored_vertex(pos2(rect.left() + x, y), shade(y));
+                mesh.colored_vertex(pos2(rect.left() + x, rect.bottom()), shade(rect.bottom()));
+                if n > 0 {
+                    let a = (n - 1) * 2;
+                    mesh.add_triangle(a, a + 1, a + 2);
+                    mesh.add_triangle(a + 1, a + 3, a + 2);
+                }
+                n += 1;
+                x += 2.0;
+            }
+            p.add(egui::Shape::mesh(mesh));
+            // the page drew it every frame of the screen; here about 30 times a second
+            ui.ctx().request_repaint_after(std::time::Duration::from_millis(33));
+        }
         let faint = Color32::from_rgba_unmultiplied(255, 255, 255, (15.0 * alpha) as u8);
         let label = Color32::from_rgba_unmultiplied(255, 255, 255, (89.0 * alpha) as u8);
         let x_of = |f: f64| rect.left() + eq::freq_to_x(f, w as f64) as f32;

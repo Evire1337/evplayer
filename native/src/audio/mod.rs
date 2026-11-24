@@ -7,3 +7,4 @@ pub mod opus;
 pub mod output;
 pub mod resample;
 pub mod source;
+pub mod spectrum;

@@ -84,6 +84,29 @@ impl Shared {
     }
 }
 
+/// The sound card's thread treats subnormal numbers as zero (flush-to-zero and
+/// denormals-are-zero): a fading reverb or equalizer tail made of them is up to a hundred times
+/// slower to compute, and a thread that falls behind crackles. Set once per thread.
+fn no_subnormals() {
+    #[cfg(target_arch = "x86_64")]
+    {
+        thread_local! {
+            static SET: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+        }
+        SET.with(|s| {
+            if !s.get() {
+                s.set(true);
+                // SAFETY: only this thread's floating-point control bits change (FTZ, DAZ)
+                #[allow(deprecated)]
+                unsafe {
+                    use std::arch::x86_64::{_mm_getcsr, _mm_setcsr};
+                    _mm_setcsr(_mm_getcsr() | 0x8040);
+                }
+            }
+        });
+    }
+}
+
 /// where a deck's frames come from
 struct Feed {
     input: Option<DeckIn>,
@@ -237,6 +260,7 @@ impl Mixer {
     /// fill `out` (interleaved, `channels` per frame) with the next sound
     /// one block for the sound card; the time it took is counted for Настройки → Диагностика
     pub fn render(&mut self, out: &mut [f32], channels: usize) {
+        no_subnormals();
         let t0 = std::time::Instant::now();
         self.render_block(out, channels);
         RENDER_NS.fetch_add(t0.elapsed().as_nanos() as u64, Ordering::Relaxed);
@@ -312,6 +336,8 @@ impl Mixer {
         }
         // the effects, then the volume and the pause ramp
         self.chain.process(mix, self.rate);
+        // the equalizer's live spectrum, only while its graph is on screen
+        super::spectrum::feed(mix, self.rate);
         let vol_target = Shared::f(&self.shared.volume).clamp(0.0, 1.0);
         // the first sound takes the volume as it is: no glide from a value never heard
         if self.volume < 0.0 {
@@ -330,8 +356,8 @@ impl Mixer {
                 let d = vol_target - self.volume;
                 self.volume = if d.abs() <= vol_step { vol_target } else { self.volume + vol_step * d.signum() };
             }
-            // the knob is felt as loudness: a curve, not a straight line
-            let g = self.volume * self.volume * self.run;
+            // the knob scales the sound straight, as the page's master gain did
+            let g = self.volume * self.run;
             let (l, r) = (mix[2 * i] * g, mix[2 * i + 1] * g);
             peak = peak.max(l.abs()).max(r.abs());
             let o = &mut out[i * channels..(i + 1) * channels];
