@@ -432,9 +432,10 @@ const ANDROID_VR: Profile = Profile {
 
 const PROFILES: [&Profile; 2] = [&VISIONOS, &ANDROID_VR];
 
-/// Formats in the order the native decoder likes them: AAC (decoded by symphonia, seeks by
-/// its index) first, then Opus (libopus); the browser build preferred Opus.
-const BEST_ITAGS: [u32; 5] = [140, 251, 250, 249, 139];
+/// Formats best first, as the Tauri build takes them (direct.ts BEST_ITAGS): Opus ~160 kbit/s
+/// (libopus; WebM seeks by its cues, checked by net_youtube_seeks_in_both_formats) sounds
+/// better than AAC 128 kbit/s, which comes next.
+const BEST_ITAGS: [u32; 5] = [251, 140, 250, 249, 139];
 
 #[derive(Clone, Debug)]
 pub struct DirectStream {
@@ -660,13 +661,13 @@ mod tests {
     }
 
     #[test]
-    fn picks_aac_first_and_reads_the_visitor() {
+    fn picks_opus_first_and_reads_the_visitor() {
         let r = json!({ "streamingData": { "adaptiveFormats": [
             { "itag": 251, "url": "https://x.googlevideo.com/a", "mimeType": "audio/webm; codecs=\"opus\"", "bitrate": 150000 },
             { "itag": 140, "url": "https://x.googlevideo.com/b", "mimeType": "audio/mp4; codecs=\"mp4a.40.2\"", "bitrate": 130000 },
             { "itag": 137, "url": "https://x.googlevideo.com/v", "mimeType": "video/mp4", "bitrate": 900000 }
         ] } });
-        assert_eq!(best_format(&r).unwrap().0, 140);
+        assert_eq!(best_format(&r).unwrap().0, 251);
         assert_eq!(parse_visitor_data("xx CgtabcdefghijklmnopqrstuvW%3D%3D yy").as_deref(), Some("CgtabcdefghijklmnopqrstuvW%3D%3D"));
         assert_eq!(video_id_of("yt:dQw4w9WgXcQ"), Some("dQw4w9WgXcQ"));
         assert_eq!(video_id_of("yt:short"), None);
