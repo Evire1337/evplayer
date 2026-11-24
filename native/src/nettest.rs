@@ -508,3 +508,26 @@ fn net_the_resolver_finds_a_copy_and_similar_songs() {
     println!("similar: {}", similar.iter().take(5).map(|t| format!("{} — {}", t.artist_line(), t.title)).collect::<Vec<_>>().join("; "));
     assert!(similar.len() >= 5);
 }
+
+/// For each SoundCloud upload a query finds (EVP_Q), the YouTube copy the player would take
+/// when the upload does not play, with both lengths: a copy of another length or song shows here
+#[test]
+#[ignore]
+fn net_youtube_copy_for_each_upload() {
+    init();
+    let q = std::env::var("EVP_Q").unwrap_or_else(|_| "школа не нужна".into());
+    let (tracks, _) = soundcloud::search(&q).expect("search");
+    use crate::player::matching::{copy_order, is_same_recording, search_query_for, simplify, split_title};
+    for t in tracks.iter().take(12) {
+        let mut found = None;
+        for q in [search_query_for(t), simplify(&split_title(t).0)] {
+            let mut ranked: Vec<_> = youtube::search(&q).unwrap_or_default().into_iter().filter(|y| is_same_recording(t, y, true)).collect();
+            ranked.sort_by(|a, b| copy_order(t, a, b));
+            if let Some(y) = ranked.into_iter().next() {
+                found = Some(y);
+                break;
+            }
+        }
+        println!("SC «{}» — {} ({:.0} s)\n   -> {}", t.title, t.artist_line(), t.duration_ms / 1000.0, found.map(|y| format!("{} — {} ({:.0} s) {}", y.artist_line(), y.title, y.duration_ms / 1000.0, y.id)).unwrap_or_else(|| "nothing".into()));
+    }
+}

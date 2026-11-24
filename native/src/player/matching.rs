@@ -136,18 +136,65 @@ fn main_title(t: &Track) -> String {
 }
 
 fn same_version(wanted: &Track, candidate: &Track) -> bool {
-    version_tags(&wanted.title) == version_tags(&candidate.title)
+    version_tags(&wanted.title) == version_tags(&candidate.title) && !extra_bracket(wanted, candidate) && !extra_bracket(candidate, wanted)
 }
+
+static BRACKET_PARTS: OnceLock<Regex> = OnceLock::new();
+
+/// what a bracket may say without being another version: how the release is named, who is on
+/// it, its year
+const PLAIN_BRACKET_WORDS: &[&str] = &[
+    "remaster", "remastered", "radio", "edit", "version", "original", "explicit", "clean", "single", "album", "deluxe", "bonus", "track",
+    "mono", "stereo", "official", "audio", "video", "music", "lyric", "lyrics", "visualizer", "visualiser", "hd", "hq", "4k", "from", "the",
+    "оригинал", "версия", "официальный", "клип", "текст", "премьера", "сингл",
+    // a re-upload's credit line: «(all credits to …)», «(no copyright)»
+    "all", "credit", "credits", "go", "goes", "to", "no", "copyright", "not", "my", "song", "own",
+];
+
+/// The candidate's brackets say something the wanted song does not: «Школа не нужна (mylancore)»,
+/// «(Пират)», «(дуэт)» — most often another person's version. Who is featured or produced it,
+/// the year and the release's own words ("Remastered", "Radio Edit") do not count.
+pub fn extra_bracket(wanted: &Track, candidate: &Track) -> bool {
+    let known = words(&format!("{} {}", wanted.title, artist_names(wanted)));
+    let candidate_names = words(&artist_names(candidate));
+    re(&BRACKET_PARTS, r"\(([^)]*)\)|\[([^\]]*)\]").captures_iter(&candidate.title).any(|c| {
+        let inside = c.get(1).or_else(|| c.get(2)).map(|m| m.as_str()).unwrap_or("").to_lowercase();
+        let lead = inside.trim_start();
+        // "(feat. X)", "(prod. by X)", "(with X)", "(при уч. X)": who is on it, not a version
+        if ["feat", "ft", "prod", "with", "при уч", "при участии", "w/"].iter().any(|p| lead.starts_with(p)) {
+            return false;
+        }
+        let flat = re(&NON_WORD, r"[^\p{L}\p{N}]+").replace_all(&inside, " ").to_string();
+        flat.split(' ').filter(|w| w.chars().count() > 1).any(|w| {
+            !w.chars().all(|ch| ch.is_ascii_digit()) && !PLAIN_BRACKET_WORDS.contains(&w) && !known.contains(w) && !candidate_names.contains(w)
+        })
+    })
+}
+
+/// a recording this long is not a song but a mix, a stream or a video: never a song's
+/// "original" unless the song itself is that long
+const SONG_LENGTH_LIMIT_MS: f64 = 7.0 * 60_000.0;
 
 /// The artist's own release of the song: the same artist, the same title (brackets aside) and
 /// not another version. It may be much longer (a SoundCloud upload is often a part of it).
 pub fn is_original(wanted: &Track, candidate: &Track) -> bool {
     let title = main_title(wanted);
-    if title.is_empty() || title != main_title(candidate) || !same_version(wanted, candidate) {
+    if title.is_empty() || title != main_title(candidate) || version_tags(&wanted.title) != version_tags(&candidate.title) || extra_bracket(wanted, candidate) {
         return false;
     }
     let diff = if wanted.duration_ms > 0.0 && candidate.duration_ms > 0.0 { (wanted.duration_ms - candidate.duration_ms).abs() } else { 0.0 };
+    // the wanted song's own bracket ("(mylancore)") is another version, unless the wanted one is
+    // plainly a part of the candidate (a snippet titled "VVV (HE'S BACK)" of "VVV")
+    let a_part = wanted.duration_ms > 0.0 && wanted.duration_ms < candidate.duration_ms * 0.6;
+    if extra_bracket(candidate, wanted) && !a_part {
+        return false;
+    }
     if diff > 15000.0 && wanted.duration_ms > candidate.duration_ms * 0.6 {
+        return false;
+    }
+    // much longer is fine for a part of the song (a snippet's full version), not for an
+    // eleven-minute video standing in for a two-minute song
+    if diff > 15000.0 && candidate.duration_ms > wanted.duration_ms && candidate.duration_ms > SONG_LENGTH_LIMIT_MS {
         return false;
     }
     name_overlap(&words(&split_title(wanted).1), &words(&artist_names(candidate))) == 1.0
@@ -195,6 +242,10 @@ pub fn match_score(wanted: &Track, candidate: &Track) -> f64 {
         if a.contains(tag) != b.contains(tag) {
             score -= 0.35;
         }
+    }
+    // a bracket naming someone else ("(mylancore)") counts as another version too
+    if extra_bracket(wanted, candidate) || extra_bracket(candidate, wanted) {
+        score -= 0.35;
     }
     score
 }
@@ -299,6 +350,29 @@ mod tests {
         assert!(match_score(&w, &good) > match_score(&w, &remix));
         assert_eq!(best_match(&w, &[other.clone(), remix, good], 0.72, false, false).unwrap().id, "good");
         assert!(best_match(&w, &[other], 0.72, false, false).is_none());
+    }
+
+    #[test]
+    fn a_long_video_is_not_the_original_of_a_short_song() {
+        // «Школа не нужна» (1:51) was played from an 11:43 video with the same name
+        let w = t("Школа не нужна", "ПОШЛАЯ МОЛЛИ", 111000.0);
+        assert!(!is_original(&w, &yt(t("Школа не нужна", "Пошлая Молли", 703000.0))));
+        assert!(!is_same_recording(&w, &yt(t("Школа не нужна", "Пошлая Молли", 703000.0)), true));
+        // a one-minute part still gets its whole song
+        assert!(is_original(&t("Школа не нужна", "ПОШЛАЯ МОЛЛИ", 60000.0), &yt(t("Школа не нужна", "Пошлая Молли", 200000.0))));
+    }
+
+    #[test]
+    fn a_bracket_naming_someone_else_is_another_version() {
+        let w = t("Школа не нужна", "uglystephan", 124000.0);
+        assert!(!is_same_recording(&w, &yt(t("Школа не нужна (mylancore)", "uglystephan", 126000.0)), true));
+        assert!(!is_same_recording(&w, &yt(t("Школа не нужна (Пират)", "serrpir", 124000.0)), true));
+        // and the other way: a remix wanted is not the original
+        assert!(!is_same_recording(&t("uglystephan - Школа не нужна (mylancore)", "extradiller", 126000.0), &yt(t("Школа не нужна", "uglystephan", 124000.0)), true));
+        // who is on it, the year and the release's words are the same song
+        assert!(is_same_recording(&t("Мишка", "Пошлая Молли", 156000.0), &yt(t("Мишка (feat. KATERINA)", "Пошлая Молли", 159000.0)), true));
+        assert!(is_same_recording(&w, &yt(t("Школа не нужна (Remastered 2021)", "uglystephan", 124000.0)), true));
+        assert!(is_same_recording(&w, &yt(t("Школа не нужна (Official Audio)", "uglystephan", 124000.0)), true));
     }
 
     #[test]
