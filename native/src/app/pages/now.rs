@@ -47,7 +47,7 @@ fn shift_text(ms: f64) -> String {
 }
 
 thread_local! {
-    static LYRICS: std::cell::RefCell<Loaded<Option<Lyrics>>> = std::cell::RefCell::new(Loaded::default());
+    static LYRICS: std::cell::RefCell<Loaded<Result<Option<Lyrics>, String>>> = std::cell::RefCell::new(Loaded::default());
 }
 
 impl App {
@@ -186,9 +186,10 @@ impl App {
             empty(ui, "Ищем текст…");
             return;
         };
-        let Some(lyr) = found else {
-            empty(ui, "Текста для этого трека пока нет.");
-            return;
+        let lyr = match found {
+            Ok(Some(l)) => l,
+            Ok(None) => return empty(ui, "Текста для этого трека пока нет."),
+            Err(_) => return empty(ui, "Не получилось загрузить текст."),
         };
         let (mult, saver) = {
             let s = state::get().settings.read().unwrap();
@@ -472,7 +473,7 @@ pub fn sung_line(track: &crate::model::Track, pos_ms: f64) -> Option<String> {
     let t = track.clone();
     LYRICS.with(|l| {
         let mut l = l.borrow_mut();
-        let lyr = l.get(&track.id, move || lyrics::find(&t))?.as_ref()?;
+        let lyr = l.get(&track.id, move || lyrics::find(&t))?.as_ref().ok()?.as_ref()?;
         if !lyr.synced {
             return None;
         }

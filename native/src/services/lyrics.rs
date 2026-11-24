@@ -133,27 +133,41 @@ pub fn active_line(lines: &[Line], pos: f64) -> Option<usize> {
 static CACHE: Mutex<Vec<(String, Option<Lyrics>)>> = Mutex::new(Vec::new());
 const CACHE_LIMIT: usize = 40;
 
-fn search(params: &[(&str, &str)]) -> Vec<Value> {
+fn search(params: &[(&str, &str)]) -> Result<Vec<Value>, String> {
     let mut url = url::Url::parse(&format!("{API}/search")).unwrap();
     url.query_pairs_mut().extend_pairs(params);
-    super::http::get_json(url.as_str(), &[]).ok().and_then(|v| v.as_array().cloned()).unwrap_or_default()
+    Ok(super::http::get_json(url.as_str(), &[])?.as_array().cloned().unwrap_or_default())
 }
 
-pub fn find(track: &Track) -> Option<Lyrics> {
+/// The lyrics of a song: Ok(None) when the service has none, Err when it could not be asked
+/// (no network): that is said as such and not remembered, so the next look asks again.
+pub fn find(track: &Track) -> Result<Option<Lyrics>, String> {
     if let Some(hit) = CACHE.lock().unwrap().iter().find(|c| c.0 == track.id).map(|c| c.1.clone()) {
-        return hit;
+        return Ok(hit);
     }
     let mut candidates = Vec::new();
+    let mut answered = false;
+    let mut failure = String::new();
+    let mut ask = |params: &[(&str, &str)], into: &mut Vec<Value>| match search(params) {
+        Ok(v) => {
+            answered = true;
+            into.extend(v);
+        }
+        Err(e) => failure = e,
+    };
     let rs = readings(track);
     for (title, artist) in &rs {
-        candidates.extend(search(&[("track_name", title), ("artist_name", artist)]));
+        ask(&[("track_name", title), ("artist_name", artist)], &mut candidates);
         if candidates.iter().any(|c| c.get("syncedLyrics").and_then(Value::as_str).is_some()) {
             break;
         }
     }
     if !candidates.iter().any(|c| c.get("syncedLyrics").and_then(Value::as_str).is_some()) {
         let (title, artist) = rs.last().cloned().unwrap_or_default();
-        candidates.extend(search(&[("q", &format!("{artist} {}", normalize_title(&title)))]));
+        ask(&[("q", &format!("{artist} {}", normalize_title(&title)))], &mut candidates);
+    }
+    if !answered {
+        return Err(failure);
     }
     let mut best: Option<&Value> = None;
     let mut best_score = 0.0;
@@ -184,7 +198,7 @@ pub fn find(track: &Track) -> Option<Lyrics> {
             c.remove(0);
         }
     }
-    found
+    Ok(found)
 }
 
 #[cfg(test)]
