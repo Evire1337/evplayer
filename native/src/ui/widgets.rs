@@ -377,6 +377,16 @@ thread_local! {
     static KEPT: std::cell::RefCell<(std::collections::HashSet<String>, std::collections::HashSet<String>)> = std::cell::RefCell::new(Default::default());
 }
 
+thread_local! {
+    /// the song rows drawn next can be dragged to a new place
+    static ROW_DRAG: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// song rows drawn while this is on take drags (a press that moves 6 px), not only clicks
+pub fn set_row_drag(on: bool) {
+    ROW_DRAG.with(|d| d.set(on));
+}
+
 /// what the song rows drawn next mark as saved and as being saved
 pub fn set_kept(saved: std::collections::HashSet<String>, saving: std::collections::HashSet<String>) {
     KEPT.with(|k| *k.borrow_mut() = (saved, saving));
@@ -414,7 +424,8 @@ pub fn track_row_full(ui: &mut Ui, images: &mut Images, t: &crate::model::Track,
     let extra = extra.or(plays.as_deref());
     use row_cols::*;
     let width = ui.available_width();
-    let (rect, r) = ui.allocate_exact_size(vec2(width, 62.0), Sense::click());
+    let sense = if ROW_DRAG.with(|d| d.get()) { Sense::click_and_drag() } else { Sense::click() };
+    let (rect, r) = ui.allocate_exact_size(vec2(width, 62.0), sense);
     let hovered = r.hovered();
     if playing {
         ui.painter().rect_filled(rect, CornerRadius::same(16), theme::active());

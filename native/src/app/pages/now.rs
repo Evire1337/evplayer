@@ -346,56 +346,123 @@ impl App {
         }
     }
 
+    /// "Далее" (QueuePanel.tsx): the songs already played above, dimmed, the current one lit, then
+    /// up to 60 to come; opened at the current song. A song is pressed to play (the current one
+    /// pauses), dragged to a new place, or given its menu. In a session it is "Общая очередь"
+    /// with who added what.
     fn queue_panel(&mut self, ui: &mut Ui, rect: Rect) {
-        ui.painter().rect_filled(rect, CornerRadius::same(24), theme::glass());
-        ui.painter().rect_stroke(rect, CornerRadius::same(24), egui::Stroke::new(1.0, theme::edge()), egui::StrokeKind::Inside);
-        let inner = rect.shrink(14.0);
+        /// what already played stays above, this many at most
+        const PLAYED_SHOWN: usize = 30;
+        /// .queue-item: 6 + 44 + 6, and 4 between
+        const ROW_H: f32 = 56.0;
+        const GAP: f32 = 4.0;
+        // .queue: rounded 30, padding 20 14 20 20, glass
+        ui.painter().rect_filled(rect, CornerRadius::same(30), theme::glass());
+        ui.painter().rect_stroke(rect, CornerRadius::same(30), egui::Stroke::new(1.0, theme::edge()), egui::StrokeKind::Inside);
+        let inner = Rect::from_min_max(rect.min + vec2(20.0, 20.0), rect.max - vec2(14.0, 20.0));
         let mut q = ui.new_child(egui::UiBuilder::new().max_rect(inner).layout(egui::Layout::top_down(egui::Align::Min)));
+        q.spacing_mut().item_spacing.y = 12.0;
+        let (queue, index) = (self.view.queue.clone(), self.view.index);
+        let upcoming = queue.len().saturating_sub(index + 1).min(60);
+        let first = index.saturating_sub(PLAYED_SHOWN);
+        let end = (index + 61).min(queue.len());
+        let autoplay = state::get().settings.read().unwrap().autoplay;
+        let added_by = crate::jam::engine::get().map(|j| j.view()).filter(|v| v.status == crate::jam::engine::JamStatus::Live).map(|v| v.added_by);
+        // .queue-head: the title, "Очистить" (while songs are to come) and "Скрыть"
         q.horizontal(|ui| {
-            ui.label(egui::RichText::new(crate::i18n::t("Далее")).font(theme::medium(15.0)).color(INK));
+            ui.label(egui::RichText::new(crate::i18n::t(if added_by.is_some() { "Общая очередь" } else { "Далее" })).font(theme::heavy(17.0)).color(INK));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.add(egui::Label::new(egui::RichText::new(crate::i18n::t("Очистить")).font(theme::body(12.0)).color(theme::ink3())).sense(Sense::click())).clicked() {
+                ui.spacing_mut().item_spacing.x = 14.0;
+                let link = |ui: &mut Ui, text: &str| {
+                    let id = ui.next_auto_id();
+                    let hovered = ui.ctx().read_response(id).is_some_and(|r| r.hovered());
+                    ui.add(egui::Label::new(egui::RichText::new(crate::i18n::t(text)).font(theme::body(12.5)).color(if hovered { INK } else { theme::ink3() })).sense(Sense::click())).clicked()
+                };
+                if link(ui, "Скрыть") {
+                    self.pages.show_queue = Some(false);
+                    state::get().set_settings(|s| s.show_queue = false);
+                }
+                if upcoming > 0 && link(ui, "Очистить") {
                     self.player.clear_upcoming();
                 }
             });
         });
-        q.add_space(6.0);
-        let v = &self.view;
-        let upcoming: Vec<(usize, crate::model::Track)> = v.queue.iter().cloned().enumerate().skip(v.index + 1).collect();
-        if upcoming.is_empty() {
-            q.label(egui::RichText::new(crate::i18n::t("Очередь пуста — после этой песни заиграют похожие.")).font(theme::body(12.5)).color(theme::ink2()));
+        if end.saturating_sub(first) <= 1 && upcoming == 0 {
+            q.label(egui::RichText::new(crate::i18n::t(if autoplay { "Очередь пуста — после этого трека включатся похожие." } else { "Очередь пуста. Выберите трек на главной или в поиске." })).font(theme::body(12.5)).color(theme::ink3()));
             return;
         }
-        let w = inner.width();
-        egui::ScrollArea::vertical().id_salt("queue").auto_shrink([false, false]).show_rows(&mut q, 50.0, upcoming.len(), |ui, range| {
-            for (i, t) in &upcoming[range] {
-                let (row, r) = ui.allocate_exact_size(vec2(w, 46.0), Sense::click());
-                if r.hovered() {
-                    ui.painter().rect_filled(row, 10, theme::hover());
+        // opened at the current song, again whenever another one plays
+        let current_id = queue.get(index).map(|t| t.id.clone()).unwrap_or_default();
+        let jump = self.pages.queue_at.as_ref() != Some(&(index, current_id.clone()));
+        if jump {
+            self.pages.queue_at = Some((index, current_id));
+        }
+        let mut area = egui::ScrollArea::vertical().id_salt("queue").auto_shrink([false, false]);
+        if jump {
+            area = area.vertical_scroll_offset((index - first) as f32 * (ROW_H + GAP));
+        }
+        let w = inner.width() - 6.0;
+        area.show(&mut q, |ui| {
+            ui.spacing_mut().item_spacing.y = GAP;
+            for at in first..end {
+                let t = &queue[at];
+                let (row, r) = ui.allocate_exact_size(vec2(w, ROW_H), Sense::click_and_drag());
+                let played = at < index;
+                let current = at == index;
+                // .is-played: 0.42, 0.8 under the pointer
+                let mut cui = ui.new_child(egui::UiBuilder::new().max_rect(row));
+                if played {
+                    cui.multiply_opacity(if r.hovered() { 0.8 } else { 0.42 });
                 }
-                let art = Rect::from_min_size(row.min + vec2(4.0, 5.0), vec2(36.0, 36.0));
+                if current {
+                    cui.painter().rect_filled(row, 14, theme::active());
+                } else if r.hovered() {
+                    cui.painter().rect_filled(row, 14, theme::hover());
+                }
+                let art = Rect::from_min_size(row.min + vec2(6.0, 6.0), vec2(44.0, 44.0));
+                cui.painter().rect_filled(art, 12, egui::Color32::from_rgba_unmultiplied(255, 255, 255, 18));
                 let src = artwork_of(t);
-                widgets::paint_cover(ui, &mut self.images, src.as_deref(), art, 8);
-                let tw = w - 90.0;
-                let g = widgets::clipped(ui, &t.title, theme::medium(12.5), INK, tw);
-                ui.painter().galley(pos2(art.right() + 10.0, row.top() + 7.0), g, INK);
-                let g = widgets::clipped(ui, &t.artist_line(), theme::body(11.5), theme::ink2(), tw);
-                ui.painter().galley(pos2(art.right() + 10.0, row.top() + 25.0), g, theme::ink2());
-                let x = Rect::from_center_size(pos2(row.right() - 16.0, row.center().y), vec2(24.0, 24.0));
-                let xr = ui.interact(x, r.id.with("rm"), Sense::click());
-                if r.hovered() || xr.hovered() {
-                    crate::ui::theme::paint_icon(&ui.painter(), x.center(), Align2::CENTER_CENTER, ic::CANCEL, 10.0, if xr.hovered() { ACCENT } else { theme::ink2() });
+                if let Some(id) = src.as_deref().and_then(|s| self.images.get(s, 44.0, cui.ctx().pixels_per_point())) {
+                    egui::Image::new(egui::load::SizedTexture::new(id, art.size())).corner_radius(12).paint_at(&cui, art);
                 }
-                if xr.clicked() {
-                    self.player.remove(*i);
-                } else if r.double_clicked() || r.clicked() {
-                    self.player.play_index(*i);
+                let x = art.right() + 12.0;
+                let tw = row.right() - 6.0 - x;
+                let name_color = if current { ACCENT } else { INK };
+                let g = widgets::clipped(&cui, &t.title, theme::medium(14.0), name_color, tw);
+                cui.painter().galley(pos2(x, row.center().y - g.size().y - 1.0), g, name_color);
+                let mut sub = format!("{} · {}", t.artist_line(), crate::i18n::t(match t.source {
+                    crate::model::Source::Soundcloud => "SoundCloud",
+                    crate::model::Source::Youtube => "YouTube Music",
+                    crate::model::Source::Local => "Мои файлы",
+                }));
+                if let Some(name) = added_by.as_ref().and_then(|m| m.get(&t.id)) {
+                    sub.push_str(&format!(" · {} {name}", crate::i18n::t("от")));
+                }
+                let g = widgets::clipped(&cui, &sub, theme::body(12.5), theme::ink3(), tw);
+                cui.painter().galley(pos2(x, row.center().y + 1.0), g, theme::ink3());
+                if r.clicked() {
+                    if current {
+                        self.player.toggle();
+                    } else {
+                        self.player.play_index(at);
+                    }
                 }
                 if r.secondary_clicked() {
-                    self.menu = Some(crate::app::Menu { track: t.clone(), at: ui.ctx().pointer_latest_pos().unwrap_or(row.center()), playlist_item: None, queue_index: Some(*i), sub: false, files_page: false });
+                    self.menu = Some(crate::app::Menu { track: t.clone(), at: ui.ctx().pointer_latest_pos().unwrap_or(row.center()), playlist_item: None, queue_index: Some(at), sub: false, files_page: false });
                 }
+                self.pages.reorder_row(ui, "queue", at, &r);
+            }
+            if upcoming == 0 {
+                ui.add_space(4.0);
+                ui.horizontal(|ui| {
+                    ui.add_space(6.0);
+                    ui.label(egui::RichText::new(crate::i18n::t(if autoplay { "Дальше включатся похожие треки." } else { "Дальше ничего нет." })).font(theme::body(12.5)).color(theme::ink3()));
+                });
             }
         });
+        if let Some((from, to)) = self.pages.reorder_end(ui.ctx(), "queue") {
+            self.player.move_song(from, to);
+        }
     }
 }
 

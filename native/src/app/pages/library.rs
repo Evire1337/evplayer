@@ -312,6 +312,8 @@ impl App {
         let filtered: Vec<(Track, String, String)> = if f.is_empty() { rows.clone() } else { rows.iter().filter(|(t, _, _)| crate::player::matching::simplify(&format!("{} {}", t.title, t.artist_line())).contains(&f)).cloned().collect() };
         let shown = sort_rows(&filtered, key, asc);
         let tracks: Vec<Track> = shown.iter().map(|r| r.0.clone()).collect();
+        // drag to reorder: your own lists in their own order, nothing filtered out
+        let can_reorder = (editable || id == "likes") && f.is_empty() && key == SortKey::Custom && asc;
         let source = match smart {
             Some(kind) => PlaySource { page: "smart".into(), id: Some(kind.to_string()), title: None, cover: None, kind: None },
             None => PlaySource { page: "playlist".into(), id: Some(id.to_string()), title: None, cover: None, kind: None },
@@ -388,6 +390,9 @@ impl App {
             if r.clicked() {
                 self.pages.sort_menu = !self.pages.sort_menu;
             }
+            if can_reorder && rows.len() > 1 {
+                ui.label(egui::RichText::new(crate::i18n::t("Перетаскивайте треки, чтобы поменять порядок")).font(theme::body(12.5)).color(theme::ink3()));
+            }
             if key != SortKey::Custom {
                 let reset = ui.add(egui::Label::new(egui::RichText::new(crate::i18n::t("Вернуть свой порядок")).font(theme::body(12.5)).color(theme::ink3())).sense(egui::Sense::click()));
                 if reset.clicked() {
@@ -426,7 +431,16 @@ impl App {
         let added: Vec<String> = shown.iter().map(|r| ago(&r.1)).collect();
         let extra = move |i: usize| added.get(i).cloned().filter(|s| !s.is_empty());
         let menu_items = if editable { Some((id, shown_items.as_slice())) } else { None };
-        self.track_list(ui, &tracks, Some(source), menu_items, &extra, dated);
+        if can_reorder {
+            if let Some((from, to)) = self.track_list_reorder(ui, &tracks, Some(source), menu_items, &extra, dated) {
+                // the rows are the list's own order here: no filter, the custom order up
+                let (track_id, item_id) = (shown[from].0.id.clone(), shown[from].2.clone());
+                let pid = id.to_string();
+                state::get().update_library(|l| if pid == "likes" { l.move_like(&track_id, to) } else { l.move_in_playlist(&pid, &item_id, to) });
+            }
+        } else {
+            self.track_list(ui, &tracks, Some(source), menu_items, &extra, dated);
+        }
     }
 
     /// the playlist's "…" (as the page's menu): share the code, offline, cover, rename, delete

@@ -2,6 +2,7 @@
 //! src/i18n/en.ts and enMore.ts). Russian text → English, as in en.ts.
 
 pub const NATIVE: &[(&str, &str)] = &[
+    ("от", "from"),
     ("Умный", "Smart"),
     ("прослушано", "you played"),
     ("топ дополнится, когда послушаете больше (трек засчитывается после 5 секунд)", "the top fills up as you listen more (a song counts after 5 seconds)"),

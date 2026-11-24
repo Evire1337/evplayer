@@ -71,22 +71,86 @@ pub struct Pages {
     /// «Сейчас играет»: when the lyrics were last scrolled by hand, and where they are scrolled
     pub lyrics_hand: Option<std::time::Instant>,
     pub lyrics_y: f32,
+    /// a row being dragged to a new place (useReorder)
+    pub drag: Option<Drag>,
+    /// «Далее» was last opened at this place and song (it opens at the current song again when another plays)
+    pub queue_at: Option<(usize, String)>,
+}
+
+/// a drag in a list: which list, the row taken, the row under the pointer and which half
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Drag {
+    pub list: &'static str,
+    pub from: usize,
+    pub over: usize,
+    pub before: bool,
+}
+
+/// where the dragged item ends up in the list after the move (finalIndex)
+pub fn final_index(from: usize, over: usize, before: bool) -> usize {
+    let to = over + if before { 0 } else { 1 };
+    if from < to { to - 1 } else { to }
+}
+
+impl Pages {
+    /// One row of a list that can be reordered, after it was laid out: a drag starts on it,
+    /// the pointer over it marks where the row would land, and the accent line shows it
+    /// (2 px, 8 in from the sides, as .drop-before / .drop-after).
+    pub fn reorder_row(&mut self, ui: &Ui, list: &'static str, i: usize, r: &egui::Response) {
+        if r.drag_started() {
+            self.drag = Some(Drag { list, from: i, over: i, before: true });
+        }
+        let Some(d) = self.drag.as_mut().filter(|d| d.list == list) else { return };
+        if let Some(p) = ui.ctx().pointer_latest_pos() {
+            if p.y >= r.rect.top() && p.y < r.rect.bottom() {
+                d.over = i;
+                d.before = p.y < r.rect.center().y;
+            }
+        }
+        ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+        if d.over == i && d.from != i {
+            let y = if d.before { r.rect.top() } else { r.rect.bottom() };
+            ui.painter().rect_filled(Rect::from_min_max(pos2(r.rect.left() + 8.0, y - 1.0), pos2(r.rect.right() - 8.0, y + 1.0)), 2, theme::ACCENT);
+        }
+    }
+
+    /// After the list: the move to make when the pointer was let go over another place, or
+    /// nothing; Escape gives the drag up
+    pub fn reorder_end(&mut self, ctx: &egui::Context, list: &'static str) -> Option<(usize, usize)> {
+        let d = self.drag.filter(|d| d.list == list)?;
+        if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+            self.drag = None;
+            return None;
+        }
+        if ctx.input(|i| i.pointer.any_down()) {
+            return None;
+        }
+        self.drag = None;
+        let to = final_index(d.from, d.over, d.before);
+        (d.over != d.from && to != d.from).then_some((d.from, to))
+    }
 }
 
 impl App {
     /// a list of songs; pressing one plays the list from it
     /// `dated`: the notes are the dates songs were added, in their own column
     pub fn track_list(&mut self, ui: &mut Ui, tracks: &[Track], source: Option<PlaySource>, playlist: Option<(&str, &[String])>, extra: &dyn Fn(usize) -> Option<String>, dated: bool) {
-        self.track_list_full(ui, tracks, source, playlist, extra, dated, false);
+        self.track_list_full(ui, tracks, source, playlist, extra, dated, false, false);
+    }
+
+    /// a list of your own whose songs can be dragged to a new place: the move, when one was made
+    #[allow(clippy::too_many_arguments)]
+    pub fn track_list_reorder(&mut self, ui: &mut Ui, tracks: &[Track], source: Option<PlaySource>, playlist: Option<(&str, &[String])>, extra: &dyn Fn(usize) -> Option<String>, dated: bool) -> Option<(usize, usize)> {
+        self.track_list_full(ui, tracks, source, playlist, extra, dated, false, true)
     }
 
     /// a list whose songs show their service (SC, YT, Файл) before the artist (showSource)
     pub fn track_list_badged(&mut self, ui: &mut Ui, tracks: &[Track], source: Option<PlaySource>) {
-        self.track_list_full(ui, tracks, source, None, &|_| None, false, true);
+        self.track_list_full(ui, tracks, source, None, &|_| None, false, true, false);
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn track_list_full(&mut self, ui: &mut Ui, tracks: &[Track], source: Option<PlaySource>, playlist: Option<(&str, &[String])>, extra: &dyn Fn(usize) -> Option<String>, dated: bool, badge: bool) {
+    fn track_list_full(&mut self, ui: &mut Ui, tracks: &[Track], source: Option<PlaySource>, playlist: Option<(&str, &[String])>, extra: &dyn Fn(usize) -> Option<String>, dated: bool, badge: bool, reorder: bool) -> Option<(usize, usize)> {
         let current = self.view.current().map(|t| t.id.clone());
         // the current row shows pause over its cover while it plays
         let playing = self.view.status == crate::player::Status::Playing;
@@ -96,11 +160,15 @@ impl App {
         self.mark_kept();
         // only the rows on screen are laid out: a playlist of thousands costs as much as a short one
         let row_h = 62.0 + ui.spacing().item_spacing.y;
+        widgets::set_row_drag(reorder);
         egui::ScrollArea::vertical().id_salt("tracks").auto_shrink([false, false]).show_rows(ui, row_h - ui.spacing().item_spacing.y, tracks.len(), |ui, range| {
             for i in range {
                 let t = &tracks[i];
                 let e = extra(i);
                 let out = widgets::track_row_full(ui, &mut self.images, t, current.as_deref() == Some(t.id.as_str()), lib_likes.contains(&t.id), e.as_deref(), None, dated, badge);
+                if reorder {
+                    self.pages.reorder_row(ui, "tracks", i, &out.response);
+                }
                 if (out.clicked && !double) || out.double {
                     self.play_list(tracks, i, source.clone());
                 }
@@ -114,6 +182,8 @@ impl App {
                 }
             }
         });
+        widgets::set_row_drag(false);
+        if reorder { self.pages.reorder_end(ui.ctx(), "tracks") } else { None }
     }
 
     /// the offline marks of the song rows drawn next
@@ -902,5 +972,19 @@ fn stats_bars(ui: &mut Ui, s: &crate::stats::TrackSummary, range: usize) {
         let tip = Rect::from_center_size(pos2(x, rect.top() - 8.0), g.size() + vec2(16.0, 6.0));
         p.rect_filled(tip, 8, INK);
         p.galley(tip.center() - g.size() / 2.0, g, theme::GROUND);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::final_index;
+
+    #[test]
+    fn places_the_item_before_or_after_the_row_it_was_dropped_on() {
+        assert_eq!(final_index(0, 3, true), 2);
+        assert_eq!(final_index(0, 3, false), 3);
+        assert_eq!(final_index(5, 1, true), 1);
+        assert_eq!(final_index(5, 1, false), 2);
+        assert_eq!(final_index(2, 2, false), 2);
     }
 }
