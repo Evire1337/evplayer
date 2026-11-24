@@ -155,8 +155,20 @@ fn open_decoding(opened: Opened, ext: Option<&str>) -> Result<(Decoding, String)
     Ok((Decoding { format, codec, track_id, rate, time_base, playlist: opened.playlist, offset: opened.starts_at }, name))
 }
 
-/// the song's length in frames, from the track
+/// The song's length in frames. An HLS song's is the sum of its playlist's pieces: its first
+/// piece's header tells only that piece's length (about ten seconds), and taken for the whole
+/// song it made the player fade into the next song a few seconds in.
 fn total_frames(d: &Decoding) -> u64 {
+    if let Some(list) = &d.playlist {
+        let secs: f64 = list.pieces.iter().map(|p| p.1).sum();
+        if std::env::var_os("EVPLAYER_TRACE").is_some() {
+            let header = d.format.tracks().iter().find(|t| t.id == d.track_id).and_then(|t| Some((t.duration?.get(), t.time_base?)));
+            eprintln!("[decode] HLS: {secs:.1} s in the playlist; the header says {header:?}");
+        }
+        if secs > 0.0 {
+            return (secs * d.rate as f64) as u64;
+        }
+    }
     let Some(t) = d.format.tracks().iter().find(|t| t.id == d.track_id) else { return 0 };
     if let (Some(n), Some(tb)) = (t.duration.or(t.num_frames.map(symphonia::core::units::Duration::new)), t.time_base) {
         let secs = tb.calc_time_saturating(symphonia::core::units::Timestamp::new(n.get() as i64)).as_secs_f64();

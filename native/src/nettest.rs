@@ -131,6 +131,102 @@ fn net_soundcloud_plays_every_format() {
     assert!(tried > 0, "no SoundCloud format decoded");
 }
 
+/// decode `spec` to its very end; the seconds of sound that came out and why it stopped
+fn decode_all(spec: Spec) -> (f64, String) {
+    let (prod, mut cons) = rtrb::RingBuffer::<Block>::new(RING_BLOCKS);
+    let dec = Decoder::start(spec, 0.0, prod);
+    let started = Instant::now();
+    let mut frames = 0usize;
+    loop {
+        if let Some(e) = dec.track.error() {
+            let rate = dec.track.rate.load(Ordering::Relaxed).max(1);
+            return (frames as f64 / rate as f64, format!("error: {e}"));
+        }
+        if started.elapsed() > Duration::from_secs(240) {
+            let rate = dec.track.rate.load(Ordering::Relaxed).max(1);
+            return (frames as f64 / rate as f64, "too slow".into());
+        }
+        match cons.pop() {
+            Ok(b) => {
+                frames += b.len as usize;
+                if b.end {
+                    let rate = dec.track.rate.load(Ordering::Relaxed).max(1);
+                    return (frames as f64 / rate as f64, "end".into());
+                }
+            }
+            Err(_) => std::thread::sleep(Duration::from_millis(2)),
+        }
+    }
+}
+
+/// the length the player is told for a SoundCloud stream is the whole song's (an HLS stream's
+/// first piece once passed for the song: the player faded into the next one after seconds)
+#[test]
+#[ignore]
+fn net_the_length_is_the_whole_song() {
+    init();
+    std::env::set_var("EVPLAYER_TRACE", "1");
+    let (tracks, _) = soundcloud::search("big baby tape big tymers").expect("search");
+    let t = tracks.iter().find(|t| !t.preview).expect("a song");
+    let mut checked = 0;
+    for tr in soundcloud::streams(&t.id).expect("streams") {
+        let Ok(s) = soundcloud::stream_url(&tr) else { continue };
+        let spec = if s.hls { Spec::Hls { url: s.url.clone() } } else { Spec::Http { url: s.url.clone(), user_agent: None } };
+        let (prod, _cons) = rtrb::RingBuffer::<Block>::new(RING_BLOCKS);
+        let dec = Decoder::start(spec, 0.0, prod);
+        let started = Instant::now();
+        while !dec.track.ready.load(Ordering::Relaxed) && started.elapsed() < Duration::from_secs(30) {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        let got = dec.track.duration_ms().unwrap_or(0.0);
+        println!("{} {}: told {:.1} s, the song is {:.1} s", tr.protocol, tr.mime, got / 1000.0, t.duration_ms / 1000.0);
+        assert!((got - t.duration_ms).abs() < 3000.0, "told {got} for a {} ms song", t.duration_ms);
+        checked += 1;
+    }
+    assert!(checked > 0);
+}
+
+/// Whole songs decode to their end in every format (into memory, nothing is played): a song
+/// that stopped after its first piece showed only as "plays 10 seconds and skips".
+#[test]
+#[ignore]
+fn net_whole_songs_play_to_the_end() {
+    init();
+    let mut bad = Vec::new();
+    for q in ["big baby tape big tymers", "kizaru bandana", "lofi hip hop"] {
+        let (tracks, _) = soundcloud::search(q).expect("search");
+        for t in tracks.iter().filter(|t| !t.preview).take(2) {
+            let Ok(list) = soundcloud::streams(&t.id) else { continue };
+            for tr in list {
+                let Ok(s) = soundcloud::stream_url(&tr) else { continue };
+                let spec = if s.hls { Spec::Hls { url: s.url.clone() } } else { Spec::Http { url: s.url.clone(), user_agent: None } };
+                let (got, why) = decode_all(spec);
+                let want = t.duration_ms / 1000.0;
+                println!("soundcloud «{}» {} {}: {got:.1} of {want:.1} s ({why})", t.title, tr.protocol, tr.mime);
+                if got < want - 3.0 {
+                    bad.push(format!("SC {} {} «{}»: {got:.1}/{want:.1} {why}", tr.protocol, tr.mime, t.title));
+                }
+            }
+        }
+    }
+    for q in ["big baby tape big tymers", "kizaru"] {
+        let found = youtube::search(q).expect("search");
+        for t in found.iter().take(2) {
+            let id = youtube::video_id_of(&t.id).unwrap().to_string();
+            for order in [[251u32, 250], [140, 139]] {
+                let Ok(d) = youtube::resolve_audio_in(&id, &order) else { continue };
+                let (got, why) = decode_all(Spec::Http { url: d.url.clone(), user_agent: Some(d.user_agent.to_string()) });
+                let want = t.duration_ms / 1000.0;
+                println!("youtube «{}» itag {}: {got:.1} of {want:.1} s ({why})", t.title, d.itag);
+                if got < want - 3.0 {
+                    bad.push(format!("YT itag {} «{}»: {got:.1}/{want:.1} {why}", d.itag, t.title));
+                }
+            }
+        }
+    }
+    assert!(bad.is_empty(), "cut short:\n{}", bad.join("\n"));
+}
+
 /// The whole player through the real sound card at volume zero (silence is what reaches the
 /// speakers): a YouTube song starts, its position moves with the sound card's clock, a seek
 /// lands, "next" goes to the next song, a pause stops the clock.

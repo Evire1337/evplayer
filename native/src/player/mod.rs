@@ -37,6 +37,17 @@ const SUSPEND_AFTER: Duration = Duration::from_secs(8);
 const RESTART_AFTER_MS: f64 = 4000.0;
 const TICK: Duration = Duration::from_millis(100);
 
+/// A song's length: the decoder's, unless it is far shorter than the one the service gave
+/// (a stream's first piece read for the whole song). Taken as it was, the player faded into
+/// the next song or moved on after a few seconds.
+fn length_of(decoded: Option<f64>, known: f64) -> f64 {
+    match decoded {
+        Some(d) if known > 0.0 && d < known * 0.8 => known,
+        Some(d) => d,
+        None => known,
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum Status {
     #[default]
@@ -740,9 +751,8 @@ impl Player {
                     c.view.status = if c.engine.shared.paused.load(Ordering::Relaxed) { Status::Paused } else { Status::Playing };
                     c.view.route = candidate.via.as_ref().map(|t| t.source);
                     c.view.quality = candidate.quality.clone().or_else(|| Some(deck.codec.lock().unwrap().clone()).filter(|s| !s.is_empty()));
-                    if let Some(d) = deck.duration_ms() {
-                        c.view.duration_ms = d;
-                    }
+                    let known = c.view.current().map(|t| t.duration_ms).unwrap_or(0.0);
+                    c.view.duration_ms = length_of(deck.duration_ms(), known.max(c.view.duration_ms));
                     started = true;
                     drop(c);
                     self.changed();
@@ -931,7 +941,7 @@ impl Player {
         c.view.index = p.index;
         c.view.status = Status::Playing;
         c.view.position_ms = 0.0;
-        c.view.duration_ms = p.deck.duration_ms().unwrap_or(p.track.duration_ms);
+        c.view.duration_ms = length_of(p.deck.duration_ms(), p.track.duration_ms);
         c.view.error = None;
         c.view.route = p.route;
         c.view.quality = p.quality.or_else(|| Some(p.deck.codec.lock().unwrap().clone()).filter(|s| !s.is_empty()));
@@ -950,7 +960,7 @@ impl Player {
         c.view.index = p.index;
         c.view.status = Status::Playing;
         c.view.position_ms = 0.0;
-        c.view.duration_ms = p.deck.duration_ms().unwrap_or(p.track.duration_ms);
+        c.view.duration_ms = length_of(p.deck.duration_ms(), p.track.duration_ms);
         c.view.error = None;
         c.view.route = p.route;
         c.view.quality = p.quality.or_else(|| Some(p.deck.codec.lock().unwrap().clone()).filter(|s| !s.is_empty()));
@@ -1010,7 +1020,8 @@ impl Player {
                         changed = true;
                     }
                 } else {
-                    let duration = deck.duration_ms().unwrap_or(c.view.duration_ms);
+                    let known = c.view.current().map(|t| t.duration_ms).unwrap_or(0.0);
+                    let duration = length_of(deck.duration_ms(), known);
                     let left = duration - pos;
                     let fade = state::get().settings.read().unwrap().crossfade.max(0.0);
                     if duration > 0.0 && left < PREPARE_BEFORE_MS + fade * 1000.0 && c.prepared.is_none() && c.fading_until.is_none() && !self.following() {
@@ -1265,5 +1276,19 @@ fn watch(player: std::sync::Weak<Player>) {
             let c = p.core.lock().unwrap();
             let _ = p.wake.wait_timeout(c, Duration::from_secs(30)).unwrap();
         }
+    }
+}
+
+#[cfg(test)]
+mod length_tests {
+    #[test]
+    fn a_length_far_shorter_than_the_song_s_is_not_believed() {
+        // the first ten-second piece of a three-minute song
+        assert_eq!(super::length_of(Some(10_000.0), 191_000.0), 191_000.0);
+        // a copy a little shorter or longer than the original: its own length
+        assert_eq!(super::length_of(Some(186_000.0), 191_000.0), 186_000.0);
+        assert_eq!(super::length_of(Some(200_000.0), 191_000.0), 200_000.0);
+        assert_eq!(super::length_of(None, 191_000.0), 191_000.0);
+        assert_eq!(super::length_of(Some(10_000.0), 0.0), 10_000.0);
     }
 }
