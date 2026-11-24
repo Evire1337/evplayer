@@ -371,6 +371,25 @@ fn source_badge(ui: &Ui, source: crate::model::Source, at: egui::Pos2) -> f32 {
     r.width() + 6.0
 }
 
+thread_local! {
+    /// the songs saved for offline and those being fetched, set by the list being drawn (once
+    /// per list, not per row)
+    static KEPT: std::cell::RefCell<(std::collections::HashSet<String>, std::collections::HashSet<String>)> = std::cell::RefCell::new(Default::default());
+}
+
+/// what the song rows drawn next mark as saved and as being saved
+pub fn set_kept(saved: std::collections::HashSet<String>, saving: std::collections::HashSet<String>) {
+    KEPT.with(|k| *k.borrow_mut() = (saved, saving));
+}
+
+/// 0 nothing, 1 saved, 2 being saved
+fn kept_of(id: &str) -> u8 {
+    KEPT.with(|k| {
+        let k = k.borrow();
+        if k.0.contains(id) { 1 } else if k.1.contains(id) { 2 } else { 0 }
+    })
+}
+
 /// where a song row's columns sit from its right edge (.track-row: padding 8, gap 12; the
 /// "…" 34, the time 44, the like 34, the date 130)
 pub mod row_cols {
@@ -453,8 +472,28 @@ pub fn track_row_full(ui: &mut Ui, images: &mut Images, t: &crate::model::Track,
         crate::ui::icons::paint(ui.painter(), if liked { "heartFill" } else { "heart" }, Rect::from_center_size(heart.center(), vec2(17.0, 17.0)), color);
     }
     // the length, right-aligned in its column
+    let mut time_left = rect.right() - TIME_RIGHT;
     if t.duration_ms > 0.0 {
-        ui.painter().text(pos2(rect.right() - TIME_RIGHT, rect.center().y), Align2::RIGHT_CENTER, time(t.duration_ms), theme::body(13.0), theme::ink3());
+        let r = ui.painter().text(pos2(rect.right() - TIME_RIGHT, rect.center().y), Align2::RIGHT_CENTER, time(t.duration_ms), theme::body(13.0), theme::ink3());
+        time_left = r.left();
+    }
+    // in the time cell, before the length: saved (the accent's offline sign) or being saved
+    // (a still ring: a spinning one would keep the window drawing for the whole download)
+    let kept = kept_of(&t.id);
+    if kept > 0 {
+        let mark = Rect::from_center_size(pos2(time_left - 4.0 - 8.0, rect.center().y), vec2(16.0, 16.0));
+        if kept == 1 {
+            crate::ui::icons::paint(ui.painter(), "offline", Rect::from_center_size(mark.center(), vec2(15.0, 15.0)), ACCENT);
+        } else {
+            ui.painter().circle_stroke(mark.center(), 5.5, Stroke::new(2.0, Color32::from_rgba_unmultiplied(238, 247, 244, 64)));
+            let arc: Vec<egui::Pos2> = (0..=8).map(|i| {
+                let a = (-90.0f32 + 90.0 * i as f32 / 8.0).to_radians();
+                mark.center() + vec2(5.5 * a.cos(), 5.5 * a.sin())
+            }).collect();
+            ui.painter().add(egui::Shape::line(arc, Stroke::new(2.0, theme::ink3())));
+        }
+        let tip = if kept == 1 { "Скачан, играет без интернета" } else { "Скачивается…" };
+        ui.interact(mark, r.id.with("kept"), Sense::hover()).on_hover_text(crate::i18n::t(tip));
     }
     // the "…"
     let more = Rect::from_center_size(pos2(rect.right() - MORE, rect.center().y), vec2(34.0, 34.0));

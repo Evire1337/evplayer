@@ -504,6 +504,17 @@ impl App {
                 return;
             }
         }
+        // "smart:on_repeat" opens that smart list
+        if name.starts_with("smart:") {
+            self.page = Page::Playlist(name.to_string());
+            return;
+        }
+        // "library:list": the library as a list (only for this picture, nothing is saved)
+        if name == "library:list" {
+            state::get().settings.write().unwrap().library_view = crate::store::state::LibraryView::List;
+            self.page = Page::Library;
+            return;
+        }
         self.page = match name {
             "now" => Page::Now,
             "search" => Page::Search,

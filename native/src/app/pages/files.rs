@@ -63,8 +63,9 @@ impl App {
         ui.horizontal(|ui| {
             let art = 210.0;
             let (rect, _) = ui.allocate_exact_size(vec2(art, art), egui::Sense::hover());
-            super::library::gradient(ui, rect, egui::Color32::from_rgb(120, 140, 230), egui::Color32::from_rgb(70, 60, 150));
-            crate::ui::icons::paint(ui.painter(), "music", Rect::from_center_size(rect.center(), vec2(64.0, 64.0)), egui::Color32::from_rgb(10, 30, 30));
+            // .files-cover with the music sign, 64
+            ui.painter().add(super::covers::linear_gradient(rect, super::covers::RADIUS, 150.0, &[(super::covers::rgba(0x8ab4ff, 1.0), 0.0), (super::covers::rgba(0x23306b, 1.0), 0.75)]));
+            crate::ui::icons::paint(ui.painter(), "music", Rect::from_center_size(rect.center(), vec2(64.0, 64.0)), egui::Color32::WHITE);
             ui.add_space(28.0);
             ui.vertical(|ui| {
                 ui.spacing_mut().item_spacing.y = 8.0;

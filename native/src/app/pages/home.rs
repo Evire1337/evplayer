@@ -8,11 +8,12 @@ use std::time::{Duration, Instant};
 
 use egui::{pos2, vec2, Color32, CornerRadius, Rect, Ui};
 
+use super::covers::{self, hsl};
 use super::Loaded;
 use crate::app::{App, Page};
 use crate::model::Track;
 use crate::state;
-use crate::ui::theme::{self, ic, INK};
+use crate::ui::theme::{self, INK};
 use crate::ui::widgets;
 
 #[derive(Default)]
@@ -133,24 +134,22 @@ impl App {
                         Item::Source(s) => {
                             let id = s.id.clone().unwrap_or_default();
                             let r = match s.page.as_str() {
-                                "playlist" if id == "likes" => {
-                                    let r = super::library::colour_card(ui, w, ic::HEART_FILL, true, &crate::i18n::t("Понравившиеся"), &crate::i18n::tracks(lib.likes.len()));
-                                    (r, Page::Playlist(id))
-                                }
+                                "playlist" if id == "likes" => (covers::card(ui, &mut self.images, &covers::Cover::Liked, w, &crate::i18n::t("Понравившиеся"), &crate::i18n::tracks(lib.likes.len())), Page::Playlist(id)),
                                 "playlist" => {
                                     let Some(p) = lib.playlists.iter().find(|p| p.id == id) else { continue };
-                                    let cover = p.icon.clone().filter(|i| !i.is_empty()).or_else(|| p.items.first().and_then(|i| crate::ui::images::artwork_of(&i.track)));
-                                    (widgets::card(ui, &mut self.images, cover.as_deref(), &p.title, &format!("{} · {}", crate::i18n::t("Плейлист"), crate::i18n::tracks(p.items.len())), w, false), Page::Playlist(id))
+                                    let tracks: Vec<Track> = p.items.iter().take(40).map(|i| i.track.clone()).collect();
+                                    let sub = format!("{} · {}", crate::i18n::t("Плейлист"), crate::i18n::tracks(p.items.len()));
+                                    (covers::card(ui, &mut self.images, &covers::Cover::Playlist { icon: p.icon.as_deref(), tracks: &tracks }, w, &p.title, &sub), Page::Playlist(id))
                                 }
                                 "smart" => {
                                     let Some((_, title, _, hue)) = crate::stats::SMART.iter().find(|x| x.0 == id) else { continue };
                                     let tracks = crate::stats::smart(&id, &liked, 100);
-                                    (self.smart_card(ui, w, *hue, &crate::i18n::t(title), &crate::i18n::t("Собрано для вас"), &tracks), Page::Playlist(format!("smart:{id}")))
+                                    (covers::card(ui, &mut self.images, &covers::Cover::Smart { hue: *hue, tracks: &tracks }, w, &crate::i18n::t(title), &crate::i18n::t("Собрано для вас")), Page::Playlist(format!("smart:{id}")))
                                 }
-                                "files" => (super::library::colour_card(ui, w, ic::FOLDER, false, &crate::i18n::t("Мои файлы"), &crate::i18n::t("С компьютера")), Page::Files),
+                                "files" => (covers::card(ui, &mut self.images, &covers::Cover::Files, w, &crate::i18n::t("Мои файлы"), &crate::i18n::t("С компьютера")), Page::Files),
                                 // an album or a playlist on a service; the kind as the page wrote it ("Плейлист · SoundCloud")
                                 _ => (
-                                    widgets::card(ui, &mut self.images, s.cover.as_deref(), s.title.as_deref().unwrap_or(&crate::i18n::t("Плейлист")), &crate::i18n::t(s.kind.as_deref().unwrap_or("Плейлист")), w, false),
+                                    covers::card(ui, &mut self.images, &covers::Cover::Playlist { icon: s.cover.as_deref(), tracks: &[] }, w, s.title.as_deref().unwrap_or(&crate::i18n::t("Плейлист")), &crate::i18n::t(s.kind.as_deref().unwrap_or("Плейлист"))),
                                     Page::Collection(id),
                                 ),
                             };
@@ -276,13 +275,7 @@ impl App {
             }
         }
         // .smart-glow: linear-gradient(160deg, hsl(h 80% 55% / .55), hsl(h 70% 12% / .85))
-        let (a, b) = (hsl(hue, 0.80, 0.55, 0.55), hsl(hue, 0.70, 0.12, 0.85));
-        let dir = vec2(20f32.to_radians().sin(), 20f32.to_radians().cos());
-        let half = (dir.x.abs() * w + dir.y.abs() * w) / 2.0;
-        p.add(super::library::rounded_mesh(art, 24.0, |pt| {
-            let t = (((pt - art.center()).dot(dir) / half) * 0.5 + 0.5).clamp(0.0, 1.0);
-            lerp(a, b, t)
-        }));
+        p.add(covers::linear_gradient(art, 24.0, 160.0, &[(hsl(hue, 0.80, 0.55, 0.55), 0.0), (hsl(hue, 0.70, 0.12, 0.85), 1.0)]));
         crate::ui::icons::paint(&p, "sparkle", Rect::from_min_size(pos2(art.left() + 14.0, art.bottom() - 14.0 - 22.0), vec2(22.0, 22.0)), Color32::WHITE);
         if r.hovered() {
             p.rect_filled(art, 24, Color32::from_white_alpha(10));
@@ -333,6 +326,7 @@ impl App {
         let main = if wide { full - 24.0 - side } else { full };
         let tracks: Vec<Track> = top.iter().map(|x| x.0.clone()).collect();
         let draw_list = |app: &mut App, ui: &mut Ui| {
+            app.mark_kept();
             ui.set_width(main);
             let current = app.view.current().map(|t| t.id.clone());
             for (i, (t, n, _)) in top.iter().enumerate() {
@@ -400,31 +394,6 @@ impl App {
             }
         });
     }
-}
-
-/// hsl() with alpha, as CSS reads it
-fn hsl(h: f32, s: f32, l: f32, a: f32) -> Color32 {
-    let c = (1.0 - (2.0 * l - 1.0).abs()) * s;
-    let hp = (h.rem_euclid(360.0)) / 60.0;
-    let x = c * (1.0 - (hp % 2.0 - 1.0).abs());
-    let (r, g, b) = match hp as u32 {
-        0 => (c, x, 0.0),
-        1 => (x, c, 0.0),
-        2 => (0.0, c, x),
-        3 => (0.0, x, c),
-        4 => (x, 0.0, c),
-        _ => (c, 0.0, x),
-    };
-    let m = l - c / 2.0;
-    let to = |v: f32| ((v + m) * 255.0).round().clamp(0.0, 255.0) as u8;
-    Color32::from_rgba_unmultiplied(to(r), to(g), to(b), (a * 255.0).round() as u8)
-}
-
-/// two colours mixed as CSS does in a gradient (unpremultiplied)
-fn lerp(a: Color32, b: Color32, t: f32) -> Color32 {
-    let (a, b) = (a.to_srgba_unmultiplied(), b.to_srgba_unmultiplied());
-    let m = |i: usize| (a[i] as f32 + (b[i] as f32 - a[i] as f32) * t).round() as u8;
-    Color32::from_rgba_unmultiplied(m(0), m(1), m(2), m(3))
 }
 
 /// "1 прослушивание", "3 прослушивания", "5 прослушиваний"
@@ -536,11 +505,5 @@ mod tests {
     fn counts_only_the_artists_a_service_knows() {
         let likes = [song("1", &["scu:1", "local-artist:x"]), song("2", &["yta:2"]), song("3", &["yta:2"])];
         assert_eq!(top_liked_artists(&likes, 8).iter().map(|a| a.0.as_str()).collect::<Vec<_>>(), ["yta:2", "scu:1"]);
-    }
-
-    #[test]
-    fn hsl_as_css() {
-        assert_eq!(hsl(0.0, 1.0, 0.5, 1.0), Color32::from_rgb(255, 0, 0));
-        assert_eq!(hsl(120.0, 1.0, 0.25, 1.0), Color32::from_rgb(0, 128, 0));
     }
 }

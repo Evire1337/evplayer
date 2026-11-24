@@ -1,7 +1,7 @@
 //! Библиотека: "Понравившиеся", your files and your playlists as cards (src/pages/LibraryPage.tsx),
 //! and a playlist of yours with its songs (PlaylistPage.tsx).
 
-use egui::{pos2, vec2, Align2, Rect, Ui};
+use egui::{pos2, vec2, Rect, Ui};
 
 use crate::app::{App, Dialog, Page};
 use crate::model::Track;
@@ -10,6 +10,8 @@ use crate::store::state::PlaySource;
 use crate::ui::images::artwork_of;
 use crate::ui::theme::{self, ic, INK};
 use crate::ui::widgets;
+
+use super::covers;
 
 /// When a song was added, as the page's formatAddedAt (Intl.RelativeTimeFormat, short):
 /// "сейчас", "5 мин. назад", "3 ч назад", "вчера", "3 дн. назад", "3 нед. назад", then the date
@@ -135,63 +137,147 @@ pub fn sort_rows<T: Clone>(rows: &[(Track, String, T)], key: SortKey, asc: bool)
 }
 
 impl App {
+    /// Библиотека (LibraryPage.tsx): the head with its actions and the view switch, then
+    /// "Понравившиеся", "Мои файлы", the smart lists that have songs and your playlists, as big
+    /// cards or as a list
     pub fn library_page(&mut self, ui: &mut Ui) {
-        ui.horizontal(|ui| {
-            ui.add_space(0.0);
+        let list_view = state::get().settings.read().unwrap().library_view == crate::store::state::LibraryView::List;
+        // .page-head.with-actions: the title, the actions at the right, wrapping when narrow
+        ui.add_space(18.0);
+        ui.horizontal_wrapped(|ui| {
             ui.label(egui::RichText::new(crate::i18n::t("Библиотека")).font(theme::heavy(40.0)).color(INK));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.spacing_mut().item_spacing.x = 8.0;
                 ui.add_space(8.0);
-                if widgets::pill_button(ui, Some(ic::ADD), "Новый плейлист", true).clicked() {
-                    self.dialog = Some(Dialog::NewPlaylist { title: String::new(), add: vec![] });
+                if let Some(list) = view_toggle(ui, list_view) {
+                    state::get().set_settings(|s| s.library_view = if list { crate::store::state::LibraryView::List } else { crate::store::state::LibraryView::Grid });
                 }
-                if widgets::pill_button(ui, Some(ic::LINK), "Импорт по ссылке или коду", false).clicked() {
+                if widgets::btn(ui, Some("download"), "Скачать офлайн", false).clicked() {
+                    self.dialog = Some(Dialog::Download { picked: vec![], follow: true });
+                }
+                if widgets::btn(ui, None, "Из Spotify", false).clicked() {
+                    self.dialog = Some(Dialog::SpotifyExport { lists: vec![], chosen: vec![], error: String::new() });
+                }
+                if widgets::btn(ui, Some("code"), "Импорт по ссылке или коду", false).clicked() {
                     self.dialog = Some(Dialog::Import { text: String::new(), likes: false });
+                }
+                if widgets::btn(ui, Some("plus"), "Новый плейлист", true).clicked() {
+                    self.dialog = Some(Dialog::NewPlaylist { title: String::new(), add: vec![] });
                 }
             });
         });
-        ui.add_space(12.0);
+        ui.add_space(14.0);
         let lib = state::get().library.read().unwrap().clone();
-        let files = self.library.list();
-        let w = 172.0;
+        let files = self.library.list().len();
+        let liked: Vec<Track> = lib.likes.iter().map(|l| l.track.clone()).collect();
+        let smart: Vec<(&str, &str, f32, Vec<Track>)> = crate::stats::SMART.iter().map(|(k, title, _, hue)| (*k, *title, *hue, crate::stats::smart(k, &liked, 100))).filter(|s| !s.3.is_empty()).collect();
+        let playlist_tracks: Vec<Vec<Track>> = lib.playlists.iter().map(|p| p.items.iter().take(40).map(|i| i.track.clone()).collect()).collect();
+        // every card: its picture, name, line and where it leads
+        let mut cards: Vec<(covers::Cover, String, String, Page)> = vec![
+            (covers::Cover::Liked, crate::i18n::t("Понравившиеся"), crate::i18n::tracks(lib.likes.len()), Page::Playlist("likes".into())),
+            (covers::Cover::Files, crate::i18n::t("Мои файлы"), if files > 0 { crate::i18n::tracks(files) } else { crate::i18n::t("MP3, FLAC и другие с компьютера") }, Page::Files),
+        ];
+        for (kind, title, hue, tracks) in &smart {
+            cards.push((covers::Cover::Smart { hue: *hue, tracks }, crate::i18n::t(title), format!("{} · {}", crate::i18n::t("Умный"), crate::i18n::tracks(tracks.len())), Page::Playlist(format!("smart:{kind}"))));
+        }
+        for (p, tracks) in lib.playlists.iter().zip(&playlist_tracks) {
+            cards.push((covers::Cover::Playlist { icon: p.icon.as_deref(), tracks }, p.title.clone(), format!("{} · {} {}", crate::i18n::tracks(p.items.len()), crate::i18n::t("создан"), date(&p.created_at)), Page::Playlist(p.id.clone())));
+        }
+        let mut go = None;
         egui::ScrollArea::vertical().id_salt("library").auto_shrink([false, false]).show(ui, |ui| {
-            let per_row = (((ui.available_width() - 8.0) + 16.0) / (w + 16.0)).floor().max(1.0) as usize;
-            let mut cards: Vec<(Option<String>, String, String, Page, &str)> = vec![
-                (None, crate::i18n::t("Понравившиеся"), crate::i18n::tracks(lib.likes.len()), Page::Playlist("likes".into()), ic::HEART_FILL),
-                (None, crate::i18n::t("Мои файлы"), crate::i18n::t("MP3, FLAC и другие с этого компьютера"), Page::Files, ic::FOLDER),
-            ];
-            let saved = self.downloads.saved().len();
-            if saved > 0 {
-                cards.push((None, crate::i18n::t("Скачанное"), crate::i18n::tracks(saved), Page::Playlist("offline".into()), ic::DOWNLOAD));
-            }
-            let _ = files.len();
-            for p in &lib.playlists {
-                let cover = p.icon.clone().or_else(|| p.items.first().and_then(|i| artwork_of(&i.track)));
-                cards.push((cover, p.title.clone(), format!("{} · {} {}", crate::i18n::tracks(p.items.len()), crate::i18n::t("создан"), date(&p.created_at)), Page::Playlist(p.id.clone()), ic::NOTE));
-            }
-            for row in cards.chunks(per_row) {
-                ui.horizontal(|ui| {
-                    ui.spacing_mut().item_spacing.x = 16.0;
-                    for (cover, title, sub, page, icon) in row {
-                        let r = if cover.is_some() {
-                            widgets::card(ui, &mut self.images, cover.as_deref(), title, sub, w, false)
-                        } else {
-                            // likes and files: a coloured card with a sign
-                            colour_card(ui, w, icon, *icon == ic::HEART_FILL, title, sub)
-                        };
-                        if r.clicked() {
-                            self.go(page.clone());
-                        }
+            let avail = ui.available_width() - 8.0;
+            if list_view {
+                // .pl-list: rows with 2 between
+                ui.spacing_mut().item_spacing.y = 2.0;
+                ui.set_width(avail);
+                for (cover, title, sub, page) in &cards {
+                    if covers::row(ui, &mut self.images, cover, title, sub).clicked() {
+                        go = Some(page.clone());
                     }
-                });
-                ui.add_space(14.0);
+                }
+            } else {
+                // .pl-grid: repeat(auto-fill, minmax(170px, 1fr)), 22 between rows, 18 between columns
+                let per_row = ((avail + 18.0) / (170.0 + 18.0)).floor().max(1.0) as usize;
+                let w = ((avail + 18.0) / per_row as f32 - 18.0).floor();
+                for row in cards.chunks(per_row) {
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = 18.0;
+                        for (cover, title, sub, page) in row {
+                            if covers::card(ui, &mut self.images, cover, w, title, sub).clicked() {
+                                go = Some(page.clone());
+                            }
+                        }
+                    });
+                    ui.add_space(22.0 - ui.spacing().item_spacing.y);
+                }
+            }
+            if lib.playlists.is_empty() {
+                ui.add_space(8.0);
+                App::muted(ui, "Создайте свой первый плейлист: в него можно класть треки из SoundCloud, YouTube и ваших файлов вперемешку. Через правый клик по любому треку → «Добавить в плейлист».");
             }
         });
+        if let Some(p) = go {
+            self.go(p);
+        }
+    }
+
+    /// A smart list (SmartPage.tsx): its picture, "Умный плейлист · обновляется сам", the name,
+    /// what it gathers and how many songs; play, shuffle, "Сохранить как плейлист"; the songs
+    /// with their service marked. No filter or order: the list orders itself.
+    fn smart_page(&mut self, ui: &mut Ui, kind: &str) {
+        let liked: Vec<Track> = state::get().library.read().unwrap().likes.iter().map(|l| l.track.clone()).collect();
+        let (title, desc, hue) = crate::stats::SMART.iter().find(|s| s.0 == kind).map(|s| (s.1, s.2, s.3)).unwrap_or(("", "", 160.0));
+        let tracks = crate::stats::smart(kind, &liked, 100);
+        let source = PlaySource { page: "smart".into(), id: Some(kind.to_string()), title: None, cover: None, kind: None };
+        ui.add_space(8.0);
+        ui.horizontal(|ui| {
+            let art = 210.0;
+            let (rect, _) = ui.allocate_exact_size(vec2(art, art), egui::Sense::hover());
+            covers::paint(ui, &mut self.images, &covers::Cover::Smart { hue, tracks: &tracks }, rect, false);
+            ui.add_space(28.0);
+            ui.vertical(|ui| {
+                ui.spacing_mut().item_spacing.y = 8.0;
+                ui.add_space((art - (4.0 * 26.0 + 56.0)).max(0.0));
+                ui.label(egui::RichText::new(crate::i18n::t("Умный плейлист · обновляется сам").to_uppercase()).font(theme::medium(12.0)).color(theme::ink3()).extra_letter_spacing(1.0));
+                ui.label(egui::RichText::new(crate::i18n::t(title)).font(theme::heavy(46.0)).color(INK));
+                ui.label(egui::RichText::new(format!("{} · {}", crate::i18n::t(desc), crate::i18n::tracks(tracks.len()))).font(theme::body(13.0)).color(theme::ink2()));
+                ui.add_space(8.0);
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 8.0;
+                    if widgets::round_button(ui, ic::PLAY, 52.0, widgets::Round::Main, false, "Слушать").clicked() && !tracks.is_empty() {
+                        self.player.play_queue(tracks.clone(), 0, Some(source.clone()));
+                    }
+                    // shuffle on, then from a random song
+                    if widgets::round_button(ui, ic::SHUFFLE, 42.0, widgets::Round::Soft, false, "Перемешать").clicked() && !tracks.is_empty() {
+                        if !self.view.shuffle {
+                            self.player.toggle_shuffle();
+                        }
+                        let start = rand::random::<usize>() % tracks.len();
+                        self.player.play_queue(tracks.clone(), start, Some(source.clone()));
+                    }
+                    if widgets::btn(ui, None, "Сохранить как плейлист", false).clicked() && !tracks.is_empty() {
+                        self.dialog = Some(Dialog::NewPlaylist { title: String::new(), add: tracks.clone() });
+                    }
+                });
+            });
+        });
+        ui.add_space(30.0);
+        if tracks.is_empty() {
+            ui.vertical_centered(|ui| App::muted(ui, "Пока пусто — слушайте музыку, и плейлист наполнится сам."));
+            return;
+        }
+        self.track_list_badged(ui, &tracks, Some(source));
     }
 
     /// A list of songs of yours (PlaylistPage.tsx): the cover, what it is, its name and
     /// description, how many songs and when it was made, "Слушать", "Вперемешку", downloading
     /// and "…"; then the filter, the order, and the songs with the date each was added.
     pub fn playlist(&mut self, ui: &mut Ui, id: &str) {
+        if let Some(kind) = id.strip_prefix("smart:") {
+            let kind = kind.to_string();
+            self.smart_page(ui, &kind);
+            return;
+        }
         let lib = state::get().library.read().unwrap().clone();
         let smart = id.strip_prefix("smart:");
         let editable = id != "likes" && id != "offline" && smart.is_none();
@@ -235,13 +321,13 @@ impl App {
         ui.add_space(8.0);
         ui.horizontal(|ui| {
             let art = 210.0;
-            if id == "likes" {
-                let (rect, _) = ui.allocate_exact_size(vec2(art, art), egui::Sense::hover());
-                gradient(ui, rect, egui::Color32::from_rgb(92, 214, 172), egui::Color32::from_rgb(40, 120, 140));
-                crate::ui::icons::paint(ui.painter(), "heartFill", Rect::from_center_size(rect.center(), vec2(72.0, 72.0)), egui::Color32::from_rgb(10, 30, 30));
-            } else {
-                widgets::cover(ui, &mut self.images, cover.as_deref(), art, 18);
-            }
+            // PlaylistCover at 210: the likes' gradient, your own picture or the first four covers
+            let (rect, _) = ui.allocate_exact_size(vec2(art, art), egui::Sense::hover());
+            let all: Vec<Track> = rows.iter().take(40).map(|r| r.0.clone()).collect();
+            let icon = lib.playlists.iter().find(|p| p.id == id).and_then(|p| p.icon.clone());
+            let pic = if id == "likes" { covers::Cover::Liked } else { covers::Cover::Playlist { icon: icon.as_deref(), tracks: &all } };
+            covers::paint(ui, &mut self.images, &pic, rect, false);
+            let _ = &cover;
             ui.add_space(28.0);
             ui.vertical(|ui| {
                 ui.spacing_mut().item_spacing.y = 8.0;
@@ -440,6 +526,27 @@ impl App {
     }
 }
 
+/// .view-toggle: "Крупные значки" and "Списком" in a pill; Some(list) when one was pressed
+fn view_toggle(ui: &mut Ui, list: bool) -> Option<bool> {
+    let (tray, _) = ui.allocate_exact_size(vec2(3.0 + 34.0 + 2.0 + 34.0 + 3.0, 40.0), egui::Sense::hover());
+    ui.painter().rect_filled(tray, 20, covers::rgba(0xeef7f4, 0.08));
+    let mut out = None;
+    for (i, (icon, tip)) in [("gridView", "Крупные значки"), ("listView", "Списком")].into_iter().enumerate() {
+        let b = Rect::from_min_size(pos2(tray.left() + 3.0 + i as f32 * 36.0, tray.top() + 3.0), vec2(34.0, 34.0));
+        let r = ui.interact(b, ui.scope_id().with(("view", i)), egui::Sense::click()).on_hover_text(crate::i18n::t(tip));
+        let on = (i == 1) == list;
+        if on {
+            ui.painter().circle_filled(b.center(), 17.0, INK);
+        }
+        let color = if on { theme::GROUND } else if r.hovered() { INK } else { theme::ink2() };
+        crate::ui::icons::paint(ui.painter(), icon, Rect::from_center_size(b.center(), vec2(17.0, 17.0)), color);
+        if r.clicked() && !on {
+            out = Some(i == 1);
+        }
+    }
+    out
+}
+
 /// a picture as the page makes a cover (fileToSquareDataUrl): the middle square, `size` px
 /// (384 for a playlist, 600 for a file's own), JPEG 86 %
 pub fn square_data_url(path: &std::path::Path, size: u32) -> Option<String> {
@@ -450,51 +557,4 @@ pub fn square_data_url(path: &std::path::Path, size: u32) -> Option<String> {
     image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, 86).encode_image(&cut).ok()?;
     use base64::Engine;
     Some(format!("data:image/jpeg;base64,{}", base64::engine::general_purpose::STANDARD.encode(out)))
-}
-
-/// a rounded card filled with a diagonal blend of two colours (the "Понравившиеся" and files cards)
-pub fn gradient(ui: &Ui, rect: Rect, a: egui::Color32, b: egui::Color32) {
-    let r = (theme::R_CARD as f32).min(rect.width() / 2.0);
-    ui.painter().add(rounded_mesh(rect, r, |p| {
-        let t = (((p.x - rect.left()) / rect.width() + (p.y - rect.top()) / rect.height()) / 2.0).clamp(0.0, 1.0);
-        let l = |x: u8, y: u8| (x as f32 + (y as f32 - x as f32) * t) as u8;
-        egui::Color32::from_rgba_unmultiplied(l(a.r(), b.r()), l(a.g(), b.g()), l(a.b(), b.b()), l(a.a(), b.a()))
-    }));
-}
-
-/// a rounded rectangle as one mesh, coloured point by point (a gradient that follows the
-/// rounding, which a plain rectangle with a texture cannot do)
-pub fn rounded_mesh(rect: Rect, r: f32, color_at: impl Fn(egui::Pos2) -> egui::Color32) -> egui::Shape {
-    let r = r.min(rect.width() / 2.0).min(rect.height() / 2.0);
-    let mut mesh = egui::Mesh::default();
-    mesh.colored_vertex(rect.center(), color_at(rect.center()));
-    // the outline: four quarter circles
-    let corners = [(rect.right_top() + vec2(-r, r), -90.0f32), (rect.right_bottom() + vec2(-r, -r), 0.0), (rect.left_bottom() + vec2(r, -r), 90.0), (rect.left_top() + vec2(r, r), 180.0)];
-    for (c, start) in corners {
-        for k in 0..=8 {
-            let ang = (start + 90.0 * k as f32 / 8.0).to_radians();
-            let p = c + vec2(r * ang.cos(), r * ang.sin());
-            mesh.colored_vertex(p, color_at(p));
-        }
-    }
-    let n = mesh.vertices.len() as u32;
-    for i in 1..n {
-        let next = if i + 1 < n { i + 1 } else { 1 };
-        mesh.add_triangle(0, i, next);
-    }
-    egui::Shape::mesh(mesh)
-}
-
-/// the "Понравившиеся" (`likes`) or "Мои файлы" card: its own colours and sign, the name and a line
-pub fn colour_card(ui: &mut Ui, w: f32, icon: &str, likes: bool, title: &str, sub: &str) -> egui::Response {
-    let (rect, r) = ui.allocate_exact_size(vec2(w, w + 46.0), egui::Sense::click());
-    let art = Rect::from_min_size(rect.min, vec2(w, w));
-    let (a, b) = if likes { (egui::Color32::from_rgb(92, 214, 172), egui::Color32::from_rgb(40, 120, 140)) } else { (egui::Color32::from_rgb(120, 140, 230), egui::Color32::from_rgb(70, 60, 150)) };
-    gradient(ui, art, a, b);
-    crate::ui::theme::paint_icon(&ui.painter(), art.center(), Align2::CENTER_CENTER, icon, 34.0, egui::Color32::from_rgb(10, 30, 30));
-    let g = widgets::clipped(ui, title, theme::medium(13.0), INK, w);
-    ui.painter().galley(pos2(rect.left(), art.bottom() + 8.0), g, INK);
-    let g = widgets::clipped(ui, sub, theme::body(12.0), theme::ink2(), w);
-    ui.painter().galley(pos2(rect.left(), art.bottom() + 26.0), g, theme::ink2());
-    r
 }
