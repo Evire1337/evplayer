@@ -2,6 +2,17 @@
 //! src/i18n/en.ts and enMore.ts). Russian text → English, as in en.ts.
 
 pub const NATIVE: &[(&str, &str)] = &[
+    ("Играет", "Playing"),
+    ("ремикс", "remix"),
+    ("кавер", "cover"),
+    ("минус", "instrumental"),
+    ("караоке", "karaoke"),
+    ("мэшап", "mashup"),
+    ("акустика", "acoustic"),
+    ("пародия", "parody"),
+    ("трибьют", "tribute"),
+    ("в стиле", "in the style of"),
+    ("фан-версия", "fan-made"),
     ("Радио", "Radio"),
     ("в ваших файлах", "in your files"),
     ("вы:", "you:"),

@@ -74,13 +74,19 @@ impl App {
             None => (crate::i18n::t("Ничего не играет"), crate::i18n::t("Выберите песню на главной или в поиске")),
         };
         // .now-title: 28 px, 800; .now-artist: 16 px
-        let g = widgets::clipped(&lui, &title, theme::heavy(28.0), INK, art);
+        // the version labels ("ремикс", "speed up") after the name, when it is not the original
+        let pills = if cur.is_some() { widgets::version_pills_width(&lui, &title) } else { 0.0 };
+        let g = widgets::clipped(&lui, &title, theme::heavy(28.0), INK, (art - pills).max(80.0));
+        let title_w = g.size().x;
         let (r, _) = lui.allocate_exact_size(vec2(art, 34.0), Sense::hover());
         lui.painter().galley(r.min, g, INK);
+        if pills > 0.0 {
+            widgets::version_pills(&lui, &title, egui::pos2(r.left() + title_w + 10.0, r.center().y), art - title_w - 10.0);
+        }
         let artist_resp = lui.add(egui::Label::new(egui::RichText::new(&sub).font(theme::body(16.0)).color(theme::ink2())).sense(Sense::click()).truncate());
-        if let Some(a) = cur.as_ref().and_then(|t| t.artists.first()).filter(|a| a.id.starts_with("scu:") || a.id.starts_with("yta:")) {
+        if let Some(a) = cur.as_ref().and_then(|t| t.artists.first()) {
             if artist_resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
-                self.go(crate::app::Page::Artist(a.id.clone()));
+                self.go(crate::app::Page::Artist(super::artist::artist_page_id(a)));
             }
         }
         // where the song is from, the copy playing instead, and what the sound is (.now-source:
@@ -103,7 +109,11 @@ impl App {
             if let Some(q) = &v.quality {
                 line.push_str(&format!(" · {}", crate::i18n::t(q)));
             }
-            lui.label(egui::RichText::new(line).font(theme::body(12.5)).color(theme::ink3()));
+            let r = lui.label(egui::RichText::new(line).font(theme::body(12.5)).color(theme::ink3()));
+            // which recording plays in its place: to tell a wrong copy at once
+            if let Some(c) = &v.copy {
+                r.on_hover_text(format!("{}: {} — {} ({})", crate::i18n::t("Играет"), c.artist_line(), c.title, widgets::time(c.duration_ms)));
+            }
         }
         // a session on: who listens along
         lui.scope(|ui| {

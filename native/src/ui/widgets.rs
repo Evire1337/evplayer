@@ -331,6 +331,34 @@ pub fn track_row(ui: &mut Ui, images: &mut Images, t: &crate::model::Track, play
     track_row_full(ui, images, t, playing, liked, extra, number, false, false)
 }
 
+/// The versions a song is (version_labels): small amber labels after its name, so a remix or
+/// a sped-up upload is told from the original at a glance. Returns the width they take.
+pub fn version_pills(ui: &Ui, title: &str, at: egui::Pos2, max_w: f32) -> f32 {
+    let labels = crate::player::matching::version_labels(title);
+    let mut x = at.x;
+    for label in labels.iter().take(2) {
+        let g = ui.painter().layout_no_wrap(crate::i18n::t(label), theme::heavy(10.5), PILL_INK);
+        let w = g.size().x + 12.0;
+        if x + w - at.x > max_w {
+            break;
+        }
+        let r = Rect::from_min_size(pos2(x, at.y - 9.0), vec2(w, 18.0));
+        ui.painter().rect_filled(r, CornerRadius::same(6), PILL_FILL);
+        ui.painter().galley(r.center() - g.size() / 2.0, g, PILL_INK);
+        x += w + 4.0;
+    }
+    x - at.x
+}
+
+/// the version label's colours: amber, readable on the dark ground
+const PILL_FILL: Color32 = Color32::from_rgba_premultiplied(64, 46, 10, 110);
+const PILL_INK: Color32 = Color32::from_rgb(0xff, 0xc8, 0x6b);
+
+/// how wide the labels of a title would be (to leave them room)
+pub fn version_pills_width(ui: &Ui, title: &str) -> f32 {
+    crate::player::matching::version_labels(title).iter().take(2).map(|l| ui.painter().layout_no_wrap(crate::i18n::t(l), theme::heavy(10.5), PILL_INK).size().x + 16.0).sum()
+}
+
 /// "1.2 млн", "34 тыс." (formatCount in the page); K / M / B in English
 pub fn count(n: f64) -> String {
     if crate::i18n::is_english() {
@@ -449,8 +477,14 @@ pub fn track_row_full(ui: &mut Ui, images: &mut Images, t: &crate::model::Track,
     let right_w = if dated { DATE_LEFT + 12.0 } else if extra.is_some() { LIKE + 17.0 + 12.0 + 140.0 } else { LIKE + 17.0 + 12.0 };
     let text_w = (rect.right() - x - right_w).max(60.0);
     let title_color = if playing { ACCENT } else { INK };
-    let g = clipped(ui, &t.title, theme::medium(14.0), title_color, text_w);
+    // the version labels after the name, which gives them room
+    let pills = version_pills_width(ui, &t.title);
+    let g = clipped(ui, &t.title, theme::medium(14.0), title_color, (text_w - pills).max(40.0));
+    let title_w = g.size().x;
     ui.painter().galley(pos2(x, rect.center().y - 19.0), g, title_color);
+    if pills > 0.0 {
+        version_pills(ui, &t.title, pos2(x + title_w + 8.0, rect.center().y - 10.0), text_w - title_w - 8.0);
+    }
     let mut sub = t.artist_line();
     if t.explicit {
         sub = format!("🅴 {sub}");

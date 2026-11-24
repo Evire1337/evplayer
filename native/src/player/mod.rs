@@ -73,6 +73,8 @@ pub struct View {
     pub error: Option<String>,
     /// the original did not play: a copy of the song from this service is playing
     pub route: Option<Source>,
+    /// that copy itself (its artist, title and length), to say which recording plays
+    pub copy: Option<Track>,
     /// "opus 160 кбит/с"
     pub quality: Option<String>,
     /// part of the song fetched (0..1)
@@ -92,6 +94,7 @@ struct Prepared {
     track: Track,
     deck: Arc<Deck>,
     route: Option<Source>,
+    copy: Option<Track>,
     quality: Option<String>,
     armed: bool,
 }
@@ -696,6 +699,7 @@ impl Player {
         c.view.duration_ms = track.duration_ms;
         c.view.error = None;
         c.view.route = None;
+        c.view.copy = None;
         c.view.quality = None;
         c.view.buffered = 0.0;
         self.begin(c, &track);
@@ -765,6 +769,7 @@ impl Player {
                     c.failed_in_a_row = 0;
                     c.view.status = if c.engine.shared.paused.load(Ordering::Relaxed) { Status::Paused } else { Status::Playing };
                     c.view.route = candidate.via.as_ref().map(|t| t.source);
+                    c.view.copy = candidate.via.clone();
                     c.view.quality = candidate.quality.clone().or_else(|| Some(deck.codec.lock().unwrap().clone()).filter(|s| !s.is_empty()));
                     let known = c.view.current().map(|t| t.duration_ms).unwrap_or(0.0);
                     c.view.duration_ms = length_of(deck.duration_ms(), known.max(c.view.duration_ms));
@@ -921,7 +926,7 @@ impl Player {
             let crossfade = state::get().settings.read().unwrap().crossfade;
             let armed = crossfade <= 0.0;
             c.engine.arm(spare, armed);
-            c.prepared = Some(Prepared { index, track, deck, route: via.map(|t| t.source), quality, armed });
+            c.prepared = Some(Prepared { index, track, deck, route: via.as_ref().map(|t| t.source), copy: via, quality, armed });
         });
     }
 
@@ -959,6 +964,7 @@ impl Player {
         c.view.duration_ms = length_of(p.deck.duration_ms(), p.track.duration_ms);
         c.view.error = None;
         c.view.route = p.route;
+        c.view.copy = p.copy;
         c.view.quality = p.quality.or_else(|| Some(p.deck.codec.lock().unwrap().clone()).filter(|s| !s.is_empty()));
         c.failed_in_a_row = 0;
         self.begin(c, &p.track);
@@ -978,6 +984,7 @@ impl Player {
         c.view.duration_ms = length_of(p.deck.duration_ms(), p.track.duration_ms);
         c.view.error = None;
         c.view.route = p.route;
+        c.view.copy = p.copy;
         c.view.quality = p.quality.or_else(|| Some(p.deck.codec.lock().unwrap().clone()).filter(|s| !s.is_empty()));
         self.begin(c, &p.track);
     }

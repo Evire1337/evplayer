@@ -109,6 +109,38 @@ pub fn version_tags(title: &str) -> HashSet<&'static str> {
     out
 }
 
+/// what each version is called on screen, in the order the tags are listed
+const VERSION_LABELS: &[(&str, &str)] = &[
+    ("remix", "ремикс"), ("cover", "кавер"), ("sped", "speed up"), ("slowed", "slowed"), ("reverb", "reverb"), ("nightcore", "nightcore"),
+    ("live", "live"), ("instrumental", "минус"), ("karaoke", "караоке"), ("8d", "8D"), ("edit", "edit"), ("bootleg", "bootleg"),
+    ("flip", "flip"), ("mashup", "мэшап"), ("phonk", "phonk"), ("vip", "VIP"), ("rework", "rework"), ("bass", "bass boost"),
+    ("acoustic", "акустика"), ("mix", "mix"), ("parody", "пародия"), ("tribute", "трибьют"), ("imitation", "в стиле"),
+    ("lofi", "lo-fi"), ("tiktok", "tiktok"), ("fanmade", "фан-версия"),
+];
+
+/// The marks a song's title carries that make it not the original — "ремикс", "speed up",
+/// "кавер" — in a fixed order, for the label next to its name. Kept per title: rows ask every
+/// time they are drawn.
+pub fn version_labels(title: &str) -> Vec<&'static str> {
+    thread_local! {
+        static SEEN: std::cell::RefCell<std::collections::HashMap<String, Vec<&'static str>>> = std::cell::RefCell::new(Default::default());
+    }
+    SEEN.with(|seen| {
+        if let Some(v) = seen.borrow().get(title) {
+            return v.clone();
+        }
+        let tags = version_tags(title);
+        let v: Vec<&'static str> = VERSION_LABELS.iter().filter(|(tag, _)| tags.contains(tag)).map(|(_, label)| *label).collect();
+        let mut s = seen.borrow_mut();
+        // a long session sees many titles: the memory starts over rather than grows
+        if s.len() > 2000 {
+            s.clear();
+        }
+        s.insert(title.to_string(), v.clone());
+        v
+    })
+}
+
 fn artist_names(t: &Track) -> String {
     t.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(" ")
 }
@@ -350,6 +382,14 @@ mod tests {
         assert!(match_score(&w, &good) > match_score(&w, &remix));
         assert_eq!(best_match(&w, &[other.clone(), remix, good], 0.72, false, false).unwrap().id, "good");
         assert!(best_match(&w, &[other], 0.72, false, false).is_none());
+    }
+
+    #[test]
+    fn names_the_versions_a_title_marks() {
+        assert_eq!(version_labels("He's back [Phonk Remix]"), ["ремикс", "phonk"]);
+        assert_eq!(version_labels("Супермаркет (speed up)"), ["speed up"]);
+        assert!(version_labels("Song (Original Mix)").is_empty());
+        assert!(version_labels("Школа не нужна").is_empty());
     }
 
     #[test]
