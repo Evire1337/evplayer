@@ -186,6 +186,38 @@ fn net_the_length_is_the_whole_song() {
     assert!(checked > 0);
 }
 
+/// What plays for a song whose own upload does not: the copy chosen, next to the candidates
+/// (`cargo test --release net_which_copy -- --ignored --nocapture`, the query in EVP_Q)
+#[test]
+#[ignore]
+fn net_which_copy_plays() {
+    init();
+    let q = std::env::var("EVP_Q").unwrap_or_else(|_| "пошлая молли школа не нужна".into());
+    let (tracks, _) = soundcloud::search(&q).expect("search");
+    let st = crate::state::get();
+    let r = crate::player::resolve::Resolver::new(crate::library::Library::new(st.data_dir.clone()), crate::offline::Offline::new(&st.data_dir));
+    use crate::player::resolve::Resolve;
+    for t in tracks.iter().take(4) {
+        println!("\nSC «{}» — {} ({:.0} s, preview {}, {})", t.title, t.artist_line(), t.duration_ms / 1000.0, t.preview, t.id);
+        let cands: Vec<_> = r.clone().candidates(t, Arc::new(AtomicBool::new(false))).take(3).collect();
+        for c in cands {
+            match c {
+                Ok(c) => println!("   plays: {:?} via {:?}", c.quality, c.via.map(|v| format!("{} — {} ({:.0} s) {}", v.artist_line(), v.title, v.duration_ms / 1000.0, v.id))),
+                Err(e) => println!("   failed: {e}"),
+            }
+        }
+    }
+    use crate::player::matching::{is_same_recording, search_query_for, simplify, split_title};
+    for t in tracks.iter().take(4) {
+        for q in [search_query_for(t), simplify(&split_title(t).0)] {
+            println!("\nfor «{}» ({:.0} s), YouTube «{q}»:", t.title, t.duration_ms / 1000.0);
+            for y in youtube::search(&q).unwrap_or_default().iter().take(8) {
+                println!("   {} {} — {} ({:.0} s)", if is_same_recording(t, y, true) { "TAKEN " } else { "      " }, y.artist_line(), y.title, y.duration_ms / 1000.0);
+            }
+        }
+    }
+}
+
 /// Whole songs decode to their end in every format (into memory, nothing is played): a song
 /// that stopped after its first piece showed only as "plays 10 seconds and skips".
 #[test]
