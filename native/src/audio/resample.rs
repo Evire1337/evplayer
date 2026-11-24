@@ -3,8 +3,12 @@
 //! rate. A windowed-sinc interpolator with a variable step does it; when the rates match and
 //! the speed is 1 the samples pass through untouched, which costs next to nothing.
 
-/// input frames each output frame is made from
-const TAPS: usize = 16;
+/// input frames each output frame is made from: with the Kaiser window below, flat to about
+/// 20.9 kHz for 44.1 kHz songs and about -80 dB for what must not fold back (16 taps lost half
+/// a dB at 18 kHz). Costs some 9 million multiply-adds a second, a sliver of one core.
+const TAPS: usize = 96;
+/// the Kaiser window's shape: about 80 dB between what passes and what is stopped
+const KAISER_BETA: f32 = 8.0;
 /// steps between two input frames in the kernel table
 const PHASES: usize = 256;
 
@@ -20,6 +24,19 @@ pub struct Resampler {
     cutoff: f32,
 }
 
+/// the modified Bessel function I0, by its series (the Kaiser window is made of it)
+fn bessel_i0(x: f32) -> f32 {
+    let (mut sum, mut term, q) = (1.0f64, 1.0f64, (x as f64 / 2.0).powi(2));
+    for k in 1..40 {
+        term *= q / (k * k) as f64;
+        sum += term;
+        if term < 1e-12 * sum {
+            break;
+        }
+    }
+    sum as f32
+}
+
 fn kernel_table(cutoff: f32) -> Vec<f32> {
     let half = TAPS as f32 / 2.0;
     let mut t = vec![0f32; (PHASES + 1) * TAPS];
@@ -31,9 +48,9 @@ fn kernel_table(cutoff: f32) -> Vec<f32> {
             // distance of input frame k from the output point (which is `frac` past frame half-1)
             let x = k as f32 - (half - 1.0) - frac;
             let sinc = if x.abs() < 1e-6 { 1.0 } else { (std::f32::consts::PI * x * cutoff).sin() / (std::f32::consts::PI * x * cutoff) };
-            // Blackman window over the taps
+            // Kaiser window over the taps
             let n = (x + half) / TAPS as f32;
-            let win = if (0.0..=1.0).contains(&n) { 0.42 - 0.5 * (2.0 * std::f32::consts::PI * n).cos() + 0.08 * (4.0 * std::f32::consts::PI * n).cos() } else { 0.0 };
+            let win = if (0.0..=1.0).contains(&n) { bessel_i0(KAISER_BETA * (1.0 - (2.0 * n - 1.0).powi(2)).max(0.0).sqrt()) / bessel_i0(KAISER_BETA) } else { 0.0 };
             *w = sinc * win;
             sum += *w;
         }
@@ -81,7 +98,7 @@ impl Resampler {
         let frames = out.len() / 2;
         // reading faster than the source rate: the kernel is narrowed so nothing above the
         // new Nyquist folds back as noise
-        let cutoff = if ratio > 1.0 { (0.97 / ratio).max(0.1) as f32 } else { 1.0 };
+        let cutoff = if ratio > 1.0 { (0.95 / ratio).max(0.1) as f32 } else { 1.0 };
         if (cutoff - self.cutoff).abs() > 0.01 {
             self.cutoff = cutoff;
             self.table = kernel_table(cutoff);
@@ -147,13 +164,37 @@ mod tests {
 
     #[test]
     fn passes_samples_through_at_the_same_rate() {
-        let input: Vec<f32> = (0..100).map(|i| (i as f32 * 0.1).sin()).collect();
-        let out = run(1.0, &input, 80);
+        let input: Vec<f32> = (0..400).map(|i| (i as f32 * 0.1).sin()).collect();
+        let out = run(1.0, &input, 300);
         // the same samples, in step (the window looks ahead instead of lagging)
         for k in 0..60 {
             let want = input[k];
             assert!((out[2 * k] - want).abs() < 1e-6, "{k}: {} vs {want}", out[2 * k]);
         }
+    }
+
+    /// the level of a tone after resampling, dB (the start, where the window fills, left out)
+    fn level_db(from: f64, to: f64, freq: f64) -> f64 {
+        let n = from as usize;
+        let input: Vec<f32> = (0..n).map(|i| (2.0 * std::f64::consts::PI * freq * i as f64 / from).sin() as f32 * 0.5).collect();
+        let out = run(from / to, &input, (to as usize) - 200);
+        let tail: Vec<f64> = out.iter().step_by(2).skip(2000).map(|s| *s as f64).collect();
+        let rms = (tail.iter().map(|s| s * s).sum::<f64>() / tail.len() as f64).sqrt();
+        20.0 * (rms / (0.5 / 2f64.sqrt())).log10()
+    }
+
+    #[test]
+    fn keeps_the_highs_and_lets_nothing_fold_back() {
+        // 44.1 kHz songs (most AAC and mp3) on a 48 kHz card: flat to 20 kHz
+        for f in [1000.0, 10_000.0, 16_000.0, 18_000.0, 20_000.0] {
+            let db = level_db(44_100.0, 48_000.0, f);
+            println!("44.1 -> 48 kHz, {f} Hz: {db:+.2} dB");
+            assert!(db.abs() < 0.25, "{f} Hz: {db:+.2} dB");
+        }
+        // a 23 kHz tone has no place at 44.1 kHz: it must vanish, not fold to 21 kHz
+        let alias = level_db(48_000.0, 44_100.0, 23_000.0);
+        println!("48 -> 44.1 kHz, 23000 Hz: {alias:+.1} dB");
+        assert!(alias < -60.0, "{alias:+.1} dB");
     }
 
     #[test]
@@ -176,7 +217,8 @@ mod tests {
         let mut out = vec![0f32; 200];
         let mut given = 0;
         let n = r.process(1.5, &mut out, || {
-            if given < 30 {
+            // more than the window needs before its first frame, fewer than the 100 asked
+            if given < TAPS + 60 {
                 given += 1;
                 Some([1.0, 1.0])
             } else {
