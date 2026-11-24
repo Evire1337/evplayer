@@ -284,10 +284,32 @@ pub fn transcodings(raw: &Value) -> Vec<Transcoding> {
         .collect()
 }
 
-/// best first: the better encoding (Go+), a single file before HLS, mp3 before aac before opus
+/// SoundCloud's adaptive playlist ("abr_sq", "audio/mpegurl"): a list of other playlists, which
+/// SoundCloud answers with 404 — tried last, so a song does not start with a dead request
+fn is_adaptive(t: &Transcoding) -> bool {
+    t.preset.to_lowercase().starts_with("abr") || t.mime.contains("mpegurl")
+}
+
+/// how many kbit/s a format carries: from its preset ("aac_160k"), else what SoundCloud uses for
+/// that codec (mp3 128, Opus 64)
+fn kbps_of(t: &Transcoding) -> u32 {
+    if let Some(c) = regex::Regex::new(r"(?i)(\d{2,3})k").ok().and_then(|r| r.captures(&t.preset)) {
+        return c[1].parse().unwrap_or(0);
+    }
+    if t.mime.contains("opus") || t.mime.contains("ogg") {
+        64
+    } else if t.mime.contains("mp4") || t.mime.contains("aac") {
+        160
+    } else {
+        128
+    }
+}
+
+/// Best sound first: the better encoding (Go+), then by bitrate (AAC 160 over mp3 128 over AAC 96
+/// over Opus 64 — the native decoder plays them all, so the browser's "mp3 first" does not
+/// apply), a single file before HLS at the same rate; the adaptive playlist last.
 pub fn rank(mut list: Vec<Transcoding>) -> Vec<Transcoding> {
-    let r = |t: &Transcoding| (if t.quality == "hq" { 0 } else { 100 }) + (if t.protocol == "progressive" { 0 } else { 10 }) + (if t.mime.contains("mpeg") { 0 } else if t.mime.contains("mp4") { 1 } else { 2 });
-    list.sort_by_key(r);
+    list.sort_by_key(|t| (is_adaptive(t), t.quality != "hq", std::cmp::Reverse(kbps_of(t)), t.protocol != "progressive"));
     list
 }
 
@@ -383,6 +405,20 @@ mod tests {
         let q = rank(transcodings(&raw));
         assert_eq!(quality_of(&q[0]), "aac 160 кбит/с");
         assert_eq!(quality_of(&q[1]), "mp3 ~128 кбит/с");
+    }
+
+    #[test]
+    fn the_best_sound_first_and_the_adaptive_playlist_last() {
+        // what SoundCloud lists for most songs today
+        let raw = json!({ "media": { "transcodings": [
+            { "url": "abr", "preset": "abr_sq", "quality": "sq", "format": { "protocol": "hls", "mime_type": "audio/mpegurl" } },
+            { "url": "aac160", "preset": "aac_160k", "quality": "sq", "format": { "protocol": "hls", "mime_type": "audio/mp4; codecs=\"mp4a.40.2\"" } },
+            { "url": "aac96", "preset": "aac_96k", "quality": "lq", "format": { "protocol": "hls", "mime_type": "audio/mp4; codecs=\"mp4a.40.2\"" } },
+            { "url": "mp3", "preset": "mp3_1_0", "format": { "protocol": "progressive", "mime_type": "audio/mpeg" } },
+            { "url": "opus", "preset": "opus_0_0", "format": { "protocol": "hls", "mime_type": "audio/ogg; codecs=\"opus\"" } }
+        ] } });
+        let order: Vec<String> = rank(transcodings(&raw)).into_iter().map(|t| t.url).collect();
+        assert_eq!(order, ["aac160", "mp3", "aac96", "opus", "abr"]);
     }
 
     #[test]

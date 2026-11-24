@@ -550,3 +550,39 @@ fn net_artist_page_plays_uncensored() {
         println!("   {} {} ({:.0} s){}", if t.explicit { "E" } else { " " }, t.title, t.duration_ms / 1000.0, twin.map(|x| format!("  -> uncensored {} ({:.0} s)", x.id, x.duration_ms / 1000.0)).unwrap_or_default());
     }
 }
+
+/// Every format SoundCloud lists for the songs of a query (EVP_Q), in the order they are tried,
+/// with the quality each is shown as
+#[test]
+#[ignore]
+fn net_soundcloud_formats_in_order() {
+    init();
+    let q = std::env::var("EVP_Q").unwrap_or_else(|_| "пошлая молли".into());
+    let (tracks, _) = soundcloud::search(&q).expect("search");
+    for t in tracks.iter().take(5) {
+        println!("«{}» — {}", t.title, t.artist_line());
+        for f in soundcloud::streams(&t.id).unwrap_or_default() {
+            println!("   {:<11} {:<44} preset={:<12} quality={:<3} -> {}", f.protocol, f.mime, f.preset, f.quality, soundcloud::quality_of(&f));
+        }
+    }
+}
+
+/// What SoundCloud's adaptive ("abr") playlist holds: its variants and their bitrates
+#[test]
+#[ignore]
+fn net_soundcloud_abr_playlist() {
+    init();
+    let (tracks, _) = soundcloud::search("пошлая молли молли").expect("search");
+    let t = &tracks[0];
+    for f in soundcloud::streams(&t.id).unwrap_or_default().into_iter().filter(|f| f.preset.starts_with("abr")) {
+        match soundcloud::stream_url(&f) {
+            Ok(s) => {
+                let body = crate::services::http::get_text(&s.url).unwrap_or_else(|e| e);
+                for l in body.lines().take(14) {
+                    println!("   {}", if l.len() > 140 { &l[..140] } else { l });
+                }
+            }
+            Err(e) => println!("   stream_url: {e}"),
+        }
+    }
+}
