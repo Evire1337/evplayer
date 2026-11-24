@@ -274,7 +274,8 @@ impl App {
             ("listPlus", crate::i18n::t("Добавить в плейлист"), false, A::AddTo),
             ("chart", crate::i18n::t("Статистика прослушиваний"), false, A::Stats),
         ];
-        let artist = track.artists.first().filter(|a| a.id.starts_with("scu:") || a.id.starts_with("yta:")).cloned();
+        // the first artist, on a service or by name (artistTarget)
+        let artist = track.artists.first().cloned();
         if let Some(a) = &artist {
             items.push(("user", format!("{}: {}", crate::i18n::t("Исполнитель"), a.name), false, A::Artist));
         }
@@ -409,7 +410,7 @@ impl App {
             Some(A::Stats) => self.dialog = Some(Dialog::TrackStats { track: track.clone(), range: 1 }),
             Some(A::Artist) => {
                 if let Some(a) = &artist {
-                    self.go(Page::Artist(a.id.clone()));
+                    self.go(Page::Artist(artist::artist_page_id(a)));
                 }
             }
             Some(A::Download) => {

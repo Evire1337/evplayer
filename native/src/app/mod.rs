@@ -505,6 +505,11 @@ impl App {
                 return;
             }
         }
+        // "artist:scu:123" or "artist:name:Кино" opens that artist
+        if let Some(id) = name.strip_prefix("artist:") {
+            self.page = Page::Artist(id.to_string());
+            return;
+        }
         // "smart:on_repeat" opens that smart list
         if name.starts_with("smart:") {
             self.page = Page::Playlist(name.to_string());

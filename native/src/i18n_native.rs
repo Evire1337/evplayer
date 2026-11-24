@@ -2,6 +2,11 @@
 //! src/i18n/en.ts and enMore.ts). Russian text → English, as in en.ts.
 
 pub const NATIVE: &[(&str, &str)] = &[
+    ("Радио", "Radio"),
+    ("в ваших файлах", "in your files"),
+    ("вы:", "you:"),
+    ("поиск", "search"),
+    ("у вас", "you have"),
     ("В списке песен:", "Songs in the list:"),
     ("Вставьте код EvPlayer (строка с EVP) — например, скопированный из чьих-то «Понравившихся», — или ссылку на плейлист. Треки добавятся к вашим лайкам, повторы пропускаются.", "Paste an EvPlayer code (the line starting with EVP) — for example, copied from someone's liked songs — or a playlist link. The songs are added to your likes; repeats are skipped."),
     ("Вставьте ссылку на плейлист, альбом или трек из Spotify, Яндекс Музыки, YouTube / YouTube Music, SoundCloud или Deezer, код EvPlayer (строка с EVP) — или просто список песен, по одной на строку: «Исполнитель — Название». Из ВКонтакте: откройте плейлист или «Мою музыку» на vk.com, выделите треки мышью, скопируйте и вставьте сюда.", "Paste a link to a playlist, album or song from Spotify, Yandex Music, YouTube / YouTube Music, SoundCloud or Deezer, an EvPlayer code (the line starting with EVP) — or just a list of songs, one per line: \"Artist — Title\". From VK: open a playlist or \"My music\" on vk.com, select the songs with the mouse, copy and paste them here."),

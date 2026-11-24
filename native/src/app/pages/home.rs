@@ -387,9 +387,8 @@ impl App {
                 let line = format!("{} · {}", crate::i18n::t(&plays_word(a.plays)), crate::i18n::t(&crate::stats::format_time(a.ms)));
                 let g = widgets::clipped(ui, &line, theme::body(12.5), theme::ink2(), tw);
                 ui.painter().galley(pos2(x, rect.center().y + 2.0), g, theme::ink2());
-                // the artist's page, for the artists a service knows
-                if r.clicked() && (a.id.starts_with("scu:") || a.id.starts_with("yta:")) {
-                    self.go(Page::Artist(a.id.clone()));
+                if r.clicked() {
+                    self.go(Page::Artist(super::artist::artist_page_id(&crate::model::Artist { id: a.id.clone(), name: a.name.clone() })));
                 }
             }
         });
@@ -397,7 +396,7 @@ impl App {
 }
 
 /// "1 прослушивание", "3 прослушивания", "5 прослушиваний"
-fn plays_word(n: u32) -> String {
+pub fn plays_word(n: u32) -> String {
     let (m10, m100) = (n % 10, n % 100);
     let w = if m10 == 1 && m100 != 11 { "прослушивание" } else if (2..=4).contains(&m10) && !(12..=14).contains(&m100) { "прослушивания" } else { "прослушиваний" };
     format!("{n} {w}")
