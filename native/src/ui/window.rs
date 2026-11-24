@@ -396,7 +396,14 @@ impl ApplicationHandler<Event> for Shell {
                 self.dirty = true;
                 window.request_redraw();
             }
-            WindowEvent::DroppedFile(path) => self.app.dropped_file(path),
+            WindowEvent::DroppedFile(path) => {
+                self.app.dropped_file(path);
+                window.request_redraw();
+            }
+            WindowEvent::HoveredFile(_) | WindowEvent::HoveredFileCancelled => {
+                self.app.dragging_files = matches!(event, WindowEvent::HoveredFile(_));
+                window.request_redraw();
+            }
             _ => {}
         }
         // minimized or back, looked at after every event: winit may still call the window

@@ -1,4 +1,4 @@
-//! Библиотека: "Любимое", your files and your playlists as cards (src/pages/LibraryPage.tsx),
+//! Библиотека: "Понравившиеся", your files and your playlists as cards (src/pages/LibraryPage.tsx),
 //! and a playlist of yours with its songs (PlaylistPage.tsx).
 
 use egui::{pos2, vec2, Align2, Rect, Ui};
@@ -156,7 +156,7 @@ impl App {
         egui::ScrollArea::vertical().id_salt("library").auto_shrink([false, false]).show(ui, |ui| {
             let per_row = (((ui.available_width() - 8.0) + 16.0) / (w + 16.0)).floor().max(1.0) as usize;
             let mut cards: Vec<(Option<String>, String, String, Page, &str)> = vec![
-                (None, crate::i18n::t("Любимое"), crate::i18n::tracks(lib.likes.len()), Page::Playlist("likes".into()), ic::HEART_FILL),
+                (None, crate::i18n::t("Понравившиеся"), crate::i18n::tracks(lib.likes.len()), Page::Playlist("likes".into()), ic::HEART_FILL),
                 (None, crate::i18n::t("Мои файлы"), crate::i18n::t("MP3, FLAC и другие с этого компьютера"), Page::Files, ic::FOLDER),
             ];
             let saved = self.downloads.saved().len();
@@ -415,7 +415,7 @@ impl App {
             }
             Some("cover") => {
                 if let Some(path) = crate::dialogs::open_file("Картинки", "png;*.jpg;*.jpeg;*.webp;*.bmp;*.gif") {
-                    match square_data_url(&path) {
+                    match square_data_url(&path, 384) {
                         Some(url) => {
                             let i = id.to_string();
                             state::get().update_library(|l| {
@@ -446,18 +446,19 @@ impl App {
     }
 }
 
-/// a picture as the page makes a playlist's own cover: the middle square, 384 px, JPEG 86 %
-fn square_data_url(path: &std::path::Path) -> Option<String> {
+/// a picture as the page makes a cover (fileToSquareDataUrl): the middle square, `size` px
+/// (384 for a playlist, 600 for a file's own), JPEG 86 %
+pub fn square_data_url(path: &std::path::Path, size: u32) -> Option<String> {
     let img = image::open(path).ok()?;
     let side = img.width().min(img.height());
-    let cut = img.crop_imm((img.width() - side) / 2, (img.height() - side) / 2, side, side).resize_exact(384, 384, image::imageops::FilterType::Lanczos3).into_rgb8();
+    let cut = img.crop_imm((img.width() - side) / 2, (img.height() - side) / 2, side, side).resize_exact(size, size, image::imageops::FilterType::Lanczos3).into_rgb8();
     let mut out = Vec::new();
     image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, 86).encode_image(&cut).ok()?;
     use base64::Engine;
     Some(format!("data:image/jpeg;base64,{}", base64::engine::general_purpose::STANDARD.encode(out)))
 }
 
-/// a rounded card filled with a diagonal blend of two colours (the "Любимое" and files cards)
+/// a rounded card filled with a diagonal blend of two colours (the "Понравившиеся" and files cards)
 pub fn gradient(ui: &Ui, rect: Rect, a: egui::Color32, b: egui::Color32) {
     let r = (theme::R_CARD as f32).min(rect.width() / 2.0);
     let color_at = |p: egui::Pos2| {

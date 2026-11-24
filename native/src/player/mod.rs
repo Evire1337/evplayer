@@ -589,6 +589,21 @@ impl Player {
         self.changed();
     }
 
+    /// a song's details changed (its tags edited): the queue's copies show them too; what is
+    /// playing goes on as it is
+    pub fn refresh_track(&self, fresh: &Track) {
+        let mut c = self.core.lock().unwrap();
+        let mut any = false;
+        for t in c.view.queue.iter_mut().filter(|t| t.id == fresh.id) {
+            *t = fresh.clone();
+            any = true;
+        }
+        drop(c);
+        if any {
+            self.changed();
+        }
+    }
+
     pub fn clear_upcoming(&self) {
         if self.steered(PlayerAction::ClearUpcoming) {
             return;

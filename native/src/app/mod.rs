@@ -88,6 +88,8 @@ pub struct Menu {
     pub queue_index: Option<usize>,
     /// "Добавить в плейлист" has its list open at the side
     pub sub: bool,
+    /// opened on "Мои файлы": the file can be taken out of EvPlayer from here
+    pub files_page: bool,
 }
 
 /// toasts from other threads (a copy-out that finished), shown on the next frame
@@ -143,6 +145,9 @@ pub enum Dialog {
     TrackStats { track: Track, range: usize },
     /// Spotify's data archive: the lists found in it and which are ticked
     SpotifyExport { lists: Vec<crate::spotify_export::List>, chosen: Vec<bool>, error: String },
+    /// "Теги и обложка" of one of your files (tagEditor.tsx): the fields as typed, and the
+    /// cover: unchanged (None), a new picture (Some(Some(data url))) or taken away (Some(None))
+    Tags { id: String, title: String, artists: String, album: String, cover: Option<Option<String>> },
 }
 
 /// an import running (or just finished): its panel at the bottom
@@ -182,6 +187,12 @@ pub struct App {
     pub resolver: Arc<crate::player::resolve::Resolver>,
     pub downloads: Arc<crate::downloads::Downloads>,
     pub keys: keys::Keys,
+    /// the folders of "Мои файлы" watched: new files show up, deleted ones go
+    pub watcher: Option<Arc<crate::library::Watcher>>,
+    /// files are being dragged over the window (the files page lights up)
+    pub dragging_files: bool,
+    /// paths dropped on the window since the last frame
+    dropped: Vec<PathBuf>,
 }
 
 /// what the app keeps of the window (to drag it, minimize it, know if it is maximized)
@@ -219,6 +230,9 @@ impl App {
         let cache = (!st.settings.read().unwrap().no_cache).then(|| cache_dir().join("covers"));
         let images = Images::new(cache, data_dir.join("local-covers"));
         let keys = keys::Keys::new();
+        // as the Tauri build: the watched folders catch up with what changed while it was
+        // closed, then follow changes (one thread asleep on a channel; nothing for a picture)
+        let watcher = (!std::env::args().any(|a| a == "--snapshot")).then(|| crate::library::Watcher::start(library.clone(), crate::events::repaint));
         Self {
             data_dir,
             player,
@@ -256,6 +270,9 @@ impl App {
             },
             resolver,
             keys,
+            watcher,
+            dragging_files: false,
+            dropped: Vec::new(),
         }
     }
 
@@ -334,15 +351,48 @@ impl App {
         crate::system::quit();
     }
 
+    /// files or a folder dropped on the window, from Explorer: added (a folder becomes watched)
+    /// (Windows sends one event per path: they are gathered and added together on the next frame)
     pub fn dropped_file(&mut self, path: PathBuf) {
+        self.dragging_files = false;
+        self.dropped.push(path);
+    }
+
+    /// Adds files and folders to "Мои файлы" in the background, as `add_paths` of the Tauri
+    /// build: a folder is remembered and watched; the result comes as a toast (localFiles.ts).
+    pub fn add_local(&self, paths: Vec<PathBuf>) {
+        if paths.is_empty() {
+            return;
+        }
         let lib = self.library.clone();
+        let watcher = self.watcher.clone();
         std::thread::spawn(move || {
-            let mut files = Vec::new();
-            crate::library::Library::collect_audio_files(&[path], 3, &mut files);
-            let _ = lib.add(&files);
+            let (result, folders) = lib.add(&paths);
+            if let Some(w) = &watcher {
+                for f in &folders {
+                    w.watch(f);
+                }
+            }
+            let (added, skipped) = (result.added.len(), result.skipped);
+            if added > 0 {
+                let mut text = format!("{} {added}", crate::i18n::t("Добавлено файлов:"));
+                if skipped > 0 {
+                    text.push_str(&format!(", {} {skipped}", crate::i18n::t("пропущено:")));
+                }
+                toast_later(text);
+            } else if skipped > 0 || folders.is_empty() {
+                toast_later(crate::i18n::t("В выбранном нет аудиофайлов"));
+            }
             crate::events::repaint();
         });
-        self.go(Page::Files);
+    }
+
+    /// "Перестать следить" for a folder: its songs stay, new ones no longer come
+    pub fn unwatch_folder(&self, folder: &str) {
+        self.library.unwatch(folder);
+        if let Some(w) = &self.watcher {
+            w.unwatch(folder);
+        }
     }
 
     pub fn action(&mut self, a: Action) {
@@ -434,7 +484,7 @@ impl App {
             self.page = Page::Playlist("likes".into());
             if let Some(t) = first {
                 if name == "menu" {
-                    self.menu = Some(Menu { track: t, at: pos2(700.0, 260.0), playlist_item: None, queue_index: None, sub: true });
+                    self.menu = Some(Menu { track: t, at: pos2(700.0, 260.0), playlist_item: None, queue_index: None, sub: true, files_page: false });
                 } else {
                     self.dialog = Some(Dialog::TrackStats { track: t, range: 1 });
                 }
@@ -602,9 +652,9 @@ impl App {
         state::get().library.read().unwrap().is_liked(id)
     }
 
+    /// the heart: as in the Tauri build, the heart itself shows the change (no toast)
     pub fn toggle_like(&mut self, t: &Track) {
-        let liked = state::get().update_library(|l| l.toggle_like(t));
-        self.toast(if liked { "Добавлено в «Любимое»" } else { "Убрано из «Любимого»" });
+        state::get().update_library(|l| l.toggle_like(t));
     }
 
     /// a song in a list was pressed: the list becomes the queue
@@ -621,6 +671,11 @@ impl App {
         let ctx = ui.ctx().clone();
         self.images.begin_frame(&ctx);
         self.view = self.player.view();
+        if !self.dropped.is_empty() {
+            let paths = std::mem::take(&mut self.dropped);
+            self.add_local(paths);
+            self.go(Page::Files);
+        }
         keys::Keys::window_keys(&ctx, self);
         if matches!(self.view.status, Status::Playing | Status::Loading) {
             ctx.request_repaint_after(TICK_PLAYING);
@@ -886,7 +941,7 @@ impl App {
             let heart = Rect::from_min_size(pos2(x, left.center().y - 20.0), vec2(40.0, 40.0));
             let liked = self.is_liked(&t.id);
             let mut hui = ui.new_child(egui::UiBuilder::new().max_rect(heart));
-            if widgets::tool_button(&mut hui, if liked { ic::HEART_FILL } else { ic::HEART }, false, if liked { "Убрать из «Любимого»" } else { "Нравится" }).clicked() {
+            if widgets::tool_button(&mut hui, if liked { ic::HEART_FILL } else { ic::HEART }, false, if liked { "Убрать из понравившихся" } else { "Нравится" }).clicked() {
                 let t = t.clone();
                 self.toggle_like(&t);
             }

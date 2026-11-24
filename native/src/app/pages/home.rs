@@ -84,7 +84,7 @@ impl App {
                         "playlist" => {
                             let id = s.source.id.clone().unwrap_or_default();
                             if id == "likes" {
-                                (crate::i18n::t("Любимое"), crate::i18n::tracks(lib.likes.len()), lib.likes.first().and_then(|l| crate::ui::images::artwork_of(&l.track)), Page::Playlist(id))
+                                (crate::i18n::t("Понравившиеся"), crate::i18n::tracks(lib.likes.len()), lib.likes.first().and_then(|l| crate::ui::images::artwork_of(&l.track)), Page::Playlist(id))
                             } else if let Some(p) = lib.playlists.iter().find(|p| p.id == id) {
                                 let cover = p.icon.clone().or_else(|| p.items.first().and_then(|i| crate::ui::images::artwork_of(&i.track)));
                                 (p.title.clone(), format!("{} · {}", crate::i18n::t("Плейлист"), crate::i18n::tracks(p.items.len())), cover, Page::Playlist(id))
@@ -236,7 +236,7 @@ impl App {
                 self.toggle_like(t);
             }
             if out.menu {
-                self.menu = Some(crate::app::Menu { track: t.clone(), at: ui.ctx().pointer_latest_pos().unwrap_or(out.response.rect.center()), playlist_item: None, queue_index: None, sub: false });
+                self.menu = Some(crate::app::Menu { track: t.clone(), at: ui.ctx().pointer_latest_pos().unwrap_or(out.response.rect.center()), playlist_item: None, queue_index: None, sub: false, files_page: false });
             }
         }
     }

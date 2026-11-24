@@ -2,6 +2,16 @@
 //! src/i18n/en.ts and enMore.ts). Russian text → English, as in en.ts.
 
 pub const NATIVE: &[(&str, &str)] = &[
+    ("В выбранном нет аудиофайлов", "No audio files in what you picked"),
+    ("Выбрать обложку", "Choose a cover"),
+    ("Добавлено файлов:", "Files added:"),
+    ("Исполнители (через запятую)", "Artists (separated by commas)"),
+    ("Неизвестный исполнитель", "Unknown artist"),
+    ("Теги и обложка", "Tags and cover"),
+    ("бит", "bit"),
+    ("кГц", "kHz"),
+    ("кбит/с", "kbps"),
+    ("пропущено:", "skipped:"),
     (" · следит", " · following"),
     (". Без входа Spotify показывает по ссылке только первые 100 треков", ". Without signing in, Spotify shows only the first 100 songs of a link"),
     ("1. Нужен аккаунт с Spotify Premium (ваш или друга): только им Spotify разрешает Web API. Откройте developer.spotify.com/dashboard.", "1. You need a Spotify Premium account (yours or a friend's): only those may use the Web API. Open developer.spotify.com/dashboard."),

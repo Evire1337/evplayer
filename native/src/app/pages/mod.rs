@@ -33,6 +33,8 @@ pub struct Pages {
     pub artist: artist::ArtistState,
     pub collection: artist::CollectionState,
     pub playlist_filter: String,
+    /// Мои файлы: "Поиск по файлам"
+    pub files_filter: String,
     pub settings_tab: usize,
     pub sound_open: bool,
     pub volume_open: bool,
@@ -96,7 +98,7 @@ impl App {
                 if out.menu {
                     let at = ui.ctx().pointer_latest_pos().unwrap_or(out.response.rect.center());
                     let item = playlist.and_then(|(pid, items)| items.get(i).map(|item| (pid.to_string(), item.clone())));
-                    self.menu = Some(Menu { track: t.clone(), at, playlist_item: item, queue_index: None, sub: false });
+                    self.menu = Some(Menu { track: t.clone(), at, playlist_item: item, queue_index: None, sub: false, files_page: false });
                 }
             }
         });
@@ -115,7 +117,7 @@ impl App {
                         self.play_list(tracks, i, None);
                     }
                     if r.secondary_clicked() {
-                        self.menu = Some(Menu { track: t.clone(), at: ui.ctx().pointer_latest_pos().unwrap_or(r.rect.center()), playlist_item: None, queue_index: None, sub: false });
+                        self.menu = Some(Menu { track: t.clone(), at: ui.ctx().pointer_latest_pos().unwrap_or(r.rect.center()), playlist_item: None, queue_index: None, sub: false, files_page: false });
                     }
                 }
             });
@@ -153,6 +155,7 @@ impl App {
         let item = m.playlist_item.clone();
         let queue_index = m.queue_index;
         let mut sub_open = m.sub;
+        let files_page = m.files_page;
         #[derive(Clone, Copy, PartialEq)]
         enum A {
             Next,
@@ -169,6 +172,8 @@ impl App {
             Reveal,
             Unqueue,
             Unlist,
+            Tags,
+            Unfile,
         }
         let together = crate::jam::engine::get().is_some_and(|j| j.view().status == crate::jam::engine::JamStatus::Live);
         let liked = self.is_liked(&track.id);
@@ -196,6 +201,7 @@ impl App {
             items.push(("disc", crate::i18n::t(if track.source == crate::model::Source::Youtube { "Открыть на YouTube" } else { "Открыть на SoundCloud" }), false, A::Open));
         }
         if track.source == crate::model::Source::Local {
+            items.push(("pencil", crate::i18n::t("Изменить теги и обложку"), false, A::Tags));
             items.push(("folder", crate::i18n::t("Показать в папке"), false, A::Reveal));
         }
         if queue_index.is_some() {
@@ -203,6 +209,9 @@ impl App {
         }
         if item.is_some() {
             items.push(("trash", crate::i18n::t("Убрать из этого плейлиста"), true, A::Unlist));
+        }
+        if files_page && track.source == crate::model::Source::Local {
+            items.push(("trash", crate::i18n::t("Убрать из EvPlayer (файл останется)"), true, A::Unfile));
         }
         let lists: Vec<(String, String)> = state::get().library.read().unwrap().playlists.iter().map(|p| (p.id.clone(), p.title.clone())).collect();
 
@@ -352,6 +361,8 @@ impl App {
                     }
                 }
             }
+            Some(A::Tags) => self.open_tag_editor(&track),
+            Some(A::Unfile) => self.library.remove(std::slice::from_ref(&track.id)),
             Some(A::AddTo) | None => {}
         }
         let pointer = ctx.input(|i| i.pointer.interact_pos());
@@ -673,6 +684,64 @@ impl App {
                                 app.pages.data_usage = None;
                                 app.toast("Статистика сброшена");
                             }));
+                            done = true;
+                        }
+                        if widgets::pill_button(ui, None, "Отмена", false).clicked() {
+                            done = true;
+                        }
+                    });
+                }
+                Dialog::Tags { id, title, artists, album, cover } => {
+                    // tagEditor.tsx: the cover with its two buttons, then the three fields
+                    ui.label(egui::RichText::new(crate::i18n::t("Теги и обложка")).font(theme::heavy(22.0)));
+                    ui.add_space(12.0);
+                    let current = id.strip_prefix("local:").map(|s| format!("localcover:{s}"));
+                    let preview: Option<String> = match cover {
+                        None => current.filter(|_| self.library.get(id).is_some_and(|r| r.has_cover)),
+                        Some(c) => c.clone(),
+                    };
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = 14.0;
+                        let (r, _) = ui.allocate_exact_size(vec2(96.0, 96.0), egui::Sense::hover());
+                        ui.painter().rect_filled(r, 14, egui::Color32::from_rgba_unmultiplied(238, 247, 244, 15));
+                        if preview.is_some() {
+                            widgets::paint_cover(ui, &mut self.images, preview.as_deref(), r, 14);
+                        }
+                        ui.vertical(|ui| {
+                            ui.add_space(14.0);
+                            if widgets::btn(ui, None, "Выбрать обложку", false).clicked() {
+                                if let Some(path) = crate::dialogs::open_file("Картинки", "png;*.jpg;*.jpeg;*.webp;*.bmp;*.gif") {
+                                    match library::square_data_url(&path, 600) {
+                                        Some(url) => *cover = Some(Some(url)),
+                                        None => apply = Some(Box::new(|app: &mut App| app.toast("Не получилось открыть картинку"))),
+                                    }
+                                }
+                            }
+                            if preview.is_some() && widgets::btn(ui, None, "Убрать", false).clicked() {
+                                *cover = Some(None);
+                            }
+                        });
+                    });
+                    ui.add_space(12.0);
+                    let field = |ui: &mut Ui, label: &str, text: &mut String| {
+                        ui.label(egui::RichText::new(crate::i18n::t(label)).font(theme::body(12.5)).color(theme::ink2()));
+                        ui.add(egui::TextEdit::singleline(text).char_limit(300).desired_width(f32::INFINITY));
+                        ui.add_space(8.0);
+                    };
+                    field(ui, "Название", title);
+                    field(ui, "Исполнители (через запятую)", artists);
+                    field(ui, "Альбом", album);
+                    ui.add_space(6.0);
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if widgets::pill_button(ui, None, "Сохранить", true).clicked() {
+                            let patch = crate::library::LocalTrackEdit {
+                                title: Some(title.clone()),
+                                artists: Some(artists.split(',').map(|a| a.trim().to_string()).filter(|a| !a.is_empty()).collect()),
+                                album: Some(Some(album.trim().to_string()).filter(|a| !a.is_empty())),
+                                cover: cover.clone(),
+                            };
+                            let i = id.clone();
+                            apply = Some(Box::new(move |app: &mut App| app.save_tags(&i, patch)));
                             done = true;
                         }
                         if widgets::pill_button(ui, None, "Отмена", false).clicked() {

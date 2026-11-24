@@ -392,7 +392,7 @@ impl App {
                     self.player.play_index(*i);
                 }
                 if r.secondary_clicked() {
-                    self.menu = Some(crate::app::Menu { track: t.clone(), at: ui.ctx().pointer_latest_pos().unwrap_or(row.center()), playlist_item: None, queue_index: Some(*i), sub: false });
+                    self.menu = Some(crate::app::Menu { track: t.clone(), at: ui.ctx().pointer_latest_pos().unwrap_or(row.center()), playlist_item: None, queue_index: Some(*i), sub: false, files_page: false });
                 }
             }
         });
