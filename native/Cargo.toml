@@ -1,6 +1,6 @@
 [package]
 name = "evplayer-native"
-version = "0.7.6"
+version = "0.8.0"
 description = "EvPlayer without a browser engine: the whole player in Rust, drawn by the processor"
 authors = ["Evire1337"]
 license = "MIT"
