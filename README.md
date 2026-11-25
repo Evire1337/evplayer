@@ -6,38 +6,33 @@
 
 # EvPlayer
 
-**SoundCloud, YouTube Music и ваши файлы в одном плеере — для Windows, Linux и Android**<br />
-Живой фон из обложки, текст песен строка за строкой, эквалайзер, офлайн, статистика и мини-плеер поверх окон.<br />
+**Музыкальный плеер: SoundCloud, YouTube Music и ваши файлы в одной библиотеке**<br />
+Нативная версия для Windows — целиком на Rust, без браузерного движка: **13 МБ памяти в трее**, один процесс.<br />
 Без рекламы, без регистрации, бесплатно и с открытым кодом.
+
+*A free, open-source music player for SoundCloud, YouTube Music and your own files — native Rust, no web engine, 13 MB of RAM in the tray. [English below](#english).*
 
 [![Version](https://img.shields.io/github/v/release/Evire1337/evplayer?style=for-the-badge&label=версия&color=6ff0c4&labelColor=06201d)](https://github.com/Evire1337/evplayer/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/Evire1337/evplayer/total?style=for-the-badge&label=скачиваний&color=6ff0c4&labelColor=06201d)](https://github.com/Evire1337/evplayer/releases)
 [![Stars](https://img.shields.io/github/stars/Evire1337/evplayer?style=for-the-badge&label=звёзды&color=6ff0c4&labelColor=06201d)](https://github.com/Evire1337/evplayer/stargazers)
 [![License](https://img.shields.io/github/license/Evire1337/evplayer?style=for-the-badge&label=лицензия&color=6ff0c4&labelColor=06201d)](LICENSE)
-[![Check](https://img.shields.io/github/actions/workflow/status/Evire1337/evplayer/check.yml?branch=tauri&style=for-the-badge&label=сборка&labelColor=06201d)](https://github.com/Evire1337/evplayer/actions)
 
+![Rust](https://img.shields.io/badge/Rust-000000?style=flat-square&logo=rust&logoColor=white)
+![egui](https://img.shields.io/badge/egui-1f8a73?style=flat-square)
+![Direct3D 11](https://img.shields.io/badge/Direct3D_11-0078D4?style=flat-square&logo=windows&logoColor=white)
+![WASAPI](https://img.shields.io/badge/WASAPI-0078D4?style=flat-square)
 ![Windows](https://img.shields.io/badge/Windows_10_%7C_11-0078D4?style=flat-square&logo=windows&logoColor=white)
-![Linux](https://img.shields.io/badge/Linux-FCC624?style=flat-square&logo=linux&logoColor=black)
-![Android](https://img.shields.io/badge/Android-34A853?style=flat-square&logo=android&logoColor=white)
-![Tauri](https://img.shields.io/badge/Tauri_2-24C8DB?style=flat-square&logo=tauri&logoColor=white) ![Rust](https://img.shields.io/badge/Rust-000000?style=flat-square&logo=rust&logoColor=white)
-![React](https://img.shields.io/badge/React_19-149ECA?style=flat-square&logo=react&logoColor=white)
-![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white)
-![Vite](https://img.shields.io/badge/Vite-646CFF?style=flat-square&logo=vite&logoColor=white)
-[![Telegram](https://img.shields.io/badge/Telegram%20-8A2BE2?logo=Telegram)](https://t.me/evvplayer)
+[![Telegram](https://img.shields.io/badge/Telegram-26A5E4?style=flat-square&logo=telegram&logoColor=white)](https://t.me/evvplayer)
 
 <a href="https://github.com/Evire1337/evplayer/releases/latest">
-  <img src="https://img.shields.io/badge/Скачать_для_Windows-6ff0c4?style=for-the-badge&logo=windows&logoColor=06201d&labelColor=6ff0c4" alt="Скачать для Windows" height="42" />
-</a>
-<a href="https://github.com/Evire1337/evplayer/releases/latest">
-  <img src="https://img.shields.io/badge/Linux-6ff0c4?style=for-the-badge&logo=linux&logoColor=06201d&labelColor=6ff0c4" alt="Скачать для Linux" height="42" />
-</a>
-<a href="https://github.com/Evire1337/evplayer/releases/latest">
-  <img src="https://img.shields.io/badge/Android-6ff0c4?style=for-the-badge&logo=android&logoColor=06201d&labelColor=6ff0c4" alt="Скачать для Android" height="42" />
+  <img src="https://img.shields.io/badge/Скачать_EvPlayer-6ff0c4?style=for-the-badge&logo=windows&logoColor=06201d&labelColor=6ff0c4" alt="Скачать EvPlayer" height="42" />
 </a>
 
 <br /><br />
 
-<img src="https://raw.githubusercontent.com/Evire1337/evplayer/tauri/docs/screenshots/now-playing.jpg" alt="Экран «Сейчас играет»: обложка, текст песни и очередь" width="900" />
+<img src="docs/screenshots/native/artist.jpg" alt="Нативный EvPlayer: страница исполнителя" width="900" />
+
+<sub>Если проект пригодился — поставьте ⭐: так его найдут другие.</sub>
 
 </div>
 
@@ -45,9 +40,21 @@
 
 ## Что это
 
-EvPlayer — музыкальный плеер для **Windows**, **Linux** (x64 и ARM, в том числе пакет для Arch) и **Android**. Ищет сразу по **SoundCloud** и **YouTube Music**, играет **ваши файлы** (MP3, FLAC, M4A, OGG, WAV) и складывает всё в одну библиотеку: в одном плейлисте могут лежать треки из всех источников вперемешку. Плейлисты из **Spotify**, **Яндекс Музыки** и **Deezer** переносятся по ссылке, а из **ВКонтакте** — списком: песни находятся автоматически. Любой трек, плейлист или лайки можно **скачать** и слушать без интернета.
+EvPlayer — бесплатный музыкальный плеер. Ищет сразу по **SoundCloud** и **YouTube Music**, играет **ваши файлы** (MP3, FLAC, ALAC, M4A, OGG/Opus, WAV) и складывает всё в одну библиотеку: в одном плейлисте могут лежать треки из всех источников вперемешку. Плейлисты из **Spotify**, **Яндекс Музыки** и **Deezer** переносятся по ссылке, а из **ВКонтакте** — списком. Любой трек, плейлист или лайки можно **скачать** и слушать без интернета. Никаких аккаунтов и серверов EvPlayer — всё хранится у вас.
 
-Всё хранится на вашем устройстве: никаких аккаунтов и серверов EvPlayer. Обновления приходят сами.
+Эта ветка — **нативная версия для Windows** (папка [`native/`](native)): тот же плеер, что и в [Tauri-версии](https://github.com/Evire1337/evplayer/tree/tauri), но без WebView. Окно рисует видеокарта через Direct3D 11 (интерфейс на egui), звук декодируется и сводится в самой программе и идёт через WASAPI. Данные у обеих версий общие: при первом запуске библиотека, плейлисты и настройки переезжают сами.
+
+### Нативная против Tauri
+
+| | Tauri 0.7.6 | Нативная |
+|---|---|---|
+| Процессов | 8 (программа и WebView2) | **1** |
+| Потоков | 250 | **40** |
+| Память (своя, private) | 291 МБ | **102 МБ**, в трее — **13 МБ** |
+| Процессор в простое, за 10 с | 1,41 с | **0,04 с** |
+| Свёрнута 25 с | 294 МБ | **25 МБ** |
+
+Как и на чём мерили — в [native/README.md](native/README.md#замеры).
 
 ## Возможности
 
@@ -57,51 +64,37 @@ EvPlayer — музыкальный плеер для **Windows**, **Linux** (x6
 
 **🎧 Воспроизведение**
 - Поиск по SoundCloud и YouTube Music: треки, исполнители, альбомы, плейлисты
-- История поиска; результаты не теряются, пока вы в плеере
-- Очередь с перетаскиванием, перемешивание, повтор, «Радио по треку»
-- Плавный переход между треками; трек, который не включается, сам сменяется следующим
-- Автовоспроизведение похожих, когда очередь закончилась
-- Продолжение с того же места после перезапуска
-- Скорость, тон (отдельно или как у пластинки) и реверберация
-- Офлайн: скачанные треки, плейлисты и лайки играют без интернета
+- Если трек не играет — тот же трек с другого сервиса, **без ремиксов и чужих версий**
+- Ярлыки версий у названий: «ремикс», «speed up», «slowed», «кавер», «пародия»
+- Без запиканного мата: находится нецензурная версия песни
+- Лучший звук: Opus ~160 кбит/с с YouTube, AAC 160 кбит/с с SoundCloud, ресемплер ровный до 20 кГц
+- Очередь с перетаскиванием, перемешивание, повтор, «Радио по треку», кроссфейд без пауз
+- Скорость, тон и реверберация; офлайн: скачанное играет без интернета
 
 **🎚 Звук**
-- Параметрический эквалайзер на 6 полос и расширенный на 10, ±24 дБ, с живым спектром
-- Пресеты (плавно сменяют друг друга) и свои пресеты: перетаскивание, обмен кодом
-- Выравнивание громкости между треками, защита от хрипа по желанию
+- Параметрический эквалайзер на 6 и 10 полос с живым спектром, свои пресеты с кодами
+- Выравнивание громкости между треками, защита от перегрузки
 
 **📝 Тексты**
-- Синхронный текст из LRCLIB: строки подсвечиваются в такт, по клику — перемотка
-- Сдвиг текста для песни, если он спешит или отстаёт (запоминается)
-- Обычный текст с Genius, если синхронного нет
+- Синхронный текст: строки подсвечиваются в такт, клик — перемотка, сдвиг текста
 
 </td>
 <td width="50%" valign="top">
 
 **📚 Библиотека**
-- Понравившиеся и свои плейлисты с обложками и перестановкой треков
+- Понравившиеся и свои плейлисты, мозаика обложек, перестановка треков
 - Умные плейлисты: «На повторе», «Новые открытия», «Забытые любимые»
-- Свои файлы: папки обновляются сами, теги и обложки можно править
-- Импорт по ссылке: Spotify, Яндекс Музыка, YouTube, SoundCloud, Deezer; списком — из ВКонтакте и откуда угодно
-- Импорт архива данных Spotify; вход в SoundCloud с синхронизацией лайков и плейлистов
-- Обмен плейлистами и лайками одной строкой-кодом, резервная копия
-- «Недавно слушали» с плейлистами и альбомами
+- Свои файлы: папки отслеживаются, теги и обложки правятся
+- Импорт: Spotify, Яндекс Музыка, YouTube, SoundCloud, Deezer, ВКонтакте, архив Spotify
+- Обмен плейлистами одной строкой-кодом, резервная копия
 
 **📊 Статистика**
-- Топ-10 треков и исполнителей за неделю, месяц и всё время
-- График прослушиваний любого трека, «сегодня прослушано»
+- Топ-10 треков и исполнителей за неделю, месяц и всё время, график по каждому треку
 
-**🪟 Компьютер**
-- Мини-плеер поверх всех окон (уступает место полноэкранным играм), трей, медиаклавиши
-- Свои горячие клавиши в окне и глобально
-- Статус «Слушает» в Discord с обложкой и временем
-- Режим экономии памяти
-- Автообновление через GitHub Releases
-
-**📱 Android**
-- Управление из шторки и с экрана блокировки, виджет на рабочий стол
-- Музыка играет в фоне, приложение не закрывается в других приложениях
-- Ничего не кэширует на телефон
+**🪟 Windows**
+- Мини-плеер поверх окон, трей, медиаклавиши и плашка Windows, свои горячие клавиши
+- Статус в Discord, «Слушать вместе» с друзьями (совместимо с Tauri-версией)
+- Свёрнутое окно отпускает видеокарту и память
 
 </td>
 </tr>
@@ -111,43 +104,41 @@ EvPlayer — музыкальный плеер для **Windows**, **Linux** (x6
 
 <table>
 <tr>
-<td><img src="https://raw.githubusercontent.com/Evire1337/evplayer/tauri/docs/screenshots/home.jpg" alt="Главная" /><p align="center"><sub>Главная: недавнее, умные плейлисты, топы</sub></p></td>
-<td><img src="https://raw.githubusercontent.com/Evire1337/evplayer/tauri/docs/screenshots/search.jpg" alt="Поиск" /><p align="center"><sub>Поиск по SoundCloud и YouTube Music</sub></p></td>
+<td><img src="docs/screenshots/native/search.jpg" alt="Поиск" /><p align="center"><sub>Поиск по SoundCloud и YouTube Music</sub></p></td>
+<td><img src="docs/screenshots/native/artist.jpg" alt="Исполнитель" /><p align="center"><sub>Страница исполнителя</sub></p></td>
 </tr>
 <tr>
-<td><img src="https://raw.githubusercontent.com/Evire1337/evplayer/tauri/docs/screenshots/library.jpg" alt="Библиотека" /><p align="center"><sub>Библиотека</sub></p></td>
-<td><img src="https://raw.githubusercontent.com/Evire1337/evplayer/tauri/docs/screenshots/stats.jpg" alt="Статистика трека" /><p align="center"><sub>Статистика трека</sub></p></td>
-</tr>
-<tr>
+<td><img src="https://raw.githubusercontent.com/Evire1337/evplayer/tauri/docs/screenshots/now-playing.jpg" alt="Сейчас играет" /><p align="center"><sub>«Сейчас играет» с текстом песни</sub></p></td>
 <td><img src="https://raw.githubusercontent.com/Evire1337/evplayer/tauri/docs/screenshots/equalizer.jpg" alt="Эквалайзер" /><p align="center"><sub>Эквалайзер</sub></p></td>
-<td><img src="https://raw.githubusercontent.com/Evire1337/evplayer/tauri/docs/screenshots/sound.jpg" alt="Скорость, тон и реверберация" /><p align="center"><sub>Скорость, тон и реверберация</sub></p></td>
-</tr>
-<tr>
-<td><img src="https://raw.githubusercontent.com/Evire1337/evplayer/tauri/docs/screenshots/discord.jpg" alt="Discord" /><p align="center"><sub>Статус в Discord</sub></p></td>
-<td align="center" valign="middle"><img src="https://raw.githubusercontent.com/Evire1337/evplayer/tauri/docs/screenshots/mini-player.png" alt="Мини-плеер" /><p align="center"><sub>Мини-плеер поверх окон</sub></p></td>
 </tr>
 </table>
 
 ## Скачать
 
-Все файлы — в [последнем релизе](https://github.com/Evire1337/evplayer/releases/latest).
+Готовые установщики — в [последнем релизе](https://github.com/Evire1337/evplayer/releases/latest). Сейчас это Tauri-версия для Windows, Linux (в том числе Arch) и Android; нативная сборка для Windows скоро появится там же, а пока её можно собрать самому (ниже).
 
 | Система | Файл |
 |---|---|
 | Windows 10 / 11, 64 бит | `EvPlayer_x.y.z_x64-setup.exe` |
-| Linux x64 | `EvPlayer_x.y.z_amd64.AppImage` (обновляется сам), `.deb` или `.rpm` |
-| Linux ARM (aarch64) | `EvPlayer_x.y.z_aarch64.AppImage`, `_arm64.deb` или `.aarch64.rpm` |
-| Arch Linux | `evplayer-bin-x.y.z-1-x86_64.pkg.tar.zst` (`sudo pacman -U …`) или `PKGBUILD` из релиза: `makepkg -si` (так и на Arch Linux ARM) |
+| Linux x64 / ARM | `.AppImage` (обновляется сам), `.deb` или `.rpm` |
+| Arch Linux | `evplayer-bin-…pkg.tar.zst` или `PKGBUILD` из релиза |
 | Android 7+ | `EvPlayer-x.y.z.apk` |
 
 > [!NOTE]
-> Установщик для Windows пока не подписан сертификатом, поэтому SmartScreen может показать «Windows защитила ваш компьютер». Нажмите **Подробнее → Выполнить в любом случае**.
->
-> На Linux AppImage нужно сделать исполняемым: `chmod +x EvPlayer_*.AppImage`. На Android при установке APK разрешите установку из этого источника. При первом запуске телефон спросит про работу в фоне — разрешите, чтобы музыка не прерывалась.
+> Установщик пока не подписан сертификатом, поэтому SmartScreen может показать «Windows защитила ваш компьютер». Нажмите **Подробнее → Выполнить в любом случае**.
 
-## Обновления
+## Нативная сборка из исходников
 
-EvPlayer сам проверяет новые версии при запуске и каждые 4 часа. На Windows и в Linux AppImage обновление скачивается в фоне и ставится при следующем перезапуске — переустанавливать ничего не нужно. Пакеты `.deb` и `.rpm` обновляются установкой нового пакета, а на Android приложение предложит скачать новый APK. Проверить вручную: **Настройки → О программе**.
+Нужны [Rust](https://rustup.rs) (1.85+), [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) с «Разработкой классических приложений на C++» и [CMake](https://cmake.org) (для libopus).
+
+```powershell
+git clone -b native/rust https://github.com/Evire1337/evplayer.git
+cd evplayer\native
+cargo build --release      # target\release\evplayer-native.exe — один файл
+cargo test                 # тесты; с сетью: cargo test -- --ignored net_
+```
+
+Посмотреть страницу без окна: `evplayer-native.exe --snapshot out.png --page search:кино`. Устройство, перенос с Tauri и замеры — в [native/README.md](native/README.md).
 
 ## Импорт из других сервисов
 
@@ -193,64 +184,30 @@ EvPlayer сам проверяет новые версии при запуске
 
 На Android всё хранится внутри приложения; кэш на телефон не пишется.
 
-## Сборка из исходников
 
-Нужны [Node.js 22+](https://nodejs.org), [pnpm](https://pnpm.io) (`npm i -g pnpm`) и [Rust](https://rustup.rs). На Windows ещё «Средства сборки C++» из [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) (галочка «Разработка классических приложений на C++»). На Linux — системные библиотеки:
+## English
 
-```bash
-sudo apt install libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev patchelf file
-```
+**EvPlayer** is a free, open-source music player that searches **SoundCloud** and **YouTube Music** at once, plays **your own files** (MP3, FLAC, ALAC, M4A, OGG/Opus, WAV) and keeps everything in one library — a playlist can mix songs from every source. Playlists move over from **Spotify**, **Yandex Music**, **Deezer** and **VK** by link or as a list of songs; anything can be **downloaded** and played offline. No accounts, no EvPlayer servers, no ads.
 
-```powershell
-git clone -b tauri https://github.com/Evire1337/evplayer.git
-cd evplayer
-pnpm install
-pnpm dev          # запуск с горячей перезагрузкой (первый раз Rust собирается несколько минут)
-```
+This branch is the **native Windows build**: the whole player in **Rust**, no web engine. The window is drawn by the GPU through **Direct3D 11** (UI in **egui**), sound is decoded and mixed in-process and played through **WASAPI**. One process, about **100 MB** with the window open and **13 MB** in the tray, next to ~290 MB for the Tauri/WebView2 build.
 
-| Команда | Что делает |
-|---|---|
-| `pnpm dev` | приложение в режиме разработки: правки в `src/` применяются сразу |
-| `pnpm test` | тесты интерфейса (Vitest) |
-| `cargo test` в `src-tauri` | тесты части на Rust |
-| `pnpm typecheck` | проверка типов |
-| `pnpm tauri build` | установщик в `src-tauri/target/release/bundle/nsis/` (на Linux — `--bundles deb,rpm,appimage`) |
-| `pnpm tauri android build --apk` | APK (нужны Android SDK и NDK) в `src-tauri/gen/android/app/build/outputs/apk/` |
+- **Search** SoundCloud and YouTube Music: songs, artists, albums, playlists
+- **Right copy, right version**: when a song does not play, the same recording from the other service — never a remix, a sped-up upload or someone else's cover; version labels ("remix", "speed up", "slowed") next to titles; uncensored versions instead of bleeped ones
+- **Sound**: Opus ~160 kbit/s from YouTube, AAC 160 kbit/s from SoundCloud, a resampler flat to 20 kHz, gapless playback and crossfade, 6- and 10-band parametric EQ, loudness levelling, speed, pitch and reverb
+- **Synced lyrics**, smart playlists, listening statistics, a mini player above all windows, media keys, Discord status, "Listen together" sessions
+- **Import** from Spotify (links, account or data archive), Yandex Music, Deezer, YouTube, SoundCloud and VK
 
-**Отладка.** В режиме `pnpm dev` правый клик → «Inspect» (или `Ctrl+Shift+I`) открывает инструменты разработчика. Сообщения Rust-части печатаются в терминал, где запущен `pnpm dev`.
-
-### Как выпустить новую версию
-
-1. Поменяйте `version` в `package.json` (и в `src-tauri/Cargo.toml`) и закоммитьте.
-2. `git tag v0.6.0` → `git push origin v0.6.0`
-3. GitHub Actions соберёт Windows, Linux (x64 и ARM, а также пакет для Arch) и Android, подпишет обновления и опубликует релиз с `latest.json`, когда все файлы на месте — у всех пользователей обновление придёт само.
-
-Тестовые версии для всех систем собираются вручную: вкладка Actions → Check → Run workflow (файлы внизу запуска). APK отдельно — Actions → Android. Пуши сами ничего не собирают.
-
-Секреты в настройках репозитория (Settings → Secrets and variables → Actions):
-- `TAURI_SIGNING_PRIVATE_KEY` — закрытый ключ обновлений, пара к `pubkey` в `src-tauri/tauri.conf.json`;
-- `ANDROID_KEYSTORE` (файл `.jks` в base64) и `ANDROID_KEY_PASSWORD` — подпись APK.
-
-## Стек
-
-| Часть | Технологии |
-|---|---|
-| Оболочка | Tauri 2 (WebView2 на Windows, WebKitGTK на Linux, WebView на Android), Rust: трей, клавиши, мини-плеер, Discord, файлы, офлайн, обновления |
-| Android | Kotlin: уведомление и экран блокировки (MediaSession), виджет, работа в фоне |
-| Интерфейс | React 19, TypeScript, Vite |
-| Состояние | Zustand |
-| Звук | Web Audio API: свой AudioWorklet для тона, свёрточная реверберация, BiquadFilter-эквалайзер, лимитер |
-| Потоки | hls.js; если источник не играет — другой формат, затем та же запись на другом сервисе (без ремиксов) |
-| Сеть | свой прокси на Rust для запросов к сервисам и маленький медиасервер на 127.0.0.1 для звука |
-| Файлы | lofty (теги), notify (слежение за папками), отдача с поддержкой перемотки |
-| Фон | свой WebGL-шейдер из цветов обложки |
-| Тесты и CI | Vitest, GitHub Actions |
+Download the installers from the [latest release](https://github.com/Evire1337/evplayer/releases/latest) (currently the Tauri build for Windows, Linux and Android), or build the native one with `cargo build --release` in `native/`. If you like it, a ⭐ helps others find it.
 
 ## Ветки
 
-- `tauri` — основная ветка: Windows, Linux и Android на Tauri (этот код)
+- `native/rust` — нативная версия для Windows на Rust (эта ветка, следующая версия EvPlayer)
+- `tauri` — Windows, Linux и Android на Tauri (текущие релизы)
 - `android` — тестовые сборки APK
-- `desktop` — прежняя версия на Electron (больше не развивается)
+
+## Участие
+
+Как ведутся задачи и как прислать изменения — в [CONTRIBUTING.md](CONTRIBUTING.md); как устроен код — в [AGENTS.md](AGENTS.md) и [native/README.md](native/README.md). Нашли ошибку или есть идея — [откройте issue](https://github.com/Evire1337/evplayer/issues/new/choose). Новости — в [Telegram](https://t.me/evvplayer).
 
 ## Звёзды
 
@@ -258,19 +215,6 @@ pnpm dev          # запуск с горячей перезагрузкой (�
   <img src="https://api.star-history.com/svg?repos=Evire1337/evplayer&type=Date&theme=dark" alt="Star History" width="600" />
 </a>
 
-## Участие
-
-Как ведутся задачи и как прислать свои изменения — в [CONTRIBUTING.md](CONTRIBUTING.md). Как устроен код, как его писать и тестировать — в [AGENTS.md](AGENTS.md); этот файл можно отдать и ИИ-ассистенту.
-
 ## Лицензия
 
 [MIT](LICENSE) © Evire1337
-
-EvPlayer — независимый проект и не связан с SoundCloud, YouTube, Google, Spotify, Deezer, Яндексом, ВКонтакте, Apple или Discord. Названия сервисов принадлежат их владельцам. Музыка воспроизводится через публичные сервисы этих платформ; тексты песен — LRCLIB и Genius.
-
-<div align="center">
-<br />
-<a href="https://github.com/Evire1337/evplayer/releases/latest">
-  <img src="https://img.shields.io/badge/Скачать_EvPlayer-6ff0c4?style=for-the-badge&logoColor=06201d" alt="Скачать EvPlayer" height="36" />
-</a>
-</div>

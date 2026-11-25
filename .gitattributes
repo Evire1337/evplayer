@@ -1,0 +1,12 @@
+# GitHub's language bar: this branch is the native build in Rust. The Tauri build's interface
+# (TypeScript, CSS, HTML) stays here only as the reference the native one follows, and the
+# Android project is generated: neither is counted.
+src/** linguist-documentation
+public/** linguist-documentation
+pages/** linguist-documentation
+prototypes/** linguist-documentation
+*.html linguist-documentation
+tools/** linguist-documentation
+src-tauri/gen/** linguist-vendored
+# the native build's compiled shaders are binary
+*.cso binary
